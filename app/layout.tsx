@@ -1,16 +1,62 @@
 import "./globals.css";
+import type { Metadata, Viewport } from "next";
+import Link from "next/link";
+import { Noto_Sans_Thai } from "next/font/google";
 import BottomNav from "@/components/BottomNav";
+import HeaderNav from "@/components/HeaderNav";
+
+const notoThai = Noto_Sans_Thai({
+  subsets: ["thai", "latin"],
+  display: "swap",
+  weight: ["400", "500", "700", "900"],
+});
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+const TITLE = "F1 Week Race";
+const DESCRIPTION = "ตารางแข่ง F1 นับถอยหลัง และตารางคะแนน เวลาไทย (GMT+7)";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
+  title: { default: TITLE, template: `%s · ${TITLE}` },
+  description: DESCRIPTION,
+  applicationName: TITLE,
+  appleWebApp: { capable: true, title: TITLE, statusBarStyle: "black-translucent" },
+  openGraph: {
+    type: "website",
+    siteName: TITLE,
+    title: TITLE,
+    description: DESCRIPTION,
+    locale: "th_TH",
+  },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#08080a",
+  colorScheme: "dark",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th">
-      <body style={{ backgroundColor: '#0a0a0a', color: '#ffffff', minHeight: '100vh', margin: 0, fontFamily: 'sans-serif' }}>
-        <nav style={{ padding: '16px', borderBottom: '1px solid #333' }}>
-          <span style={{ fontWeight: 'bold', color: '#dc2626' }}>F1 THAI</span>
-        </nav>
-        <main style={{ padding: '24px', paddingBottom: '96px', maxWidth: '800px', margin: '0 auto' }}>
+    <html lang="th" className={notoThai.className}>
+      <body className="antialiased">
+        <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-md">
+          <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3.5">
+            <Link href="/" className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-1.5 rounded-full bg-[--color-f1]" />
+              <span className="text-lg font-black tracking-tight">
+                F1 <span className="text-[--color-f1]">Week Race</span>
+              </span>
+            </Link>
+            <HeaderNav />
+            <span className="ml-auto text-xs font-medium text-white/40">GMT+7</span>
+          </div>
+        </header>
+
+        <div className="mx-auto min-h-[60vh] max-w-5xl px-4 pb-28 pt-6 md:pb-12">
           {children}
-        </main>
+        </div>
+
         <BottomNav />
       </body>
     </html>

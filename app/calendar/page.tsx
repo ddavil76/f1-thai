@@ -1,4 +1,8 @@
-import { getSchedule, thaiDateOnly, thaiTimeOnly, toDate } from "@/lib/f1";
+import {
+  getSchedule, findNextRace, isPastRace, thaiDateOnly, thaiTimeOnly, toDate,
+} from "@/lib/f1";
+
+export const metadata = { title: "ปฏิทินทั้งฤดูกาล" };
 
 export const revalidate = 600;
 
@@ -6,27 +10,45 @@ const SEASON = new Date().getFullYear();
 
 export default async function CalendarPage() {
   const races = await getSchedule(SEASON);
+  const nextRound = findNextRace(races)?.round;
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6 bg-black p-4 text-white md:p-8">
-      <header>
-        <h1 className="text-3xl font-black tracking-tight">
-          ปฏิทิน <span className="text-red-600">F1</span> ทั้งฤดูกาล
-        </h1>
-        <p className="text-sm text-white/50">ฤดูกาล {SEASON} · เวลาทั้งหมดเป็น GMT+7</p>
+    <main className="mx-auto max-w-3xl space-y-6">
+      <header className="space-y-3">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-black tracking-tight md:text-4xl">
+            ปฏิทิน <span className="text-[--color-f1]">F1</span> ทั้งฤดูกาล
+          </h1>
+          <p className="text-sm text-white/50">ฤดูกาล {SEASON} · เวลาทั้งหมดเป็น GMT+7</p>
+        </div>
+        <a
+          href="/calendar.ics"
+          className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 active:scale-95"
+        >
+          📥 ดาวน์โหลดปฏิทิน (.ics) ทุก session
+        </a>
       </header>
 
-      <section className="rounded-2xl bg-neutral-900 p-5">
+      <section className="card p-2 sm:p-4">
         <ul className="divide-y divide-white/5">
           {races.map((r) => {
             const d = toDate({ date: r.date, time: r.time })!;
-            const past = d.getTime() < Date.now();
+            const past = isPastRace(r);
+            const isNext = r.round === nextRound;
             return (
               <li
                 key={r.round}
-                className={`flex items-center gap-3 py-2.5 ${past ? "opacity-40" : ""}`}
+                className={`flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors ${
+                  past ? "opacity-40" : "hover:bg-white/[0.03]"
+                }`}
               >
-                <span className="w-6 text-right text-sm text-white/40">{r.round}</span>
+                <span
+                  className={`w-6 text-right text-sm tabular-nums ${
+                    isNext ? "font-bold text-[--color-f1]" : "text-white/40"
+                  }`}
+                >
+                  {r.round}
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{r.raceName}</p>
                   <p className="truncate text-xs text-white/50">

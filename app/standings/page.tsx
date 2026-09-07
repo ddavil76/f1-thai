@@ -1,6 +1,8 @@
 import Standings from "@/components/Standings";
 import { getDriverStandings, getConstructorStandings } from "@/lib/f1";
 
+export const metadata = { title: "ตารางคะแนน" };
+
 export const revalidate = 600;
 
 const SEASON = new Date().getFullYear();
@@ -12,10 +14,10 @@ export default async function StandingsPage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6 bg-black p-4 text-white md:p-8">
-      <header>
-        <h1 className="text-3xl font-black tracking-tight">
-          ตารางคะแนน <span className="text-red-600">F1</span>
+    <main className="mx-auto max-w-3xl space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-3xl font-black tracking-tight md:text-4xl">
+          ตารางคะแนน <span className="text-[--color-f1]">F1</span>
         </h1>
         <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
       </header>

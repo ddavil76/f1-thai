@@ -1,35 +1,36 @@
 "use client";
 import { useState } from "react";
 import type { DriverStanding, ConstructorStanding } from "@/lib/f1";
+import { TEAM_COLOR } from "@/lib/teams";
 
-const TEAM_COLOR: Record<string, string> = {
-  red_bull: "#3671C6", ferrari: "#E8002D", mercedes: "#27F4D2",
-  mclaren: "#FF8000", aston_martin: "#229971", alpine: "#00A1E8",
-  williams: "#1868DB", rb: "#6692FF", sauber: "#01C00E", haas: "#B6BABD",
-  audi: "#BB0A30", cadillac: "#B3995D",
-};
-export default function Standings({
-  drivers, constructors,
-}: { drivers: DriverStanding[]; constructors: ConstructorStanding[] }) {
-  const [tab, setTab] = useState<"d" | "c">("d");
-
-  const TabBtn = ({ id, label }: { id: "d" | "c"; label: string }) => (
+function TabBtn({
+  label, active, onClick,
+}: { label: string; active: boolean; onClick: () => void }) {
+  return (
     <button
-      onClick={() => setTab(id)}
+      onClick={onClick}
       className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-        tab === id ? "bg-red-600 text-white" : "bg-white/10 text-white/70 hover:bg-white/20"
+        active
+          ? "bg-[--color-f1] text-white shadow-lg shadow-[--color-f1]/30"
+          : "bg-white/10 text-white/70 hover:bg-white/20"
       }`}
     >
       {label}
     </button>
   );
+}
+
+export default function Standings({
+  drivers, constructors,
+}: { drivers: DriverStanding[]; constructors: ConstructorStanding[] }) {
+  const [tab, setTab] = useState<"d" | "c">("d");
 
   return (
-    <section className="rounded-2xl bg-neutral-900 p-5">
+    <section className="card p-5">
       <div className="mb-4 flex items-center gap-2">
         <h2 className="mr-auto text-lg font-bold">ตารางคะแนน</h2>
-        <TabBtn id="d" label="นักแข่ง" />
-        <TabBtn id="c" label="ทีม" />
+        <TabBtn label="นักแข่ง" active={tab === "d"} onClick={() => setTab("d")} />
+        <TabBtn label="ทีม" active={tab === "c"} onClick={() => setTab("c")} />
       </div>
 
       <ul className="divide-y divide-white/5">
@@ -37,7 +38,7 @@ export default function Standings({
           ? drivers.map((s) => {
               const c = s.Constructors.at(-1);
               return (
-                <li key={s.Driver.driverId} className="flex items-center gap-3 py-2.5">
+                <li key={s.Driver.driverId} className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.03]">
                   <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
                   <span
                     className="h-8 w-1 rounded-full"
@@ -63,7 +64,7 @@ export default function Standings({
               );
             })
           : constructors.map((s) => (
-              <li key={s.Constructor.constructorId} className="flex items-center gap-3 py-2.5">
+              <li key={s.Constructor.constructorId} className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.03]">
                 <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
                 <span
                   className="h-8 w-1 rounded-full"

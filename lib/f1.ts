@@ -9,6 +9,7 @@ export type Race = {
   Circuit: {
     circuitId: string;
     circuitName: string;
+    url?: string;
     Location: { locality: string; country: string };
   };
   FirstPractice?: SessionTime;
@@ -41,30 +42,167 @@ export type ConstructorStanding = {
   Constructor: { constructorId: string; name: string; nationality: string };
 };
 
+export type RaceResult = {
+  position: string;
+  points: string;
+  grid: string;
+  status: string;
+  Driver: { driverId: string; code?: string; givenName: string; familyName: string };
+  Constructor: { constructorId: string; name: string };
+  Time?: { time: string };
+};
+
+export type LastRace = {
+  season: string;
+  round: string;
+  raceName: string;
+  date: string;
+  Circuit: { circuitName: string; Location: { locality: string; country: string } };
+  Results: RaceResult[];
+};
+
 const BASE = "https://api.jolpi.ca/ergast/f1";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** เรียก Jolpica พร้อม retry — API ตัวนี้ rate-limit / ล่มบ่อย */
 async function jolpica<T>(path: string, revalidate = 3600): Promise<T> {
-  const res = await fetch(`${BASE}/${path}?format=json`, {
-    next: { revalidate },
-  });
-  if (!res.ok) throw new Error(`Jolpica ${res.status} on ${path}`);
-  return res.json();
+  const url = `${BASE}/${path}?format=json`;
+  let lastErr: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await sleep(400 * attempt);
+    try {
+      const res = await fetch(url, { next: { revalidate } });
+      if (res.ok) return (await res.json()) as T;
+      // 429/5xx = ลองใหม่, 4xx อื่น ๆ = เลิก
+      if (res.status !== 429 && res.status < 500) {
+        throw new Error(`Jolpica ${res.status} on ${path}`);
+      }
+      lastErr = new Error(`Jolpica ${res.status} on ${path}`);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(`Jolpica failed on ${path}`);
 }
 
+type ErgastResponse = {
+  MRData: {
+    RaceTable?: { Races?: Race[] };
+    StandingsTable?: {
+      StandingsLists?: {
+        DriverStandings?: DriverStanding[];
+        ConstructorStandings?: ConstructorStanding[];
+      }[];
+    };
+  };
+};
+
 export async function getSchedule(season: string | number): Promise<Race[]> {
-  const d = await jolpica<any>(`${season}/races/`);
-  return d.MRData.RaceTable.Races ?? [];
+  const d = await jolpica<ErgastResponse>(`${season}/races/`);
+  return d.MRData.RaceTable?.Races ?? [];
 }
 
 export async function getDriverStandings(season: string | number): Promise<DriverStanding[]> {
   // standings เปลี่ยนบ่อยช่วงแข่ง → cache สั้นกว่า
-  const d = await jolpica<any>(`${season}/driverstandings/`, 600);
-  return d.MRData.StandingsTable.StandingsLists?.[0]?.DriverStandings ?? [];
+  const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 600);
+  return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
 }
 
 export async function getConstructorStandings(season: string | number): Promise<ConstructorStanding[]> {
-  const d = await jolpica<any>(`${season}/constructorstandings/`, 600);
-  return d.MRData.StandingsTable.StandingsLists?.[0]?.ConstructorStandings ?? [];
+  const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 600);
+  return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
+}
+
+/** ผลการแข่งของ race ล่าสุดที่จบไปแล้ว (null ถ้ายังไม่มีผลในฤดูกาลนั้น) */
+export async function getLastResults(season: string | number): Promise<LastRace | null> {
+  try {
+    const d = await jolpica<{ MRData: { RaceTable?: { Races?: LastRace[] } } }>(
+      `${season}/last/results/`,
+      600,
+    );
+    return d.MRData.RaceTable?.Races?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/* ---------- รูปสนามแข่ง (จาก Wikipedia) ---------- */
+
+const WIKI_TTL = { next: { revalidate: 60 * 60 * 24 * 7 } }; // cache 7 วัน
+
+/** ชื่อไฟล์ที่ "น่าจะ" เป็นผังแทร็ก */
+const TRACK_MAP_RE =
+  /(track[ _-]?map|circuit[ _-]*(layout|map)|street[ _-]?circuit|grand[ _-]?prix[ _-]?layout|\(20\d\d\)\.svg|[ _-]layout\.svg|_map\.svg)/i;
+
+/**
+ * override เฉพาะสนามที่ heuristic เลือกรูปพลาด — key = Ergast circuitId,
+ * value = URL รูปเต็ม (แนะนำ .svg.png จาก upload.wikimedia.org)
+ */
+const CIRCUIT_IMAGE_OVERRIDE: Record<string, string> = {};
+
+const cleanWikiUrl = (u: string) =>
+  (u.startsWith("//") ? `https:${u}` : u).split("?")[0].replace(/\/\d+px-/, "/1280px-");
+
+/** URL รูปผังสนาม; ลอง media-list ก่อน (เจอผังแทร็กแม่นกว่า) แล้วค่อย fallback */
+export async function getCircuitImage(circuit?: Race["Circuit"]): Promise<string | null> {
+  if (!circuit) return null;
+
+  const override = CIRCUIT_IMAGE_OVERRIDE[circuit.circuitId];
+  if (override) return override;
+
+  const title = decodeURIComponent(circuit.url?.split("/wiki/")[1] ?? "");
+  if (!title) return null;
+  const enc = encodeURIComponent(title);
+
+  // 1) media-list → เลือกไฟล์ที่ชื่อเข้าข่ายผังแทร็ก (เว้น logo)
+  try {
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/media-list/${enc}`,
+      WIKI_TTL,
+    );
+    if (res.ok) {
+      const d = (await res.json()) as {
+        items?: {
+          type?: string;
+          title?: string;
+          leadImage?: boolean;
+          srcset?: { src: string }[];
+        }[];
+      };
+      const imgs = (d.items ?? []).filter(
+        (i) => i.type === "image" && i.title && i.srcset?.length && !/logo/i.test(i.title),
+      );
+      const pick =
+        // รูป infobox ของหน้าสนาม = ผังแทร็กแทบทุกครั้ง
+        imgs.find((i) => i.leadImage) ??
+        // ไม่งั้นเดาจากชื่อไฟล์
+        imgs.find((i) => TRACK_MAP_RE.test(i.title!) && /\.svg/i.test(i.title!)) ??
+        imgs.find((i) => TRACK_MAP_RE.test(i.title!));
+      const best = pick?.srcset?.at(-1)?.src;
+      if (best) return cleanWikiUrl(best);
+    }
+  } catch {
+    /* ลอง fallback ต่อ */
+  }
+
+  // 2) fallback: รูปเด่นของหน้า (อาจเป็นรูปถ่าย ไม่ใช่ผัง)
+  try {
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${enc}`,
+      WIKI_TTL,
+    );
+    if (!res.ok) return null;
+    const d = (await res.json()) as {
+      thumbnail?: { source?: string };
+      originalimage?: { source?: string };
+    };
+    const raw = d.originalimage?.source ?? d.thumbnail?.source;
+    return raw ? cleanWikiUrl(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ---------- เวลา ---------- */
@@ -125,10 +263,33 @@ export function getSessions(race: Race) {
     .sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
+const RACE_TAIL_MS = 2 * 60 * 60 * 1000;
+
 /** หา race ถัดไป (นับ race ที่ยังไม่จบ ~2 ชม.หลังสตาร์ท) */
 export function findNextRace(races: Race[], now = new Date()) {
   return races.find((r) => {
     const d = toDate({ date: r.date, time: r.time });
-    return d ? d.getTime() + 2 * 60 * 60 * 1000 > now.getTime() : false;
+    return d ? d.getTime() + RACE_TAIL_MS > now.getTime() : false;
   });
+}
+
+/** race ที่ยังไม่จบ n รายการถัดไป (รวมสนามที่กำลังแข่ง) */
+export function getUpcomingRaces(races: Race[], n: number, now = new Date()) {
+  return races
+    .filter((r) => {
+      const d = toDate({ date: r.date, time: r.time });
+      return d ? d.getTime() + RACE_TAIL_MS > now.getTime() : false;
+    })
+    .slice(0, n);
+}
+
+/** สุดสัปดาห์นี้มี Sprint ไหม */
+export function isSprintWeekend(race: Race) {
+  return Boolean(race.Sprint || race.SprintQualifying);
+}
+
+/** race นี้ผ่านไปแล้วหรือยัง (ยึดเวลาสตาร์ท) */
+export function isPastRace(race: Race, now = new Date()) {
+  const d = toDate({ date: race.date, time: race.time });
+  return d ? d.getTime() < now.getTime() : false;
 }
