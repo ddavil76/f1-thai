@@ -8,7 +8,6 @@ const TEAM_COLOR: Record<string, string> = {
   williams: "#1868DB", rb: "#6692FF", sauber: "#01C00E", haas: "#B6BABD",
   audi: "#BB0A30", cadillac: "#B3995D",
 };
-
 export default function Standings({
   drivers, constructors,
 }: { drivers: DriverStanding[]; constructors: ConstructorStanding[] }) {
@@ -49,6 +48,12 @@ export default function Standings({
                       {s.Driver.givenName} <span className="uppercase">{s.Driver.familyName}</span>
                     </p>
                     <p className="truncate text-xs text-white/50">{c?.name}</p>
+                    <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-red-600 transition-all duration-1000"
+                        style={{ width: `${Math.min((Number(s.points) / 500) * 100, 100)}%` }}
+                      />
+                    </div>
                   </div>
                   {Number(s.wins) > 0 && (
                     <span className="text-xs text-white/40">🏆 {s.wins}</span>
