@@ -41,7 +41,7 @@
     overflow-x: clip;
   }
 
-  /* ---- Ambient background — ไล่เฉดสีเต็มจอ เลื่อนช้า ๆ ---- */
+  /* ---- Ambient background — ไล่เฉดสีเต็มจอ (ไม่มีจุดดำ) เลื่อนช้า ๆ ---- */
   body::before {
     content: "";
     position: fixed;
@@ -51,18 +51,24 @@
     background-color: var(--color-bg);
     background-image:
       radial-gradient(
-        60% 60% at 12% 12%,
-        color-mix(in srgb, var(--color-f1) 45%, transparent),
-        transparent 62%
+        70% 70% at 10% 8%,
+        color-mix(in srgb, var(--color-f1) 55%, transparent),
+        transparent 70%
       ),
-      radial-gradient(55% 55% at 88% 22%, rgba(92, 104, 200, 0.3), transparent 62%),
+      radial-gradient(65% 65% at 92% 20%, rgba(96, 108, 210, 0.4), transparent 70%),
       radial-gradient(
-        70% 70% at 65% 95%,
-        color-mix(in srgb, var(--color-f1-dark) 60%, transparent),
-        transparent 64%
+        80% 80% at 70% 100%,
+        color-mix(in srgb, var(--color-f1-dark) 70%, transparent),
+        transparent 72%
       ),
-      radial-gradient(50% 50% at 28% 78%, rgba(74, 62, 140, 0.24), transparent 62%);
-    background-size: 200% 200%;
+      radial-gradient(60% 60% at 25% 85%, rgba(78, 66, 150, 0.32), transparent 70%),
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-f1) 16%, var(--color-bg)),
+        color-mix(in srgb, #5c68c8 12%, var(--color-bg)) 50%,
+        color-mix(in srgb, var(--color-f1-dark) 24%, var(--color-bg))
+      );
+    background-size: 200% 200%, 200% 200%, 200% 200%, 200% 200%, 100% 100%;
     background-repeat: no-repeat;
     animation: bg-shift 44s ease-in-out infinite;
     will-change: background-position;
@@ -71,16 +77,36 @@
   @keyframes bg-shift {
     0%,
     100% {
-      background-position: 0% 50%;
+      background-position:
+        0% 50%,
+        0% 50%,
+        0% 50%,
+        0% 50%,
+        0 0;
     }
     25% {
-      background-position: 65% 0%;
+      background-position:
+        65% 0%,
+        65% 0%,
+        65% 0%,
+        65% 0%,
+        0 0;
     }
     50% {
-      background-position: 100% 55%;
+      background-position:
+        100% 55%,
+        100% 55%,
+        100% 55%,
+        100% 55%,
+        0 0;
     }
     75% {
-      background-position: 35% 100%;
+      background-position:
+        35% 100%,
+        35% 100%,
+        35% 100%,
+        35% 100%,
+        0 0;
     }
   }
 
