@@ -59,7 +59,11 @@ export default async function Home() {
                 {next.Circuit.Location.country}
               </p>
 
-              <CircuitMap src={circuitImg} name={next.Circuit.circuitName} />
+              <CircuitMap
+                src={circuitImg}
+                name={next.Circuit.circuitName}
+                circuitId={next.Circuit.circuitId}
+              />
 
               <div className="mt-5">
                 <SessionCountdown race={next} />

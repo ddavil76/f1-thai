@@ -1,0 +1,66 @@
+import { circuitTrack } from "@/lib/circuits";
+
+/**
+ * ผังสนามแบบเวกเตอร์ + จุดแสง "วิ่ง" รอบเส้นแทร็ก (CSS offset-path ล้วน)
+ * คืน null ถ้าไม่มี path ของสนามนั้น — ให้ผู้เรียก fallback ไปใช้รูปแทน
+ */
+export default function RacingLine({
+  circuitId,
+  name,
+}: {
+  circuitId: string;
+  name: string;
+}) {
+  const track = circuitTrack(circuitId);
+  if (!track) return null;
+
+  const pad = 7;
+  const { d, w, h } = track;
+  const viewBox = `${-pad} ${-pad} ${w + pad * 2} ${h + pad * 2}`;
+
+  return (
+    <figure className="relative mt-5 aspect-[16/9] w-full overflow-hidden rounded-xl border border-white/10 bg-black/25">
+      <svg
+        viewBox={viewBox}
+        preserveAspectRatio="xMidYMid meet"
+        className="h-full w-full p-4"
+        aria-label={`ผังสนาม ${name}`}
+      >
+        {/* เส้นแทร็กจาง ๆ เป็นฐาน */}
+        <path
+          d={d}
+          fill="none"
+          stroke="rgba(255,255,255,0.14)"
+          strokeWidth={3}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {/* เส้น racing line สีทีม — วาดเข้าตอนโหลด */}
+        <path
+          className="track-draw"
+          d={d}
+          fill="none"
+          stroke="var(--color-f1)"
+          strokeWidth={3}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          pathLength={1}
+        />
+        {/* จุดแสงวิ่งวนตามเส้น */}
+        <circle
+          className="racing-dot"
+          r={2.4}
+          fill="#fff"
+          vectorEffect="non-scaling-stroke"
+          style={{ offsetPath: `path('${d}')` }}
+        />
+      </svg>
+      <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-3 py-2 text-xs font-medium text-white/85">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-(--color-f1)" />
+        {name}
+      </figcaption>
+    </figure>
+  );
+}

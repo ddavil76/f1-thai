@@ -93,7 +93,11 @@ export default async function RacePage({ params }: Params) {
         </p>
       </div>
 
-      <CircuitMap src={circuitImg} name={race.Circuit.circuitName} />
+      <CircuitMap
+        src={circuitImg}
+        name={race.Circuit.circuitName}
+        circuitId={race.Circuit.circuitId}
+      />
 
       {!past && raceStart && (
         <section className="card p-5">

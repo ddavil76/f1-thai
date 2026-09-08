@@ -1,14 +1,23 @@
 import Image from "next/image";
 import { Flag } from "lucide-react";
+import { circuitTrack } from "@/lib/circuits";
+import RacingLine from "./RacingLine";
 
-/** ผังสนามข้างตัวนับถอยหลัง — มี placeholder เมื่อไม่มีรูป */
+/** ผังสนามข้างตัวนับถอยหลัง — เวกเตอร์ + จุดแสงวิ่งถ้ามี, ไม่งั้น fallback เป็นรูป */
 export default function CircuitMap({
   src,
   name,
+  circuitId,
 }: {
   src: string | null;
   name: string;
+  circuitId?: string;
 }) {
+  // มี path เวกเตอร์ของสนามนี้ → ใช้ racing line แทนรูป
+  if (circuitId && circuitTrack(circuitId)) {
+    return <RacingLine circuitId={circuitId} name={name} />;
+  }
+
   // รูปที่มาจาก SVG (ผังแทร็ก) → ทำเป็นเส้นขาวบนพื้นมืดให้กลืนกับการ์ด
   const isTrackMap = src ? /\.svg(\.|$)/i.test(src) : false;
 

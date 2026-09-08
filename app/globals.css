@@ -282,6 +282,42 @@
   animation: fade-up 0.24s ease;
 }
 
+/* ---- ผังสนาม: เส้น racing line วาดเข้า + จุดแสงวิ่งวน ---- */
+@keyframes track-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.track-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: track-draw 2s ease-out 0.15s forwards;
+}
+
+@keyframes racing-lap {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+.racing-dot {
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  filter: drop-shadow(0 0 2px var(--color-f1))
+    drop-shadow(0 0 5px var(--color-f1));
+  animation: racing-lap 9s linear 1.6s infinite;
+}
+@supports not (offset-distance: 0%) {
+  .racing-dot {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   body::before {
     animation: none;
@@ -293,7 +329,12 @@
   .champ-reveal,
   .stagger > *,
   .podium-rise,
-  .grow-x {
+  .grow-x,
+  .track-draw,
+  .racing-dot {
     animation: none;
+  }
+  .track-draw {
+    stroke-dashoffset: 0;
   }
 }
