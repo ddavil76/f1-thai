@@ -41,67 +41,46 @@
     overflow-x: clip;
   }
 
-  /* ---- Ambient background — ก้อนแสง 2 ก้อนลอยวนช้า ๆ ---- */
-  body::before,
-  body::after {
+  /* ---- Ambient background — ไล่เฉดสีเต็มจอ เลื่อนช้า ๆ ---- */
+  body::before {
     content: "";
     position: fixed;
+    inset: 0;
     z-index: -1;
     pointer-events: none;
-    border-radius: 50%;
-    will-change: transform;
+    background-color: var(--color-bg);
+    background-image:
+      radial-gradient(
+        60% 60% at 12% 12%,
+        color-mix(in srgb, var(--color-f1) 45%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(55% 55% at 88% 22%, rgba(92, 104, 200, 0.3), transparent 62%),
+      radial-gradient(
+        70% 70% at 65% 95%,
+        color-mix(in srgb, var(--color-f1-dark) 60%, transparent),
+        transparent 64%
+      ),
+      radial-gradient(50% 50% at 28% 78%, rgba(74, 62, 140, 0.24), transparent 62%);
+    background-size: 200% 200%;
+    background-repeat: no-repeat;
+    animation: bg-shift 44s ease-in-out infinite;
+    will-change: background-position;
   }
 
-  /* ก้อนสีทีม */
-  body::before {
-    width: 58vw;
-    height: 58vw;
-    left: -6%;
-    top: -18%;
-    background: radial-gradient(
-      circle at center,
-      color-mix(in srgb, var(--color-f1) 78%, transparent),
-      transparent 58%
-    );
-    opacity: 0.7;
-    animation: ambient-a 22s ease-in-out infinite;
-  }
-
-  /* ก้อนโทนเย็น */
-  body::after {
-    width: 50vw;
-    height: 50vw;
-    right: -8%;
-    bottom: -14%;
-    background: radial-gradient(
-      circle at center,
-      rgba(120, 128, 224, 0.65),
-      transparent 60%
-    );
-    opacity: 0.55;
-    animation: ambient-b 30s ease-in-out infinite;
-  }
-
-  @keyframes ambient-a {
+  @keyframes bg-shift {
     0%,
     100% {
-      transform: translate3d(0, 0, 0) scale(1);
+      background-position: 0% 50%;
     }
-    33% {
-      transform: translate3d(30%, 22%, 0) scale(1.25);
-    }
-    66% {
-      transform: translate3d(12%, 48%, 0) scale(0.95);
-    }
-  }
-
-  @keyframes ambient-b {
-    0%,
-    100% {
-      transform: translate3d(0, 0, 0) scale(1);
+    25% {
+      background-position: 65% 0%;
     }
     50% {
-      transform: translate3d(-32%, -30%, 0) scale(1.2);
+      background-position: 100% 55%;
+    }
+    75% {
+      background-position: 35% 100%;
     }
   }
 
@@ -269,8 +248,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body::before,
-  body::after {
+  body::before {
     animation: none;
   }
   .animate-tick,
