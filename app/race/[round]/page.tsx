@@ -8,7 +8,7 @@ import QualifyingTable from "@/components/QualifyingTable";
 import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
-  getSchedule, getRaceResults, getQualifying, getSprintResults,
+  getSchedule, getRaceResults, getQualifying, getSprintResults, findNextRace,
   getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate,
 } from "@/lib/f1";
 
@@ -18,9 +18,16 @@ const SEASON = new Date().getFullYear();
 
 type Params = { params: Promise<{ round: string }> };
 
+export const dynamicParams = true;
+
+/** prerender เฉพาะสนามรอบ ๆ ปัจจุบัน — ที่เหลือ render ตอนเข้าครั้งแรก
+ *  (กันไม่ให้ build ยิง Jolpica ทีเดียวเป็นร้อย request) */
 export async function generateStaticParams() {
   const races = await getSchedule(SEASON).catch(() => []);
-  return races.map((r) => ({ round: r.round }));
+  const nextRound = Number(findNextRace(races)?.round ?? races.length);
+  return races
+    .filter((r) => Math.abs(Number(r.round) - nextRound) <= 2)
+    .map((r) => ({ round: r.round }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {

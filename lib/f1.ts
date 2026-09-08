@@ -72,15 +72,36 @@ const BASE = "https://api.jolpi.ca/ergast/f1";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** เรียก Jolpica พร้อม retry — API ตัวนี้ rate-limit / ล่มบ่อย */
+/**
+ * จำกัดจำนวน request พร้อมกันไป Jolpica — ตอน build มี ~60 หน้า render
+ * พร้อมกัน ถ้าปล่อยยิงหมดจะโดน rate-limit ยับ
+ */
+let active = 0;
+const queue: (() => void)[] = [];
+const MAX_CONCURRENT = 4;
+
+async function gate<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= MAX_CONCURRENT) {
+    await new Promise<void>((resolve) => queue.push(resolve));
+  }
+  active++;
+  try {
+    return await fn();
+  } finally {
+    active--;
+    queue.shift()?.();
+  }
+}
+
+/** เรียก Jolpica พร้อม retry + จำกัด concurrency — API ตัวนี้ rate-limit บ่อย */
 async function jolpica<T>(path: string, revalidate = 3600): Promise<T> {
   const url = `${BASE}/${path}?format=json`;
   let lastErr: unknown;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await sleep(400 * attempt);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await sleep(500 * 2 ** (attempt - 1)); // 0.5s, 1s, 2s
     try {
-      const res = await fetch(url, { next: { revalidate } });
+      const res = await gate(() => fetch(url, { next: { revalidate } }));
       if (res.ok) return (await res.json()) as T;
       // 429/5xx = ลองใหม่, 4xx อื่น ๆ = เลิก
       if (res.status !== 429 && res.status < 500) {
@@ -113,7 +134,7 @@ export async function getSchedule(season: string | number): Promise<Race[]> {
 
 export async function getDriverStandings(season: string | number): Promise<DriverStanding[]> {
   try {
-    const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 300);
+    const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 120);
     return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
   } catch {
     return [];
@@ -122,7 +143,7 @@ export async function getDriverStandings(season: string | number): Promise<Drive
 
 export async function getConstructorStandings(season: string | number): Promise<ConstructorStanding[]> {
   try {
-    const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 300);
+    const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 120);
     return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
   } catch {
     return [];
@@ -136,7 +157,7 @@ export async function getLastResults(
   season: string | number,
 ): Promise<RaceWithResults | null> {
   try {
-    const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 300);
+    const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 120);
     return d.MRData.RaceTable?.Races?.[0] ?? null;
   } catch {
     return null;
@@ -161,7 +182,7 @@ export async function getSeasonWinners(
   season: string | number,
 ): Promise<RaceWithResults[]> {
   try {
-    const d = await jolpica<ResultsResponse>(`${season}/results/1/`, 300);
+    const d = await jolpica<ResultsResponse>(`${season}/results/1/`, 120);
     return (d.MRData.RaceTable?.Races ?? []).slice().reverse();
   } catch {
     return [];

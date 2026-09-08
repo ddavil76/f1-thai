@@ -11,9 +11,11 @@ const SEASON = new Date().getFullYear();
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function generateStaticParams() {
-  const drivers = await getDriverStandings(SEASON).catch(() => []);
-  return drivers.map((s) => ({ id: s.Driver.driverId }));
+export const dynamicParams = true;
+
+// render ตอนเข้าครั้งแรก (ไม่ prerender ทั้งหมดตอน build → กัน Jolpica rate-limit)
+export function generateStaticParams() {
+  return [];
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
