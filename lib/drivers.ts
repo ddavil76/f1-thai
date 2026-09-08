@@ -6,6 +6,22 @@ const DAY = 60 * 60 * 24;
 
 type Openf1Driver = { name_acronym?: string; headshot_url?: string | null };
 
+// รูป silhouette ที่ F1 เสิร์ฟแทนเมื่อยังไม่มี headshot จริง (~2–3KB ที่ 3col)
+const FALLBACK_MIN_BYTES = 6000;
+
+/** headshot ทางการมีอยู่จริงไหม (ไม่ใช่รูป silhouette) — เช็คจากขนาดไฟล์ */
+async function isRealHeadshot(u: string): Promise<boolean> {
+  try {
+    const res = await fetch(u, { next: { revalidate: DAY * 7 } });
+    if (!res.ok) return false;
+    const len = Number(res.headers.get("content-length") ?? 0);
+    if (len) return len >= FALLBACK_MIN_BYTES;
+    return (await res.arrayBuffer()).byteLength >= FALLBACK_MIN_BYTES;
+  } catch {
+    return false;
+  }
+}
+
 /** map: รหัสนักแข่ง (VER, LEC, …) → URL headshot */
 async function officialHeadshots(): Promise<Map<string, string>> {
   const m = new Map<string, string>();
@@ -21,6 +37,12 @@ async function officialHeadshots(): Promise<Map<string, string>> {
       // ขอรูปใหญ่ขึ้นจาก transform เริ่มต้น (1col ≈ 120px)
       m.set(r.name_acronym, r.headshot_url.replace(/\.transform\/\w+\//, ".transform/3col/"));
     }
+    // ตัดคนที่ยังเป็นรูป silhouette ออก → ให้ตกไป Wikipedia แทน
+    const codes = [...m.keys()];
+    const real = await Promise.all(codes.map((c) => isRealHeadshot(m.get(c)!)));
+    codes.forEach((c, i) => {
+      if (!real[i]) m.delete(c);
+    });
   } catch {
     /* ปล่อยว่าง → ไป fallback */
   }
