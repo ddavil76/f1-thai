@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarPlus, ChevronRight, Flag, PartyPopper, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
@@ -14,34 +13,6 @@ import {
 export const revalidate = 600;
 
 const SEASON = new Date().getFullYear();
-
-/** "อีก 5 วัน" / "อีก 8 ชม." / "กำลังแข่ง" */
-function untilLabel(ms: number) {
-  if (ms <= 0) return "กำลังแข่ง";
-  const hours = ms / 3_600_000;
-  if (hours < 24) return `อีก ${Math.max(1, Math.round(hours))} ชม.`;
-  return `อีก ${Math.floor(hours / 24)} วัน`;
-}
-
-export async function generateMetadata(): Promise<Metadata> {
-  try {
-    const next = findNextRace(await getSchedule(SEASON));
-    const start = next ? toDate({ date: next.date, time: next.time }) : null;
-    if (!next || !start) return {};
-
-    const lead = untilLabel(start.getTime() - Date.now());
-    const title = `${lead} — ${next.raceName}`;
-    const description = `${next.raceName} ที่ ${next.Circuit.circuitName} · ${lead} (เวลาไทย GMT+7)`;
-    return {
-      title: { absolute: `${title} · F1 Week Race` },
-      description,
-      openGraph: { title, description },
-      twitter: { title, description },
-    };
-  } catch {
-    return {};
-  }
-}
 
 export default async function Home() {
   const [races, lastRace] = await Promise.all([
