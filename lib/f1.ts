@@ -154,6 +154,45 @@ export async function getSeasonWinners(
   }
 }
 
+export type QualifyingResult = {
+  position: string;
+  Driver: RaceResult["Driver"];
+  Constructor: RaceResult["Constructor"];
+  Q1?: string;
+  Q2?: string;
+  Q3?: string;
+};
+
+/** ผลควอลิฟายของ round */
+export async function getQualifying(
+  season: string | number,
+  round: string | number,
+): Promise<QualifyingResult[]> {
+  try {
+    const d = await jolpica<{
+      MRData: { RaceTable?: { Races?: { QualifyingResults?: QualifyingResult[] }[] } };
+    }>(`${season}/${round}/qualifying/`, 600);
+    return d.MRData.RaceTable?.Races?.[0]?.QualifyingResults ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** ผลสปรินต์ของ round (โครงสร้างเดียวกับผลเรซ) */
+export async function getSprintResults(
+  season: string | number,
+  round: string | number,
+): Promise<RaceResult[]> {
+  try {
+    const d = await jolpica<{
+      MRData: { RaceTable?: { Races?: { SprintResults?: RaceResult[] }[] } };
+    }>(`${season}/${round}/sprint/`, 600);
+    return d.MRData.RaceTable?.Races?.[0]?.SprintResults ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /* ---------- รูปสนามแข่ง (จาก Wikipedia) ---------- */
 
 const WIKI_TTL = { next: { revalidate: 60 * 60 * 24 * 7 } }; // cache 7 วัน
@@ -277,6 +316,26 @@ export function getSessions(race: Race) {
 }
 
 const RACE_TAIL_MS = 2 * 60 * 60 * 1000;
+
+/** ระยะเวลาโดยประมาณของแต่ละ session (ms) — ใช้เช็คว่าจบหรือยัง */
+const SESSION_DUR_MS: Record<string, number> = {
+  "🏁 Race": RACE_TAIL_MS,
+  Sprint: 60 * 60 * 1000,
+  "Sprint Quali": 45 * 60 * 1000,
+  Qualifying: 60 * 60 * 1000,
+};
+const DEFAULT_SESSION_DUR_MS = 90 * 60 * 1000;
+
+/** session ถัดไปของสุดสัปดาห์ที่ยังไม่จบ (null = จบหมดแล้ว) */
+export function getNextSession(race: Race, now = new Date()) {
+  return (
+    getSessions(race).find(
+      (s) =>
+        s.at.getTime() + (SESSION_DUR_MS[s.label] ?? DEFAULT_SESSION_DUR_MS) >
+        now.getTime(),
+    ) ?? null
+  );
+}
 
 /** หา race ถัดไป (นับ race ที่ยังไม่จบ ~2 ชม.หลังสตาร์ท) */
 export function findNextRace(races: Race[], now = new Date()) {

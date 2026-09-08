@@ -3,7 +3,13 @@ import { useEffect, useState } from "react";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export default function Countdown({ target }: { target: string }) {
+export default function Countdown({
+  target,
+  liveText = "🔴 กำลังแข่งอยู่!",
+}: {
+  target: string;
+  liveText?: string;
+}) {
   const [left, setLeft] = useState<number | null>(null);
 
   useEffect(() => {
@@ -20,7 +26,7 @@ export default function Countdown({ target }: { target: string }) {
   }
 
   if (left <= 0) {
-    return <div className="text-xl font-bold text-green-400">🔴 กำลังแข่งอยู่!</div>;
+    return <div className="text-xl font-bold text-green-400">{liveText}</div>;
   }
 
   const s = Math.floor(left / 1000);

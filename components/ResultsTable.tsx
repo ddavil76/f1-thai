@@ -7,14 +7,18 @@ function gapText(r: RaceResult, i: number) {
   return r.Time?.time ?? r.status;
 }
 
-export default function ResultsTable({ results }: { results: RaceResult[] }) {
+export default function ResultsTable({
+  results,
+  title = "ผลการแข่ง",
+}: {
+  results: RaceResult[];
+  title?: string;
+}) {
   const fl = results.find((r) => r.FastestLap?.rank === "1");
 
   return (
     <section className="card overflow-hidden p-0">
-      <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">
-        ผลการแข่ง
-      </h2>
+      <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">{title}</h2>
       <ul className="divide-y divide-white/5">
         {results.map((r, i) => (
           <li

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Countdown from "@/components/Countdown";
+import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
 import LocalTime from "@/components/tz/LocalTime";
@@ -86,7 +86,7 @@ export default async function Home() {
               <CircuitMap src={circuitImg} name={next.Circuit.circuitName} />
 
               <div className="mt-5">
-                <Countdown target={raceStart.toISOString()} />
+                <SessionCountdown race={next} />
               </div>
 
               <p className="mt-4 text-sm text-white/80">

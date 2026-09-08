@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import Countdown from "@/components/Countdown";
+import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import ResultsTable from "@/components/ResultsTable";
+import QualifyingTable from "@/components/QualifyingTable";
 import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
-  getSchedule, getRaceResults, getCircuitImage, getSessions, isSprintWeekend,
-  isPastRace, toDate,
+  getSchedule, getRaceResults, getQualifying, getSprintResults,
+  getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate,
 } from "@/lib/f1";
 
 export const revalidate = 600;
@@ -42,8 +43,10 @@ export default async function RacePage({ params }: Params) {
 
   const past = isPastRace(race);
   const raceStart = toDate({ date: race.date, time: race.time });
-  const [results, circuitImg] = await Promise.all([
+  const [results, quali, sprint, circuitImg] = await Promise.all([
     past ? getRaceResults(SEASON, round) : Promise.resolve(null),
+    past ? getQualifying(SEASON, round) : Promise.resolve([]),
+    past && isSprintWeekend(race) ? getSprintResults(SEASON, round) : Promise.resolve([]),
     getCircuitImage(race.Circuit),
   ]);
   const sessions = getSessions(race);
@@ -80,7 +83,7 @@ export default async function RacePage({ params }: Params) {
 
       {!past && raceStart && (
         <section className="card p-5">
-          <Countdown target={raceStart.toISOString()} />
+          <SessionCountdown race={race} />
           <p className="mt-4 text-sm text-white/80">
             🏁 ออกสตาร์ท{" "}
             <LocalTime
@@ -137,11 +140,17 @@ export default async function RacePage({ params }: Params) {
       {past && results && results.Results.length > 0 && (
         <ResultsTable results={results.Results} />
       )}
-      {past && (!results || results.Results.length === 0) && (
-        <p className="card p-6 text-center text-sm text-white/50">
-          ยังไม่มีผลการแข่งสำหรับสนามนี้
-        </p>
+      {past && sprint.length > 0 && (
+        <ResultsTable results={sprint} title="ผลสปรินต์" />
       )}
+      {past && quali.length > 0 && <QualifyingTable results={quali} />}
+      {past &&
+        (!results || results.Results.length === 0) &&
+        quali.length === 0 && (
+          <p className="card p-6 text-center text-sm text-white/50">
+            ยังไม่มีผลการแข่งสำหรับสนามนี้
+          </p>
+        )}
 
       <footer className="pb-8 text-center text-xs text-white/30">
         ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
