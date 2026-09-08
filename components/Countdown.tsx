@@ -50,7 +50,7 @@ export default function Countdown({
 
   // ครั้งแรกยังไม่ render เลข → กัน hydration mismatch
   if (left === null) {
-    return <div className="h-[52px] animate-pulse rounded-lg bg-white/10" />;
+    return <div className="h-[74px] animate-pulse rounded-xl bg-white/10" />;
   }
 
   if (left <= 0) {
@@ -68,29 +68,41 @@ export default function Countdown({
   }
 
   const s = Math.floor(left / 1000);
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor(s / 3600) % 24;
+  const mins = Math.floor(s / 60) % 60;
+
   const box = (v: string, l: string) => (
     <div
       key={l}
-      className="flex flex-1 flex-col items-center rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 backdrop-blur-sm"
+      className="relative flex flex-1 flex-col items-center overflow-hidden rounded-xl border border-white/10 bg-black/40 pb-1.5 pt-2 backdrop-blur-sm"
     >
-      <span className="block overflow-hidden">
+      <span className="relative block [perspective:280px] [transform-style:preserve-3d]">
         <span
           key={v}
-          className="animate-tick display block text-xl font-bold tabular-nums sm:text-2xl"
+          className="animate-flap display block text-3xl font-bold leading-none tabular-nums sm:text-4xl"
         >
           {v}
         </span>
+        <span className="pointer-events-none absolute inset-x-[-40%] top-1/2 h-px -translate-y-px bg-black/60" />
       </span>
-      <span className="text-[9px] uppercase tracking-wide text-white/50">{l}</span>
+      <span className="mt-1 text-[9px] uppercase tracking-[0.15em] text-white/45">
+        {l}
+      </span>
     </div>
   );
 
   return (
-    <div className="flex gap-1.5">
-      {box(String(Math.floor(s / 86400)), "วัน")}
-      {box(pad(Math.floor(s / 3600) % 24), "ชม.")}
-      {box(pad(Math.floor(s / 60) % 60), "นาที")}
-      {box(pad(s % 60), "วินาที")}
+    <div>
+      <span className="sr-only">
+        เหลืออีก {days} วัน {hours} ชั่วโมง {mins} นาที
+      </span>
+      <div aria-hidden className="flex gap-1.5">
+        {box(String(days), "วัน")}
+        {box(pad(hours), "ชม.")}
+        {box(pad(mins), "นาที")}
+        {box(pad(s % 60), "วินาที")}
+      </div>
     </div>
   );
 }
