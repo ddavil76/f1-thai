@@ -241,35 +241,22 @@ export function toDate(s?: SessionTime | null): Date | null {
 
 const TZ = "Asia/Bangkok";
 
-/** "อา. 8 มี.ค. 2026 เวลา 12:00" — ใช้ ca-gregory เพื่อไม่ให้เป็น พ.ศ. */
-export function thaiFull(d: Date) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
-    timeZone: TZ,
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
+export type TimeKind = "full" | "time" | "date";
+
+const OPTS: Record<TimeKind, Intl.DateTimeFormatOptions> = {
+  full: { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" },
+  time: { hour: "2-digit", minute: "2-digit" },
+  date: { weekday: "short", day: "numeric", month: "short" },
+};
+
+/** format วันเวลาเป็นภาษาไทย (ca-gregory กัน พ.ศ.) ในโซนเวลาที่ระบุ */
+export function formatInTz(d: Date, kind: TimeKind, timeZone = TZ) {
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone, ...OPTS[kind] }).format(d);
 }
 
-export function thaiTimeOnly(d: Date) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
-    timeZone: TZ,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
-
-export function thaiDateOnly(d: Date) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
-    timeZone: TZ,
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(d);
-}
+export const thaiFull = (d: Date) => formatInTz(d, "full");
+export const thaiTimeOnly = (d: Date) => formatInTz(d, "time");
+export const thaiDateOnly = (d: Date) => formatInTz(d, "date");
 
 /** ดึงทุก session ของสุดสัปดาห์ เรียงตามเวลา */
 export function getSessions(race: Race) {

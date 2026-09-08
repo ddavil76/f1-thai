@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import Countdown from "@/components/Countdown";
 import CircuitMap from "@/components/CircuitMap";
 import ResultsTable from "@/components/ResultsTable";
+import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getRaceResults, getCircuitImage, getSessions, isSprintWeekend,
-  isPastRace, thaiFull, thaiDateOnly, thaiTimeOnly, toDate,
+  isPastRace, toDate,
 } from "@/lib/f1";
 
 export const revalidate = 600;
@@ -81,7 +82,13 @@ export default async function RacePage({ params }: Params) {
         <section className="card p-5">
           <Countdown target={raceStart.toISOString()} />
           <p className="mt-4 text-sm text-white/80">
-            🏁 ออกสตาร์ท {thaiFull(raceStart)} น.
+            🏁 ออกสตาร์ท{" "}
+            <LocalTime
+              iso={raceStart.toISOString()}
+              kind="full"
+              circuitId={race.Circuit.circuitId}
+            />{" "}
+            น.
           </p>
           <a
             href={googleCalendarUrl({
@@ -106,9 +113,19 @@ export default async function RacePage({ params }: Params) {
               <li key={s.label} className="flex items-center justify-between py-2">
                 <span className="font-medium">{s.label}</span>
                 <span className="text-right text-sm">
-                  <span className="text-white/50">{thaiDateOnly(s.at)}</span>{" "}
+                  <span className="text-white/50">
+                    <LocalTime
+                      iso={s.at.toISOString()}
+                      kind="date"
+                      circuitId={race.Circuit.circuitId}
+                    />
+                  </span>{" "}
                   <span className="font-semibold tabular-nums">
-                    {thaiTimeOnly(s.at)}
+                    <LocalTime
+                      iso={s.at.toISOString()}
+                      kind="time"
+                      circuitId={race.Circuit.circuitId}
+                    />
                   </span>
                 </span>
               </li>

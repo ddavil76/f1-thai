@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Noto_Sans_Thai } from "next/font/google";
 import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
+import TzToggle from "@/components/tz/TzToggle";
 
 const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
@@ -49,7 +50,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
             </Link>
             <HeaderNav />
-            <span className="ml-auto text-xs font-medium text-white/40">GMT+7</span>
+            <div className="ml-auto">
+              <TzToggle />
+            </div>
           </div>
         </header>
 

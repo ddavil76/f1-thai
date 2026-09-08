@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getSeasonWinners, thaiDateOnly, toDate } from "@/lib/f1";
+import LocalTime from "@/components/tz/LocalTime";
+import { getSeasonWinners, toDate } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 
 export const metadata = { title: "ผลการแข่ง" };
@@ -54,7 +55,13 @@ export default async function ResultsPage() {
                       )}
                     </div>
                     <span className="shrink-0 text-right text-xs tabular-nums text-white/50">
-                      {d ? thaiDateOnly(d) : ""}
+                      {d && (
+                        <LocalTime
+                          iso={d.toISOString()}
+                          kind="date"
+                          circuitId={r.Circuit.circuitId}
+                        />
+                      )}
                     </span>
                     <span className="shrink-0 text-white/25">›</span>
                   </Link>

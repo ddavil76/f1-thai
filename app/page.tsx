@@ -3,11 +3,11 @@ import Link from "next/link";
 import Countdown from "@/components/Countdown";
 import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
+import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getLastResults, findNextRace, getUpcomingRaces, getSessions,
-  getCircuitImage, isSprintWeekend,
-  thaiFull, thaiTimeOnly, thaiDateOnly, toDate,
+  getCircuitImage, isSprintWeekend, toDate,
 } from "@/lib/f1";
 
 export const revalidate = 600;
@@ -59,9 +59,7 @@ export default async function Home() {
       <h1 className="sr-only">
         F1 Week Race — สนามแข่ง F1 สนามถัดไป นับถอยหลัง ตารางคะแนน และปฏิทิน เวลาไทย
       </h1>
-      <p className="mb-5 text-sm text-white/40">
-        ฤดูกาล {SEASON} · เวลาทั้งหมดเป็น GMT+7
-      </p>
+      <p className="mb-5 text-sm text-white/40">ฤดูกาล {SEASON}</p>
 
       <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-start">
         {/* ---- คอลัมน์ซ้าย: การ์ดสนามถัดไป ---- */}
@@ -92,7 +90,13 @@ export default async function Home() {
               </div>
 
               <p className="mt-4 text-sm text-white/80">
-                🏁 ออกสตาร์ท {thaiFull(raceStart)} น.
+                🏁 ออกสตาร์ท{" "}
+                <LocalTime
+                  iso={raceStart.toISOString()}
+                  kind="full"
+                  circuitId={next.Circuit.circuitId}
+                />{" "}
+                น.
               </p>
 
               <a
@@ -115,7 +119,7 @@ export default async function Home() {
 
         {/* ---- คอลัมน์ขวา: ตารางสุดสัปดาห์ / ผลล่าสุด / ถัดไป ---- */}
         <div className="space-y-6">
-          {sessions.length > 0 && (
+          {next && sessions.length > 0 && (
             <section className="card p-5">
               <h2 className="mb-3 text-lg font-bold">ตารางสุดสัปดาห์นี้</h2>
               <ul className="divide-y divide-white/5">
@@ -126,9 +130,19 @@ export default async function Home() {
                   >
                     <span className="font-medium">{s.label}</span>
                     <span className="text-right text-sm">
-                      <span className="text-white/50">{thaiDateOnly(s.at)}</span>{" "}
+                      <span className="text-white/50">
+                        <LocalTime
+                          iso={s.at.toISOString()}
+                          kind="date"
+                          circuitId={next.Circuit.circuitId}
+                        />
+                      </span>{" "}
                       <span className="font-semibold tabular-nums">
-                        {thaiTimeOnly(s.at)}
+                        <LocalTime
+                          iso={s.at.toISOString()}
+                          kind="time"
+                          circuitId={next.Circuit.circuitId}
+                        />
                       </span>
                     </span>
                   </li>
@@ -168,7 +182,11 @@ export default async function Home() {
                           </p>
                         </div>
                         <span className="shrink-0 text-right text-xs tabular-nums text-white/70">
-                          {thaiDateOnly(d)}
+                          <LocalTime
+                            iso={d.toISOString()}
+                            kind="date"
+                            circuitId={r.Circuit.circuitId}
+                          />
                         </span>
                         <span className="shrink-0 text-white/25">›</span>
                       </Link>

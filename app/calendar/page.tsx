@@ -1,7 +1,6 @@
 import Link from "next/link";
-import {
-  getSchedule, findNextRace, isPastRace, thaiDateOnly, thaiTimeOnly, toDate,
-} from "@/lib/f1";
+import LocalTime from "@/components/tz/LocalTime";
+import { getSchedule, findNextRace, isPastRace, toDate } from "@/lib/f1";
 
 export const metadata = { title: "ปฏิทินทั้งฤดูกาล" };
 
@@ -20,7 +19,7 @@ export default async function CalendarPage() {
           <h1 className="text-3xl font-black tracking-tight md:text-4xl">
             ปฏิทิน <span className="text-[--color-f1]">F1</span> ทั้งฤดูกาล
           </h1>
-          <p className="text-sm text-white/50">ฤดูกาล {SEASON} · เวลาทั้งหมดเป็น GMT+7</p>
+          <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
         </div>
         <a
           href="/calendar.ics"
@@ -58,9 +57,18 @@ export default async function CalendarPage() {
                     </p>
                   </div>
                   <span className="text-right text-xs tabular-nums text-white/70">
-                    {thaiDateOnly(d)}
+                    <LocalTime
+                      iso={d.toISOString()}
+                      kind="date"
+                      circuitId={r.Circuit.circuitId}
+                    />
                     <br />
-                    {thaiTimeOnly(d)} น.
+                    <LocalTime
+                      iso={d.toISOString()}
+                      kind="time"
+                      circuitId={r.Circuit.circuitId}
+                    />{" "}
+                    น.
                   </span>
                   <span className="shrink-0 text-white/25">›</span>
                 </Link>
