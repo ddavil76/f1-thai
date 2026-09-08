@@ -20,10 +20,28 @@ function TabBtn({
   );
 }
 
+/** แต้ม + ระยะห่างจากผู้นำ */
+function PointsCell({ points, leader }: { points: string; leader: number }) {
+  const gap = leader - Number(points);
+  return (
+    <div className="w-16 shrink-0 text-right">
+      <p className="font-bold leading-none tabular-nums">{points}</p>
+      {gap > 0 ? (
+        <p className="mt-0.5 text-[11px] tabular-nums text-white/35">−{gap}</p>
+      ) : (
+        <p className="mt-0.5 text-[11px] font-semibold text-[--color-f1]">นำ</p>
+      )}
+    </div>
+  );
+}
+
 export default function Standings({
   drivers, constructors,
 }: { drivers: DriverStanding[]; constructors: ConstructorStanding[] }) {
   const [tab, setTab] = useState<"d" | "c">("d");
+
+  const driverLeader = Number(drivers[0]?.points ?? 0);
+  const constructorLeader = Number(constructors[0]?.points ?? 0);
 
   return (
     <section className="card p-5">
@@ -46,7 +64,8 @@ export default function Standings({
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">
-                      {s.Driver.givenName} <span className="uppercase">{s.Driver.familyName}</span>
+                      {s.Driver.givenName.charAt(0)}.{" "}
+                      <span className="uppercase">{s.Driver.familyName}</span>
                     </p>
                     <p className="truncate text-xs text-white/50">{c?.name}</p>
                     <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
@@ -57,9 +76,9 @@ export default function Standings({
                     </div>
                   </div>
                   {Number(s.wins) > 0 && (
-                    <span className="text-xs text-white/40">🏆 {s.wins}</span>
+                    <span className="shrink-0 text-xs text-white/40">🏆 {s.wins}</span>
                   )}
-                  <span className="w-14 text-right font-bold tabular-nums">{s.points}</span>
+                  <PointsCell points={s.points} leader={driverLeader} />
                 </li>
               );
             })
@@ -71,7 +90,7 @@ export default function Standings({
                   style={{ background: TEAM_COLOR[s.Constructor.constructorId] ?? "#666" }}
                 />
                 <span className="flex-1 truncate font-medium">{s.Constructor.name}</span>
-                <span className="w-14 text-right font-bold tabular-nums">{s.points}</span>
+                <PointsCell points={s.points} leader={constructorLeader} />
               </li>
             ))}
       </ul>
