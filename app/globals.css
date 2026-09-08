@@ -34,28 +34,32 @@
     background-color: var(--color-bg);
     color: #fff;
     min-height: 100dvh;
+  }
+
+  /* แสงเรืองสีทีม — แยกออกมาเป็นเลเยอร์เพื่อขยับด้วย transform ได้ลื่น */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -12%;
+    z-index: -1;
+    pointer-events: none;
     background-image:
       radial-gradient(
-        60rem 60rem at 100% -10%,
-        color-mix(in srgb, var(--color-f1) 22%, transparent),
+        60rem 60rem at 100% 0%,
+        color-mix(in srgb, var(--color-f1) 24%, transparent),
         transparent 60%
       ),
-      radial-gradient(50rem 50rem at -10% 10%, rgba(80, 80, 120, 0.12), transparent 55%);
-    background-attachment: fixed;
-    animation: glow-drift 26s ease-in-out infinite;
+      radial-gradient(50rem 50rem at 0% 15%, rgba(80, 80, 120, 0.14), transparent 55%);
+    animation: glow-drift 24s ease-in-out infinite;
   }
 
   @keyframes glow-drift {
     0%,
     100% {
-      background-position:
-        0 0,
-        0 0;
+      transform: translate3d(0, 0, 0) scale(1);
     }
     50% {
-      background-position:
-        -4% 3%,
-        4% -2%;
+      transform: translate3d(2.5%, -2%, 0) scale(1.06);
     }
   }
 
@@ -223,7 +227,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body {
+  body::before {
     animation: none;
   }
   .animate-tick,
