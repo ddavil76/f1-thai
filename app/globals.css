@@ -10,6 +10,11 @@
 }
 
 @layer base {
+  :root {
+    /* แสงเรืองสีทีม — ใช้ในพื้นหลัง body และเงาการ์ด hero */
+    --glow: color-mix(in srgb, var(--color-f1) 45%, transparent);
+  }
+
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
@@ -20,13 +25,17 @@
     color: #fff;
     min-height: 100dvh;
     background-image:
-      radial-gradient(60rem 60rem at 100% -10%, rgba(225, 6, 0, 0.18), transparent 60%),
+      radial-gradient(
+        60rem 60rem at 100% -10%,
+        color-mix(in srgb, var(--color-f1) 22%, transparent),
+        transparent 60%
+      ),
       radial-gradient(50rem 50rem at -10% 10%, rgba(80, 80, 120, 0.12), transparent 55%);
     background-attachment: fixed;
   }
 
   ::selection {
-    background: rgba(225, 6, 0, 0.35);
+    background: color-mix(in srgb, var(--color-f1) 40%, transparent);
   }
 }
 
