@@ -3,6 +3,10 @@ import { circuitTrack } from "@/lib/circuits";
 /**
  * ผังสนามแบบเวกเตอร์ + จุดแสง "วิ่ง" รอบเส้นแทร็ก (CSS offset-path ล้วน)
  * คืน null ถ้าไม่มี path ของสนามนั้น — ให้ผู้เรียก fallback ไปใช้รูปแทน
+ *
+ * หมายเหตุ: ห้ามใช้ vector-effect:non-scaling-stroke บนเส้นที่ทำ dash draw-in —
+ * มันทำให้ stroke-dasharray กลายเป็นหน่วย screen แต่ pathLength ยังเป็น user unit
+ * เส้นเลยวาดไม่ครบ (Chrome). ใช้ strokeWidth เป็น user unit แทน
  */
 export default function RacingLine({
   circuitId,
@@ -31,10 +35,9 @@ export default function RacingLine({
           d={d}
           fill="none"
           stroke="rgba(255,255,255,0.14)"
-          strokeWidth={3}
+          strokeWidth={0.7}
           strokeLinejoin="round"
           strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
         />
         {/* เส้น racing line สีทีม — วาดเข้าตอนโหลด */}
         <path
@@ -42,18 +45,16 @@ export default function RacingLine({
           d={d}
           fill="none"
           stroke="var(--color-f1)"
-          strokeWidth={3}
+          strokeWidth={0.7}
           strokeLinejoin="round"
           strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
           pathLength={1}
         />
         {/* จุดแสงวิ่งวนตามเส้น */}
         <circle
           className="racing-dot"
-          r={2.4}
+          r={1.8}
           fill="#fff"
-          vectorEffect="non-scaling-stroke"
           style={{ offsetPath: `path('${d}')` }}
         />
       </svg>
