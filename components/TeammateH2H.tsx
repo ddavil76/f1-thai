@@ -1,13 +1,7 @@
 import Link from "next/link";
 import type { DriverRaceResult } from "@/lib/f1";
 
-function Bar({
-  label, a, b,
-}: {
-  label: string;
-  a: number;
-  b: number;
-}) {
+function Bar({ label, a, b }: { label: string; a: number; b: number }) {
   const total = a + b || 1;
   const aPct = (a / total) * 100;
   return (
@@ -18,10 +12,7 @@ function Bar({
         <span className="font-semibold tabular-nums text-white/50">{b}</span>
       </div>
       <div className="flex h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="bg-(--color-f1)"
-          style={{ width: `${aPct}%` }}
-        />
+        <div className="grow-x bg-(--color-f1)" style={{ width: `${aPct}%` }} />
         <div className="flex-1 bg-white/25" />
       </div>
     </div>

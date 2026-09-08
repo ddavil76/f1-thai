@@ -3,9 +3,9 @@ import type { RaceResult } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 
 const SLOTS = [
-  { pos: 1, h: "h-20", order: "order-2" },
-  { pos: 2, h: "h-14", order: "order-1" },
-  { pos: 3, h: "h-11", order: "order-3" },
+  { pos: 1, h: "h-20", order: "order-2", delay: 90 },
+  { pos: 2, h: "h-14", order: "order-1", delay: 0 },
+  { pos: 3, h: "h-11", order: "order-3", delay: 180 },
 ] as const;
 
 export default function PodiumGraphic({ top3 }: { top3: RaceResult[] }) {
@@ -13,7 +13,7 @@ export default function PodiumGraphic({ top3 }: { top3: RaceResult[] }) {
 
   return (
     <div className="flex items-end justify-center gap-2 pt-1">
-      {SLOTS.map(({ pos, h, order }) => {
+      {SLOTS.map(({ pos, h, order, delay }) => {
         const r = top3[pos - 1];
         const c = teamColor(r.Constructor.constructorId);
         return (
@@ -27,10 +27,11 @@ export default function PodiumGraphic({ top3 }: { top3: RaceResult[] }) {
             </p>
             <p className="mb-1 text-[10px] text-white/40">{r.points} pts</p>
             <div
-              className={`${h} w-full rounded-t-md border-t-2`}
+              className={`podium-rise ${h} w-full rounded-t-md border-t-2`}
               style={{
                 borderColor: c,
                 background: `color-mix(in srgb, ${c} 16%, transparent)`,
+                animationDelay: `${delay}ms`,
               }}
             >
               <p

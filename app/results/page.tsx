@@ -28,12 +28,12 @@ export default async function ResultsPage() {
         <p className="card p-6 text-white/60">ฤดูกาลนี้ยังไม่มีผลการแข่ง</p>
       ) : (
         <section className="card overflow-hidden p-0">
-          <ul className="divide-y divide-white/5">
-            {races.map((r) => {
+          <ul className="stagger divide-y divide-white/5">
+            {races.map((r, i) => {
               const win = r.Results[0];
               const d = toDate({ date: r.date, time: r.time });
               return (
-                <li key={r.round}>
+                <li key={r.round} style={{ "--i": i } as React.CSSProperties}>
                   <Link
                     href={`/race/${r.round}`}
                     className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.04] sm:px-5"

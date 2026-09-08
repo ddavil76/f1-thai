@@ -32,13 +32,13 @@ export default async function CalendarPage() {
       </header>
 
       <section className="card p-2 sm:p-4">
-        <ul className="divide-y divide-white/5">
-          {races.map((r) => {
+        <ul className="stagger divide-y divide-white/5">
+          {races.map((r, i) => {
             const d = toDate({ date: r.date, time: r.time })!;
             const past = isPastRace(r);
             const isNext = r.round === nextRound;
             return (
-              <li key={r.round}>
+              <li key={r.round} style={{ "--i": i } as React.CSSProperties}>
                 <Link
                   href={`/race/${r.round}`}
                   className={`flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/[0.05] ${

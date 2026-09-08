@@ -4,21 +4,39 @@ import Link from "next/link";
 import { Trophy } from "lucide-react";
 import type { DriverStanding, ConstructorStanding } from "@/lib/f1";
 import { TEAM_COLOR } from "@/lib/teams";
+import { useSlidingPill } from "./useSlidingPill";
 
-function TabBtn({
-  label, active, onClick,
-}: { label: string; active: boolean; onClick: () => void }) {
+function Tabs({
+  tab, setTab,
+}: {
+  tab: "d" | "c";
+  setTab: (t: "d" | "c") => void;
+}) {
+  const { ref, style } = useSlidingPill<HTMLDivElement>(tab);
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-        active
-          ? "bg-(--color-f1) text-white shadow-lg shadow-(--color-f1)/30"
-          : "bg-white/10 text-white/70 hover:bg-white/20"
-      }`}
+    <div
+      ref={ref}
+      className="relative flex gap-0.5 rounded-full bg-white/5 p-0.5"
     >
-      {label}
-    </button>
+      {style && (
+        <span
+          className="absolute inset-y-0.5 rounded-full bg-(--color-f1) transition-all duration-300 ease-[cubic-bezier(.3,.9,.3,1)]"
+          style={{ left: style.left, width: style.width }}
+        />
+      )}
+      {(["d", "c"] as const).map((id) => (
+        <button
+          key={id}
+          data-pill={id}
+          onClick={() => setTab(id)}
+          className={`relative z-10 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+            tab === id ? "text-white" : "text-white/60 hover:text-white"
+          }`}
+        >
+          {id === "d" ? "นักแข่ง" : "ทีม"}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -57,11 +75,10 @@ export default function Standings({
     <section className="card p-5">
       <div className="mb-4 flex items-center gap-2">
         <h2 className="mr-auto text-lg font-bold">ตารางคะแนน</h2>
-        <TabBtn label="นักแข่ง" active={tab === "d"} onClick={() => setTab("d")} />
-        <TabBtn label="ทีม" active={tab === "c"} onClick={() => setTab("c")} />
+        <Tabs tab={tab} setTab={setTab} />
       </div>
 
-      <ul className="divide-y divide-white/5">
+      <ul key={tab} className="animate-crossfade divide-y divide-white/5">
         {tab === "d"
           ? drivers.map((s) => {
               const c = s.Constructors.at(-1);
@@ -84,8 +101,10 @@ export default function Standings({
                       <p className="truncate text-xs text-white/50">{c?.name}</p>
                       <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-(--color-f1) transition-all duration-1000"
-                          style={{ width: `${Math.min((Number(s.points) / 500) * 100, 100)}%` }}
+                          className="grow-x h-full bg-(--color-f1)"
+                          style={{
+                            width: `${Math.min((Number(s.points) / (driverLeader || 1)) * 100, 100)}%`,
+                          }}
                         />
                       </div>
                     </div>

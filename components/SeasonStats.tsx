@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CountUp from "@/components/CountUp";
 import type { SeasonLeader } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 
@@ -24,7 +25,7 @@ function Tile({
     >
       <p className="display text-lg font-bold leading-tight">
         <span style={{ color: teamColor(leader.constructorId) }}>
-          {leader.count}
+          <CountUp value={leader.count} />
         </span>{" "}
         <span className="text-sm font-medium text-white/40">{unit}</span>
       </p>

@@ -6,6 +6,7 @@ import { getDriverStandings, getDriverSeasonResults } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import TeammateH2H from "@/components/TeammateH2H";
+import CountUp from "@/components/CountUp";
 
 export const revalidate = 600;
 
@@ -87,15 +88,21 @@ export default async function DriverPage({ params }: Params) {
       {standing && (
         <section className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
           <div className="p-4">
-            <p className="display text-2xl font-bold tabular-nums">P{standing.position}</p>
+            <p className="display text-2xl font-bold tabular-nums">
+              <CountUp value={Number(standing.position)} prefix="P" />
+            </p>
             <p className="text-xs text-white/40">อันดับ</p>
           </div>
           <div className="p-4">
-            <p className="display text-2xl font-bold tabular-nums">{standing.points}</p>
+            <p className="display text-2xl font-bold tabular-nums">
+              <CountUp value={Number(standing.points)} />
+            </p>
             <p className="text-xs text-white/40">แต้ม</p>
           </div>
           <div className="p-4">
-            <p className="display text-2xl font-bold tabular-nums">{standing.wins}</p>
+            <p className="display text-2xl font-bold tabular-nums">
+              <CountUp value={Number(standing.wins)} />
+            </p>
             <p className="text-xs text-white/40">ชนะ</p>
           </div>
         </section>
@@ -116,15 +123,15 @@ export default async function DriverPage({ params }: Params) {
         <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">
           ผลรายสนาม
         </h2>
-        <ul className="divide-y divide-white/5">
-          {results.map((r) => {
+        <ul className="stagger divide-y divide-white/5">
+          {results.map((r, i) => {
             const pos = r.result.position;
             const grid = Number(r.result.grid);
             const finish = Number(pos);
             const delta = grid && finish ? grid - finish : 0;
             const dnf = r.result.status !== "Finished" && !r.result.status.startsWith("+");
             return (
-              <li key={r.round}>
+              <li key={r.round} style={{ "--i": i } as React.CSSProperties}>
                 <Link
                   href={`/race/${r.round}`}
                   className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.04] sm:px-5"

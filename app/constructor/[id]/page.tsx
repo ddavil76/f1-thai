@@ -7,6 +7,7 @@ import {
 } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
+import CountUp from "@/components/CountUp";
 
 export const revalidate = 600;
 
@@ -71,19 +72,19 @@ export default async function ConstructorPage({ params }: Params) {
         <section className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
           <div className="p-4">
             <p className="display text-2xl font-bold tabular-nums">
-              P{standing.position}
+              <CountUp value={Number(standing.position)} prefix="P" />
             </p>
             <p className="text-xs text-white/40">อันดับ</p>
           </div>
           <div className="p-4">
             <p className="display text-2xl font-bold tabular-nums">
-              {standing.points}
+              <CountUp value={Number(standing.points)} />
             </p>
             <p className="text-xs text-white/40">แต้ม</p>
           </div>
           <div className="p-4">
             <p className="display text-2xl font-bold tabular-nums">
-              {standing.wins}
+              <CountUp value={Number(standing.wins)} />
             </p>
             <p className="text-xs text-white/40">ชนะ</p>
           </div>
@@ -94,9 +95,9 @@ export default async function ConstructorPage({ params }: Params) {
         <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">
           ผลรายสนาม
         </h2>
-        <ul className="divide-y divide-white/5">
-          {results.map((r) => (
-            <li key={r.round}>
+        <ul className="stagger divide-y divide-white/5">
+          {results.map((r, i) => (
+            <li key={r.round} style={{ "--i": i } as React.CSSProperties}>
               <Link
                 href={`/race/${r.round}`}
                 className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.04] sm:px-5"

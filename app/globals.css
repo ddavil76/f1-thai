@@ -42,6 +42,21 @@
       ),
       radial-gradient(50rem 50rem at -10% 10%, rgba(80, 80, 120, 0.12), transparent 55%);
     background-attachment: fixed;
+    animation: glow-drift 26s ease-in-out infinite;
+  }
+
+  @keyframes glow-drift {
+    0%,
+    100% {
+      background-position:
+        0 0,
+        0 0;
+    }
+    50% {
+      background-position:
+        -4% 3%,
+        4% -2%;
+    }
   }
 
   ::selection {
@@ -156,10 +171,69 @@
   animation: page-in 0.28s ease;
 }
 
+/* fade-up สั้น ๆ ใช้ซ้ำ */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.3s ease both;
+}
+
+/* แถวในลิสต์เข้าทีละแถว */
+.stagger > * {
+  animation: fade-up 0.32s ease backwards;
+  animation-delay: calc(min(var(--i, 0), 8) * 45ms);
+}
+
+/* แท่นโพเดียมโตขึ้นจากพื้น */
+@keyframes podium-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.podium-rise {
+  transform-origin: bottom;
+  animation: podium-rise 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+
+/* หลอด/แถบ "วิ่งเข้า" จากซ้าย — width ตั้งไว้ถูกแล้ว แค่ scale เข้า */
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+.grow-x {
+  transform-origin: left;
+  animation: grow-x 0.8s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* crossfade เนื้อหาในที่เดิม */
+.animate-crossfade {
+  animation: fade-up 0.24s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  body {
+    animation: none;
+  }
   .animate-tick,
   .animate-page-in,
-  .champ-reveal {
+  .animate-fade-up,
+  .animate-crossfade,
+  .champ-reveal,
+  .stagger > *,
+  .podium-rise,
+  .grow-x {
     animation: none;
   }
 }
