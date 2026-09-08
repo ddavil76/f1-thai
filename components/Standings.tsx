@@ -44,6 +44,14 @@ export default function Standings({
   const driverLeader = Number(drivers[0]?.points ?? 0);
   const constructorLeader = Number(constructors[0]?.points ?? 0);
 
+  if (drivers.length === 0 && constructors.length === 0) {
+    return (
+      <section className="card p-6 text-center text-sm text-white/50">
+        ยังไม่มีตารางคะแนนสำหรับฤดูกาลนี้
+      </section>
+    );
+  }
+
   return (
     <section className="card p-5">
       <div className="mb-4 flex items-center gap-2">

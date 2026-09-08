@@ -112,14 +112,22 @@ export async function getSchedule(season: string | number): Promise<Race[]> {
 }
 
 export async function getDriverStandings(season: string | number): Promise<DriverStanding[]> {
-  // standings เปลี่ยนบ่อยช่วงแข่ง → cache สั้นกว่า
-  const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 600);
-  return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
+  try {
+    // standings เปลี่ยนบ่อยช่วงแข่ง → cache สั้นกว่า
+    const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 600);
+    return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function getConstructorStandings(season: string | number): Promise<ConstructorStanding[]> {
-  const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 600);
-  return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
+  try {
+    const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 600);
+    return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
+  } catch {
+    return [];
+  }
 }
 
 type ResultsResponse = { MRData: { RaceTable?: { Races?: RaceWithResults[] } } };
@@ -197,6 +205,67 @@ export async function getSprintResults(
     return d.MRData.RaceTable?.Races?.[0]?.SprintResults ?? [];
   } catch {
     return [];
+  }
+}
+
+/** ตารางคะแนนนักแข่ง ณ สิ้นสุด round ที่ระบุ (แต้มสะสม) */
+export async function getStandingsAfterRound(
+  season: string | number,
+  round: string | number,
+): Promise<DriverStanding[]> {
+  try {
+    const d = await jolpica<ErgastResponse>(
+      `${season}/${round}/driverstandings/`,
+      600,
+    );
+    return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type ChampionshipSeries = {
+  driverId: string;
+  name: string;
+  constructorId: string;
+  points: number[];
+};
+
+const EMPTY_PROGRESSION = { rounds: [] as string[], series: [] as ChampionshipSeries[] };
+
+/** ข้อมูลกราฟแต้มสะสม: top N นักแข่ง × ทุก round ที่จบแล้ว */
+export async function getChampionshipProgression(
+  season: string | number,
+  topN = 6,
+): Promise<{ rounds: string[]; series: ChampionshipSeries[] }> {
+  try {
+    const winners = await getSeasonWinners(season);
+    const rounds = winners
+      .map((w) => w.round)
+      .sort((a, b) => Number(a) - Number(b));
+    if (rounds.length < 2) return EMPTY_PROGRESSION;
+
+    // ดึงทีละ round — เลี่ยง rate limit ของ Jolpica
+    const perRound: DriverStanding[][] = [];
+    for (const r of rounds) {
+      perRound.push(await getStandingsAfterRound(season, r));
+    }
+    const final = perRound.at(-1) ?? [];
+    if (final.length === 0) return EMPTY_PROGRESSION;
+
+    const series: ChampionshipSeries[] = final.slice(0, topN).map((t) => ({
+      driverId: t.Driver.driverId,
+      name: `${t.Driver.givenName.charAt(0)}. ${t.Driver.familyName}`,
+      constructorId: t.Constructors.at(-1)?.constructorId ?? "",
+      points: perRound.map((rs) => {
+        const row = rs.find((x) => x.Driver.driverId === t.Driver.driverId);
+        return row ? Number(row.points) : 0;
+      }),
+    }));
+
+    return { rounds, series };
+  } catch {
+    return EMPTY_PROGRESSION;
   }
 }
 

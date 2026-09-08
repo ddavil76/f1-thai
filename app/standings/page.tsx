@@ -1,5 +1,8 @@
 import Standings from "@/components/Standings";
-import { getDriverStandings, getConstructorStandings } from "@/lib/f1";
+import ChampionshipChart from "@/components/ChampionshipChart";
+import {
+  getDriverStandings, getConstructorStandings, getChampionshipProgression,
+} from "@/lib/f1";
 
 export const metadata = { title: "ตารางคะแนน" };
 
@@ -12,6 +15,7 @@ export default async function StandingsPage() {
     getDriverStandings(SEASON),
     getConstructorStandings(SEASON),
   ]);
+  const progression = await getChampionshipProgression(SEASON);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6">
@@ -21,6 +25,11 @@ export default async function StandingsPage() {
         </h1>
         <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
       </header>
+
+      <ChampionshipChart
+        rounds={progression.rounds}
+        series={progression.series}
+      />
 
       <Standings drivers={drivers} constructors={constructors} />
 
