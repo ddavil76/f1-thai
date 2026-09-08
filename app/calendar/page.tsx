@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   getSchedule, findNextRace, isPastRace, thaiDateOnly, thaiTimeOnly, toDate,
 } from "@/lib/f1";
@@ -36,30 +37,33 @@ export default async function CalendarPage() {
             const past = isPastRace(r);
             const isNext = r.round === nextRound;
             return (
-              <li
-                key={r.round}
-                className={`flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors ${
-                  past ? "opacity-40" : "hover:bg-white/[0.03]"
-                }`}
-              >
-                <span
-                  className={`w-6 text-right text-sm tabular-nums ${
-                    isNext ? "font-bold text-[--color-f1]" : "text-white/40"
+              <li key={r.round}>
+                <Link
+                  href={`/race/${r.round}`}
+                  className={`flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/[0.05] ${
+                    past ? "opacity-40 hover:opacity-100" : ""
                   }`}
                 >
-                  {r.round}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{r.raceName}</p>
-                  <p className="truncate text-xs text-white/50">
-                    {r.Circuit.Location.locality}, {r.Circuit.Location.country}
-                  </p>
-                </div>
-                <span className="text-right text-xs tabular-nums text-white/70">
-                  {thaiDateOnly(d)}
-                  <br />
-                  {thaiTimeOnly(d)} น.
-                </span>
+                  <span
+                    className={`w-6 text-right text-sm tabular-nums ${
+                      isNext ? "font-bold text-[--color-f1]" : "text-white/40"
+                    }`}
+                  >
+                    {r.round}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{r.raceName}</p>
+                    <p className="truncate text-xs text-white/50">
+                      {r.Circuit.Location.locality}, {r.Circuit.Location.country}
+                    </p>
+                  </div>
+                  <span className="text-right text-xs tabular-nums text-white/70">
+                    {thaiDateOnly(d)}
+                    <br />
+                    {thaiTimeOnly(d)} น.
+                  </span>
+                  <span className="shrink-0 text-white/25">›</span>
+                </Link>
               </li>
             );
           })}

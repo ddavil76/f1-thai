@@ -43,23 +43,23 @@ export type ConstructorStanding = {
 };
 
 export type RaceResult = {
+  number?: string;
   position: string;
   points: string;
   grid: string;
+  laps?: string;
   status: string;
   Driver: { driverId: string; code?: string; givenName: string; familyName: string };
   Constructor: { constructorId: string; name: string };
   Time?: { time: string };
+  FastestLap?: { rank: string; lap: string; Time?: { time: string } };
 };
 
-export type LastRace = {
-  season: string;
-  round: string;
-  raceName: string;
-  date: string;
-  Circuit: { circuitName: string; Location: { locality: string; country: string } };
-  Results: RaceResult[];
-};
+/** race + ผลการแข่ง (ใช้ทั้งการ์ดโพเดียมและหน้าผลเต็ม) */
+export type RaceWithResults = Race & { Results: RaceResult[] };
+
+/** @deprecated ใช้ RaceWithResults แทน */
+export type LastRace = RaceWithResults;
 
 const BASE = "https://api.jolpi.ca/ergast/f1";
 
@@ -115,16 +115,42 @@ export async function getConstructorStandings(season: string | number): Promise<
   return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
 }
 
+type ResultsResponse = { MRData: { RaceTable?: { Races?: RaceWithResults[] } } };
+
 /** ผลการแข่งของ race ล่าสุดที่จบไปแล้ว (null ถ้ายังไม่มีผลในฤดูกาลนั้น) */
-export async function getLastResults(season: string | number): Promise<LastRace | null> {
+export async function getLastResults(
+  season: string | number,
+): Promise<RaceWithResults | null> {
   try {
-    const d = await jolpica<{ MRData: { RaceTable?: { Races?: LastRace[] } } }>(
-      `${season}/last/results/`,
-      600,
-    );
+    const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 600);
     return d.MRData.RaceTable?.Races?.[0] ?? null;
   } catch {
     return null;
+  }
+}
+
+/** ผลการแข่งเต็มของ round ที่ระบุ */
+export async function getRaceResults(
+  season: string | number,
+  round: string | number,
+): Promise<RaceWithResults | null> {
+  try {
+    const d = await jolpica<ResultsResponse>(`${season}/${round}/results/`, 600);
+    return d.MRData.RaceTable?.Races?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** ทุก race ที่จบแล้ว พร้อมผู้ชนะ (Results มีแค่ P1) — เรียงใหม่→เก่า */
+export async function getSeasonWinners(
+  season: string | number,
+): Promise<RaceWithResults[]> {
+  try {
+    const d = await jolpica<ResultsResponse>(`${season}/results/1/`, 600);
+    return (d.MRData.RaceTable?.Races ?? []).slice().reverse();
+  } catch {
+    return [];
   }
 }
 

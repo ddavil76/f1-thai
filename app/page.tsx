@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import Countdown from "@/components/Countdown";
 import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
@@ -145,26 +146,32 @@ export default async function Home() {
                 {following.map((r) => {
                   const d = toDate({ date: r.date, time: r.time })!;
                   return (
-                    <li key={r.round} className="flex items-center gap-3 py-2">
-                      <span className="w-6 text-right text-sm tabular-nums text-white/40">
-                        {r.round}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="truncate font-medium">{r.raceName}</p>
-                          {isSprintWeekend(r) && (
-                            <span className="shrink-0 text-xs font-bold text-yellow-300">
-                              ⚡
-                            </span>
-                          )}
+                    <li key={r.round}>
+                      <Link
+                        href={`/race/${r.round}`}
+                        className="flex items-center gap-3 rounded-lg py-2 transition-colors hover:bg-white/[0.03]"
+                      >
+                        <span className="w-6 text-right text-sm tabular-nums text-white/40">
+                          {r.round}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="truncate font-medium">{r.raceName}</p>
+                            {isSprintWeekend(r) && (
+                              <span className="shrink-0 text-xs font-bold text-yellow-300">
+                                ⚡
+                              </span>
+                            )}
+                          </div>
+                          <p className="truncate text-xs text-white/50">
+                            {r.Circuit.Location.locality}, {r.Circuit.Location.country}
+                          </p>
                         </div>
-                        <p className="truncate text-xs text-white/50">
-                          {r.Circuit.Location.locality}, {r.Circuit.Location.country}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-right text-xs tabular-nums text-white/70">
-                        {thaiDateOnly(d)}
-                      </span>
+                        <span className="shrink-0 text-right text-xs tabular-nums text-white/70">
+                          {thaiDateOnly(d)}
+                        </span>
+                        <span className="shrink-0 text-white/25">›</span>
+                      </Link>
                     </li>
                   );
                 })}

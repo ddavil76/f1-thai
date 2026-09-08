@@ -16,7 +16,7 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`rounded-full px-5 py-2 text-sm font-medium transition ${
+              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                 active
                   ? "bg-[--color-f1] text-white shadow-lg shadow-[--color-f1]/30"
                   : "text-white/60 hover:bg-white/10 hover:text-white"

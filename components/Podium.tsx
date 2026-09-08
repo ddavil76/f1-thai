@@ -1,9 +1,10 @@
-import type { LastRace } from "@/lib/f1";
+import Link from "next/link";
+import type { RaceWithResults } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 
 const MEDAL = ["🥇", "🥈", "🥉"];
 
-export default function Podium({ race }: { race: LastRace }) {
+export default function Podium({ race }: { race: RaceWithResults }) {
   const top3 = race.Results.slice(0, 3);
   if (top3.length < 3) return null;
 
@@ -42,6 +43,13 @@ export default function Podium({ race }: { race: LastRace }) {
           </li>
         ))}
       </ul>
+
+      <Link
+        href={`/race/${race.round}`}
+        className="mt-3 inline-block text-sm font-medium text-[--color-f1] transition hover:brightness-125"
+      >
+        ดูผลเต็ม →
+      </Link>
     </section>
   );
 }
