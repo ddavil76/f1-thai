@@ -49,7 +49,14 @@ export type RaceResult = {
   grid: string;
   laps?: string;
   status: string;
-  Driver: { driverId: string; code?: string; givenName: string; familyName: string };
+  Driver: {
+    driverId: string;
+    code?: string;
+    permanentNumber?: string;
+    givenName: string;
+    familyName: string;
+    nationality?: string;
+  };
   Constructor: { constructorId: string; name: string };
   Time?: { time: string };
   FastestLap?: { rank: string; lap: string; Time?: { time: string } };
@@ -188,6 +195,35 @@ export async function getSprintResults(
       MRData: { RaceTable?: { Races?: { SprintResults?: RaceResult[] }[] } };
     }>(`${season}/${round}/sprint/`, 600);
     return d.MRData.RaceTable?.Races?.[0]?.SprintResults ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type DriverRaceResult = {
+  round: string;
+  raceName: string;
+  Circuit: Race["Circuit"];
+  result: RaceResult;
+};
+
+/** ผลรายสนามของนักแข่งคนหนึ่งทั้งฤดูกาล */
+export async function getDriverSeasonResults(
+  season: string | number,
+  driverId: string,
+): Promise<DriverRaceResult[]> {
+  try {
+    const d = await jolpica<{
+      MRData: { RaceTable?: { Races?: (Race & { Results: RaceResult[] })[] } };
+    }>(`${season}/drivers/${driverId}/results/`, 600);
+    return (d.MRData.RaceTable?.Races ?? [])
+      .filter((r) => r.Results?.[0])
+      .map((r) => ({
+        round: r.round,
+        raceName: r.raceName,
+        Circuit: r.Circuit,
+        result: r.Results[0],
+      }));
   } catch {
     return [];
   }

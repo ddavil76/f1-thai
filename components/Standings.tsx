@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import type { DriverStanding, ConstructorStanding } from "@/lib/f1";
 import { TEAM_COLOR } from "@/lib/teams";
 
@@ -56,29 +57,34 @@ export default function Standings({
           ? drivers.map((s) => {
               const c = s.Constructors.at(-1);
               return (
-                <li key={s.Driver.driverId} className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.03]">
-                  <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
-                  <span
-                    className="h-8 w-1 rounded-full"
-                    style={{ background: TEAM_COLOR[c?.constructorId ?? ""] ?? "#666" }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">
-                      {s.Driver.givenName.charAt(0)}.{" "}
-                      <span className="uppercase">{s.Driver.familyName}</span>
-                    </p>
-                    <p className="truncate text-xs text-white/50">{c?.name}</p>
-                    <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-red-600 transition-all duration-1000"
-                        style={{ width: `${Math.min((Number(s.points) / 500) * 100, 100)}%` }}
-                      />
+                <li key={s.Driver.driverId}>
+                  <Link
+                    href={`/driver/${s.Driver.driverId}`}
+                    className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.04]"
+                  >
+                    <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
+                    <span
+                      className="h-8 w-1 rounded-full"
+                      style={{ background: TEAM_COLOR[c?.constructorId ?? ""] ?? "#666" }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">
+                        {s.Driver.givenName.charAt(0)}.{" "}
+                        <span className="uppercase">{s.Driver.familyName}</span>
+                      </p>
+                      <p className="truncate text-xs text-white/50">{c?.name}</p>
+                      <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-red-600 transition-all duration-1000"
+                          style={{ width: `${Math.min((Number(s.points) / 500) * 100, 100)}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  {Number(s.wins) > 0 && (
-                    <span className="shrink-0 text-xs text-white/40">🏆 {s.wins}</span>
-                  )}
-                  <PointsCell points={s.points} leader={driverLeader} />
+                    {Number(s.wins) > 0 && (
+                      <span className="shrink-0 text-xs text-white/40">🏆 {s.wins}</span>
+                    )}
+                    <PointsCell points={s.points} leader={driverLeader} />
+                  </Link>
                 </li>
               );
             })
