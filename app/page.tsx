@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CalendarPlus, ChevronRight, Flag, PartyPopper, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
@@ -72,8 +73,9 @@ export default async function Home() {
                   Round {next.round} · สนามถัดไป
                 </p>
                 {isSprintWeekend(next) && (
-                  <span className="rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-300 ring-1 ring-yellow-400/30">
-                    ⚡ Sprint
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-300 ring-1 ring-yellow-400/30">
+                    <Zap className="h-3 w-3" fill="currentColor" />
+                    Sprint
                   </span>
                 )}
               </div>
@@ -89,14 +91,17 @@ export default async function Home() {
                 <SessionCountdown race={next} />
               </div>
 
-              <p className="mt-4 text-sm text-white/80">
-                🏁 ออกสตาร์ท{" "}
-                <LocalTime
-                  iso={raceStart.toISOString()}
-                  kind="full"
-                  circuitId={next.Circuit.circuitId}
-                />{" "}
-                น.
+              <p className="mt-4 flex items-center gap-1.5 text-sm text-white/80">
+                <Flag className="h-4 w-4 shrink-0 text-white/50" />
+                <span>
+                  ออกสตาร์ท{" "}
+                  <LocalTime
+                    iso={raceStart.toISOString()}
+                    kind="full"
+                    circuitId={next.Circuit.circuitId}
+                  />{" "}
+                  น.
+                </span>
               </p>
 
               <a
@@ -109,11 +114,15 @@ export default async function Home() {
                 rel="noreferrer"
                 className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85 active:scale-95"
               >
-                📅 เพิ่มลง Google Calendar
+                <CalendarPlus className="h-4 w-4" />
+                เพิ่มลง Google Calendar
               </a>
             </section>
           ) : (
-            <p className="card p-6 text-white/60">จบฤดูกาลแล้ว 🎉</p>
+            <p className="card flex items-center gap-2 p-6 text-white/60">
+              <PartyPopper className="h-5 w-5" />
+              จบฤดูกาลแล้ว
+            </p>
           )}
         </div>
 
@@ -172,9 +181,10 @@ export default async function Home() {
                           <div className="flex items-center gap-1.5">
                             <p className="truncate font-medium">{r.raceName}</p>
                             {isSprintWeekend(r) && (
-                              <span className="shrink-0 text-xs font-bold text-yellow-300">
-                                ⚡
-                              </span>
+                              <Zap
+                                className="h-3 w-3 shrink-0 text-yellow-300"
+                                fill="currentColor"
+                              />
                             )}
                           </div>
                           <p className="truncate text-xs text-white/50">
@@ -188,7 +198,7 @@ export default async function Home() {
                             circuitId={r.Circuit.circuitId}
                           />
                         </span>
-                        <span className="shrink-0 text-white/25">›</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
                       </Link>
                     </li>
                   );

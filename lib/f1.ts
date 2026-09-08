@@ -431,7 +431,7 @@ export function getSessions(race: Race) {
     ["Sprint Quali", race.SprintQualifying],
     ["Sprint", race.Sprint],
     ["Qualifying", race.Qualifying],
-    ["🏁 Race", { date: race.date, time: race.time }],
+    ["Race", { date: race.date, time: race.time }],
   ];
 
   return raw
@@ -444,7 +444,7 @@ const RACE_TAIL_MS = 2 * 60 * 60 * 1000;
 
 /** ระยะเวลาโดยประมาณของแต่ละ session (ms) — ใช้เช็คว่าจบหรือยัง */
 const SESSION_DUR_MS: Record<string, number> = {
-  "🏁 Race": RACE_TAIL_MS,
+  "Race": RACE_TAIL_MS,
   Sprint: 60 * 60 * 1000,
   "Sprint Quali": 45 * 60 * 1000,
   Qualifying: 60 * 60 * 1000,

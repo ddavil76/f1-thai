@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft, CalendarPlus, Flag, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import ResultsTable from "@/components/ResultsTable";
@@ -63,17 +64,19 @@ export default async function RacePage({ params }: Params) {
       <div>
         <Link
           href="/calendar"
-          className="text-sm text-white/40 transition hover:text-white/70"
+          className="inline-flex items-center gap-1 text-sm text-white/40 transition hover:text-white/70"
         >
-          ← ปฏิทินทั้งฤดูกาล
+          <ArrowLeft className="h-3.5 w-3.5" />
+          ปฏิทินทั้งฤดูกาล
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <p className="text-xs font-semibold uppercase tracking-widest text-white/50">
             Round {race.round}
           </p>
           {isSprintWeekend(race) && (
-            <span className="rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-300 ring-1 ring-yellow-400/30">
-              ⚡ Sprint
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-300 ring-1 ring-yellow-400/30">
+              <Zap className="h-3 w-3" fill="currentColor" />
+              Sprint
             </span>
           )}
         </div>
@@ -91,14 +94,17 @@ export default async function RacePage({ params }: Params) {
       {!past && raceStart && (
         <section className="card p-5">
           <SessionCountdown race={race} />
-          <p className="mt-4 text-sm text-white/80">
-            🏁 ออกสตาร์ท{" "}
-            <LocalTime
-              iso={raceStart.toISOString()}
-              kind="full"
-              circuitId={race.Circuit.circuitId}
-            />{" "}
-            น.
+          <p className="mt-4 flex items-center gap-1.5 text-sm text-white/80">
+            <Flag className="h-4 w-4 shrink-0 text-white/50" />
+            <span>
+              ออกสตาร์ท{" "}
+              <LocalTime
+                iso={raceStart.toISOString()}
+                kind="full"
+                circuitId={race.Circuit.circuitId}
+              />{" "}
+              น.
+            </span>
           </p>
           <a
             href={googleCalendarUrl({
@@ -110,7 +116,8 @@ export default async function RacePage({ params }: Params) {
             rel="noreferrer"
             className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85 active:scale-95"
           >
-            📅 เพิ่มลง Google Calendar
+            <CalendarPlus className="h-4 w-4" />
+            เพิ่มลง Google Calendar
           </a>
         </section>
       )}

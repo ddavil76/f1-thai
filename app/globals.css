@@ -9,6 +9,10 @@
   --color-f1-dark: #a30400;
 }
 
+@theme inline {
+  --font-display: var(--font-display-src), "Chakra Petch", var(--font-sans);
+}
+
 @layer base {
   :root {
     /* แสงเรืองสีทีม — ใช้ในพื้นหลัง body และเงาการ์ด hero */
@@ -18,6 +22,12 @@
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+  }
+
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
   }
 
   body {
@@ -51,4 +61,10 @@
 /* นับถอยหลัง / ตัวเลขให้ดูนิ่ง */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* ตัวเลข/ป้ายแบบ F1 */
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }

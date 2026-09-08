@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Timer } from "lucide-react";
 import type { RaceResult } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 
@@ -41,9 +42,10 @@ export default function ResultsTable({
                   {r === fl && (
                     <span
                       title="Fastest lap"
-                      className="ml-1.5 align-middle text-[10px] font-bold text-purple-300"
+                      className="ml-1.5 inline-flex items-center gap-0.5 align-middle text-[10px] font-bold text-purple-300"
                     >
-                      ⏱ FL
+                      <Timer className="h-3 w-3" />
+                      FL
                     </span>
                   )}
                 </p>
@@ -60,9 +62,13 @@ export default function ResultsTable({
         ))}
       </ul>
       {fl?.FastestLap?.Time && (
-        <p className="border-t border-white/5 px-5 py-3 text-xs text-white/50">
-          ⏱ Fastest lap: <span className="text-white/80">{fl.Driver.familyName}</span>{" "}
-          {fl.FastestLap.Time.time} (รอบ {fl.FastestLap.lap})
+        <p className="flex items-center gap-1.5 border-t border-white/5 px-5 py-3 text-xs text-white/50">
+          <Timer className="h-3.5 w-3.5 text-purple-300" />
+          Fastest lap:{" "}
+          <span className="text-white/80">
+            {fl.Driver.familyName} {fl.FastestLap.Time.time}
+          </span>{" "}
+          (รอบ {fl.FastestLap.lap})
         </p>
       )}
     </section>

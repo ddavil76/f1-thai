@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CalendarArrowDown, ChevronRight } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
 import { getSchedule, findNextRace, isPastRace, toDate } from "@/lib/f1";
 
@@ -25,7 +26,8 @@ export default async function CalendarPage() {
           href="/calendar.ics"
           className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 active:scale-95"
         >
-          📥 ดาวน์โหลดปฏิทิน (.ics) ทุก session
+          <CalendarArrowDown className="h-4 w-4" />
+          ดาวน์โหลดปฏิทิน (.ics) ทุก session
         </a>
       </header>
 
@@ -70,7 +72,7 @@ export default async function CalendarPage() {
                     />{" "}
                     น.
                   </span>
-                  <span className="shrink-0 text-white/25">›</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
                 </Link>
               </li>
             );

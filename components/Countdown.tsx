@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
+import LiveDot from "./LiveDot";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export default function Countdown({
   target,
-  liveText = "🔴 กำลังแข่งอยู่!",
+  liveText = "กำลังแข่งอยู่!",
 }: {
   target: string;
   liveText?: string;
@@ -26,7 +27,12 @@ export default function Countdown({
   }
 
   if (left <= 0) {
-    return <div className="text-xl font-bold text-green-400">{liveText}</div>;
+    return (
+      <div className="flex items-center gap-2 text-lg font-bold text-green-400">
+        <LiveDot />
+        {liveText}
+      </div>
+    );
   }
 
   const s = Math.floor(left / 1000);
@@ -35,7 +41,7 @@ export default function Countdown({
       key={l}
       className="flex flex-1 flex-col items-center rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 backdrop-blur-sm"
     >
-      <span className="text-xl font-black tabular-nums tracking-tight sm:text-2xl">{v}</span>
+      <span className="display text-xl font-bold tabular-nums sm:text-2xl">{v}</span>
       <span className="text-[9px] uppercase tracking-wide text-white/50">{l}</span>
     </div>
   );

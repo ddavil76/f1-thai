@@ -1,7 +1,7 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
-import { Noto_Sans_Thai } from "next/font/google";
+import { Noto_Sans_Thai, Chakra_Petch } from "next/font/google";
 import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
 import TzToggle from "@/components/tz/TzToggle";
@@ -14,6 +14,14 @@ const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
   display: "swap",
   weight: ["400", "500", "700", "900"],
+});
+
+// ฟอนต์หัวข้อ/ตัวเลข — แนวเทคนิคแบบ F1 (มีทั้งไทยและละติน)
+const chakra = Chakra_Petch({
+  subsets: ["thai", "latin"],
+  display: "swap",
+  weight: ["500", "600", "700"],
+  variable: "--font-display-src",
 });
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -50,7 +58,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html
       lang="th"
-      className={notoThai.className}
+      className={`${notoThai.className} ${chakra.variable}`}
       style={
         {
           "--color-f1": accent,

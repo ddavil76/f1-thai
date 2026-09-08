@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { getDriverStandings, getDriverSeasonResults } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
@@ -50,9 +51,10 @@ export default async function DriverPage({ params }: Params) {
       <div>
         <Link
           href="/standings"
-          className="text-sm text-white/40 transition hover:text-white/70"
+          className="inline-flex items-center gap-1 text-sm text-white/40 transition hover:text-white/70"
         >
-          ← ตารางคะแนน
+          <ArrowLeft className="h-3.5 w-3.5" />
+          ตารางคะแนน
         </Link>
         <div className="mt-2 flex items-center gap-3">
           <span className="h-10 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
@@ -72,15 +74,15 @@ export default async function DriverPage({ params }: Params) {
       {standing && (
         <section className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
           <div className="p-4">
-            <p className="text-2xl font-black tabular-nums">P{standing.position}</p>
+            <p className="display text-2xl font-bold tabular-nums">P{standing.position}</p>
             <p className="text-xs text-white/40">อันดับ</p>
           </div>
           <div className="p-4">
-            <p className="text-2xl font-black tabular-nums">{standing.points}</p>
+            <p className="display text-2xl font-bold tabular-nums">{standing.points}</p>
             <p className="text-xs text-white/40">แต้ม</p>
           </div>
           <div className="p-4">
-            <p className="text-2xl font-black tabular-nums">{standing.wins}</p>
+            <p className="display text-2xl font-bold tabular-nums">{standing.wins}</p>
             <p className="text-xs text-white/40">ชนะ</p>
           </div>
         </section>

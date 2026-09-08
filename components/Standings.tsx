@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { Trophy } from "lucide-react";
 import type { DriverStanding, ConstructorStanding } from "@/lib/f1";
 import { TEAM_COLOR } from "@/lib/teams";
 
@@ -26,7 +27,7 @@ function PointsCell({ points, leader }: { points: string; leader: number }) {
   const gap = leader - Number(points);
   return (
     <div className="w-16 shrink-0 text-right">
-      <p className="font-bold leading-none tabular-nums">{points}</p>
+      <p className="display text-[15px] font-bold leading-none tabular-nums">{points}</p>
       {gap > 0 ? (
         <p className="mt-0.5 text-[11px] tabular-nums text-white/35">−{gap}</p>
       ) : (
@@ -83,13 +84,16 @@ export default function Standings({
                       <p className="truncate text-xs text-white/50">{c?.name}</p>
                       <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-red-600 transition-all duration-1000"
+                          className="h-full bg-(--color-f1) transition-all duration-1000"
                           style={{ width: `${Math.min((Number(s.points) / 500) * 100, 100)}%` }}
                         />
                       </div>
                     </div>
                     {Number(s.wins) > 0 && (
-                      <span className="shrink-0 text-xs text-white/40">🏆 {s.wins}</span>
+                      <span className="flex shrink-0 items-center gap-1 text-xs text-white/40">
+                        <Trophy className="h-3 w-3" />
+                        {s.wins}
+                      </span>
                     )}
                     <PointsCell points={s.points} leader={driverLeader} />
                   </Link>

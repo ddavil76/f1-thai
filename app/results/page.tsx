@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronRight, Trophy } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
 import { getSeasonWinners, toDate } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
@@ -50,7 +51,8 @@ export default async function ResultsPage() {
                               background: teamColor(win.Constructor.constructorId),
                             }}
                           />
-                          🏆 {win.Driver.givenName.charAt(0)}. {win.Driver.familyName}
+                          <Trophy className="h-3 w-3 shrink-0 text-white/40" />
+                          {win.Driver.givenName.charAt(0)}. {win.Driver.familyName}
                         </p>
                       )}
                     </div>
@@ -63,7 +65,7 @@ export default async function ResultsPage() {
                         />
                       )}
                     </span>
-                    <span className="shrink-0 text-white/25">›</span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
                   </Link>
                 </li>
               );

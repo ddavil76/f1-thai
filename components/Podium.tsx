@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import type { RaceWithResults } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 
-const MEDAL = ["🥇", "🥈", "🥉"];
+const MEDAL = ["#FFD24A", "#C8CDD4", "#D68A4E"]; // ทอง / เงิน / ทองแดง
 
 export default function Podium({ race }: { race: RaceWithResults }) {
   const top3 = race.Results.slice(0, 3);
@@ -23,7 +24,12 @@ export default function Podium({ race }: { race: RaceWithResults }) {
             key={r.Driver.driverId}
             className="flex items-center gap-2.5 rounded-lg bg-white/[0.03] px-3 py-2.5"
           >
-            <span className="text-base">{MEDAL[i]}</span>
+            <span
+              className="display grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold text-black"
+              style={{ background: MEDAL[i] }}
+            >
+              {i + 1}
+            </span>
             <span
               className="h-7 w-1 shrink-0 rounded-full"
               style={{ background: teamColor(r.Constructor.constructorId) }}
@@ -46,9 +52,9 @@ export default function Podium({ race }: { race: RaceWithResults }) {
 
       <Link
         href={`/race/${race.round}`}
-        className="mt-3 inline-block text-sm font-medium text-(--color-f1) transition hover:brightness-125"
+        className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-(--color-f1) transition hover:gap-1.5"
       >
-        ดูผลเต็ม →
+        ดูผลเต็ม <ArrowRight className="h-3.5 w-3.5" />
       </Link>
     </section>
   );

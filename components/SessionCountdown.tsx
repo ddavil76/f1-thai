@@ -7,10 +7,10 @@ export default function SessionCountdown({ race }: { race: Race }) {
   const target = session?.at ?? toDate({ date: race.date, time: race.time });
   if (!target) return null;
 
-  const isRace = !session || session.label === "🏁 Race";
-  const name = session?.label.replace("🏁 ", "") ?? "Race";
+  const name = session?.label ?? "Race";
+  const isRace = name === "Race";
   const kicker = isRace ? "ออกสตาร์ทอีก" : `${name} · เริ่มอีก`;
-  const liveText = isRace ? "🔴 กำลังแข่งอยู่!" : `🟢 ${name} กำลังแข่ง`;
+  const liveText = isRace ? "กำลังแข่งอยู่!" : `${name} กำลังแข่ง`;
 
   return (
     <div>
