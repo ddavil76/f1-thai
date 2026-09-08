@@ -113,8 +113,7 @@ export async function getSchedule(season: string | number): Promise<Race[]> {
 
 export async function getDriverStandings(season: string | number): Promise<DriverStanding[]> {
   try {
-    // standings เปลี่ยนบ่อยช่วงแข่ง → cache สั้นกว่า
-    const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 600);
+    const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 300);
     return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
   } catch {
     return [];
@@ -123,7 +122,7 @@ export async function getDriverStandings(season: string | number): Promise<Drive
 
 export async function getConstructorStandings(season: string | number): Promise<ConstructorStanding[]> {
   try {
-    const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 600);
+    const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 300);
     return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
   } catch {
     return [];
@@ -137,7 +136,7 @@ export async function getLastResults(
   season: string | number,
 ): Promise<RaceWithResults | null> {
   try {
-    const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 600);
+    const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 300);
     return d.MRData.RaceTable?.Races?.[0] ?? null;
   } catch {
     return null;
@@ -162,7 +161,7 @@ export async function getSeasonWinners(
   season: string | number,
 ): Promise<RaceWithResults[]> {
   try {
-    const d = await jolpica<ResultsResponse>(`${season}/results/1/`, 600);
+    const d = await jolpica<ResultsResponse>(`${season}/results/1/`, 300);
     return (d.MRData.RaceTable?.Races ?? []).slice().reverse();
   } catch {
     return [];
@@ -208,7 +207,7 @@ export async function getSprintResults(
   }
 }
 
-/** ตารางคะแนนนักแข่ง ณ สิ้นสุด round ที่ระบุ (แต้มสะสม) */
+/** ตารางคะแนนนักแข่ง ณ สิ้นสุด round ที่ระบุ (แต้มสะสม; นิ่งแล้ว → cache ยาว) */
 export async function getStandingsAfterRound(
   season: string | number,
   round: string | number,
@@ -216,7 +215,7 @@ export async function getStandingsAfterRound(
   try {
     const d = await jolpica<ErgastResponse>(
       `${season}/${round}/driverstandings/`,
-      600,
+      60 * 60 * 24 * 7,
     );
     return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
   } catch {
