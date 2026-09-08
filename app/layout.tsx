@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Noto_Sans_Thai } from "next/font/google";
 import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import TzToggle from "@/components/tz/TzToggle";
 
 const notoThai = Noto_Sans_Thai({
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         <BottomNav />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
