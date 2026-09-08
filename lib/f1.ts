@@ -253,12 +253,18 @@ export type ChampionshipSeries = {
 
 const EMPTY_PROGRESSION = { rounds: [] as string[], series: [] as ChampionshipSeries[] };
 
-/** ข้อมูลกราฟแต้มสะสม: top N นักแข่ง × ทุก round ที่จบแล้ว */
+/**
+ * ข้อมูลกราฟแต้มสะสม — top N จาก `currentStandings` (ที่หน้าเรียกมาให้แล้ว)
+ * แล้วดึงแต้มสะสมรายรอบ; round ไหนดึงไม่ได้ก็ใช้ค่าก่อนหน้า (กราฟไม่ดิ่ง)
+ */
 export async function getChampionshipProgression(
   season: string | number,
+  currentStandings: DriverStanding[],
   topN = 6,
 ): Promise<{ rounds: string[]; series: ChampionshipSeries[] }> {
   try {
+    if (currentStandings.length === 0) return EMPTY_PROGRESSION;
+
     const winners = await getSeasonWinners(season);
     const rounds = winners
       .map((w) => w.round)
@@ -270,18 +276,26 @@ export async function getChampionshipProgression(
     for (const r of rounds) {
       perRound.push(await getStandingsAfterRound(season, r));
     }
-    const final = perRound.at(-1) ?? [];
-    if (final.length === 0) return EMPTY_PROGRESSION;
+    // ต้องได้ข้อมูลอย่างน้อยครึ่งหนึ่ง ไม่งั้นซ่อนกราฟ
+    if (perRound.filter((p) => p.length > 0).length < rounds.length / 2) {
+      return EMPTY_PROGRESSION;
+    }
 
-    const series: ChampionshipSeries[] = final.slice(0, topN).map((t) => ({
-      driverId: t.Driver.driverId,
-      name: `${t.Driver.givenName.charAt(0)}. ${t.Driver.familyName}`,
-      constructorId: t.Constructors.at(-1)?.constructorId ?? "",
-      points: perRound.map((rs) => {
+    const series: ChampionshipSeries[] = currentStandings.slice(0, topN).map((t) => {
+      const points: number[] = [];
+      let lastKnown = 0;
+      for (const rs of perRound) {
         const row = rs.find((x) => x.Driver.driverId === t.Driver.driverId);
-        return row ? Number(row.points) : 0;
-      }),
-    }));
+        if (row) lastKnown = Number(row.points);
+        points.push(lastKnown);
+      }
+      return {
+        driverId: t.Driver.driverId,
+        name: `${t.Driver.givenName.charAt(0)}. ${t.Driver.familyName}`,
+        constructorId: t.Constructors.at(-1)?.constructorId ?? "",
+        points,
+      };
+    });
 
     return { rounds, series };
   } catch {

@@ -15,7 +15,7 @@ export default async function StandingsPage() {
     getDriverStandings(SEASON),
     getConstructorStandings(SEASON),
   ]);
-  const progression = await getChampionshipProgression(SEASON);
+  const progression = await getChampionshipProgression(SEASON, drivers);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6">

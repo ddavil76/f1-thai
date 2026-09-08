@@ -102,21 +102,7 @@ export default function ChampionshipChart({
             ) : null,
           )}
 
-          <defs>
-            <clipPath id="champ-reveal">
-              <rect x="0" y="0" height={H} width={W}>
-                <animate
-                  attributeName="width"
-                  from="0"
-                  to={W}
-                  dur="0.9s"
-                  fill="freeze"
-                />
-              </rect>
-            </clipPath>
-          </defs>
-
-          <g clipPath="url(#champ-reveal)">
+          <g className="champ-reveal">
             {series.map((s, si) => (
               <polyline
                 key={s.driverId}
