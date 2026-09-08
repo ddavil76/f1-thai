@@ -14,11 +14,6 @@
 }
 
 @layer base {
-  :root {
-    /* แสงเรืองสีทีม — ใช้ในพื้นหลัง body และเงาการ์ด hero */
-    --glow: color-mix(in srgb, var(--color-f1) 45%, transparent);
-  }
-
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
@@ -206,62 +201,6 @@
   animation: flap-in 0.4s cubic-bezier(0.2, 0.85, 0.3, 1);
 }
 
-/* ขอบเรืองแสงสีทีมหมุนรอบการ์ดสนามถัดไป */
-@property --glow-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-@keyframes glow-spin {
-  to {
-    --glow-angle: 360deg;
-  }
-}
-.glow-border {
-  position: relative;
-  isolation: isolate;
-}
-.glow-border::before {
-  content: "";
-  position: absolute;
-  inset: -1.5px;
-  z-index: -1;
-  border-radius: inherit;
-  padding: 1.5px;
-  background: conic-gradient(
-    from var(--glow-angle),
-    transparent 0deg,
-    color-mix(in srgb, var(--color-f1) 90%, transparent) 40deg,
-    transparent 110deg,
-    transparent 250deg,
-    color-mix(in srgb, var(--color-f1) 55%, transparent) 310deg,
-    transparent 360deg
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: glow-spin 7s linear infinite;
-}
-.glow-border::after {
-  content: "";
-  position: absolute;
-  inset: -14px;
-  z-index: -2;
-  border-radius: inherit;
-  background: conic-gradient(
-    from var(--glow-angle),
-    transparent 0deg,
-    color-mix(in srgb, var(--color-f1) 45%, transparent) 40deg,
-    transparent 120deg,
-    transparent 360deg
-  );
-  filter: blur(18px);
-  opacity: 0.5;
-  animation: glow-spin 7s linear infinite;
-}
-
 /* กราฟแชมป์เปี้ยนชิพ fade + เลื่อนเข้าจากซ้ายเบา ๆ */
 @keyframes champ-in {
   from {
@@ -354,9 +293,7 @@
   .champ-reveal,
   .stagger > *,
   .podium-rise,
-  .grow-x,
-  .glow-border::before,
-  .glow-border::after {
+  .grow-x {
     animation: none;
   }
 }

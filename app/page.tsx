@@ -41,7 +41,7 @@ export default async function Home() {
         {/* ---- คอลัมน์ซ้าย: การ์ดสนามถัดไป ---- */}
         <div>
           {next && raceStart ? (
-            <section className="glow-border card p-5 sm:p-6">
+            <section className="card p-5 sm:p-6">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
                   Round {next.round} · สนามถัดไป
