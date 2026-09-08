@@ -3,12 +3,14 @@ import { CalendarPlus, ChevronRight, Flag, PartyPopper, Zap } from "lucide-react
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
+import WeatherBadge from "@/components/WeatherBadge";
 import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getLastResults, findNextRace, getUpcomingRaces, getSessions,
   getCircuitImage, isSprintWeekend, toDate,
 } from "@/lib/f1";
+import { getRaceWeather } from "@/lib/weather";
 
 export const revalidate = 600;
 
@@ -24,7 +26,9 @@ export default async function Home() {
   const following = getUpcomingRaces(races, 4).slice(1); // 3 สนามถัดจากสนามหน้า
   const sessions = next ? getSessions(next) : [];
   const raceStart = next ? toDate({ date: next.date, time: next.time }) : null;
-  const circuitImg = next ? await getCircuitImage(next.Circuit) : null;
+  const [circuitImg, weather] = next
+    ? await Promise.all([getCircuitImage(next.Circuit), getRaceWeather(next)])
+    : [null, null];
 
   return (
     <main className="mx-auto max-w-3xl lg:max-w-none">
@@ -88,6 +92,12 @@ export default async function Home() {
                 <CalendarPlus className="h-4 w-4" />
                 เพิ่มลง Google Calendar
               </a>
+
+              {weather && (
+                <div>
+                  <WeatherBadge weather={weather} />
+                </div>
+              )}
             </section>
           ) : (
             <p className="card flex items-center gap-2 p-6 text-white/60">

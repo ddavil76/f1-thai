@@ -101,14 +101,19 @@ export default function Standings({
               );
             })
           : constructors.map((s) => (
-              <li key={s.Constructor.constructorId} className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.03]">
-                <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
-                <span
-                  className="h-8 w-1 rounded-full"
-                  style={{ background: TEAM_COLOR[s.Constructor.constructorId] ?? "#666" }}
-                />
-                <span className="flex-1 truncate font-medium">{s.Constructor.name}</span>
-                <PointsCell points={s.points} leader={constructorLeader} />
+              <li key={s.Constructor.constructorId}>
+                <Link
+                  href={`/constructor/${s.Constructor.constructorId}`}
+                  className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.04]"
+                >
+                  <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
+                  <span
+                    className="h-8 w-1 rounded-full"
+                    style={{ background: TEAM_COLOR[s.Constructor.constructorId] ?? "#666666" }}
+                  />
+                  <span className="flex-1 truncate font-medium">{s.Constructor.name}</span>
+                  <PointsCell points={s.points} leader={constructorLeader} />
+                </Link>
               </li>
             ))}
       </ul>

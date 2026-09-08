@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { getDriverStandings, getDriverSeasonResults } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
+import TeammateH2H from "@/components/TeammateH2H";
 
 export const revalidate = 600;
 
@@ -46,6 +47,18 @@ export default async function DriverPage({ params }: Params) {
   const team = standing?.Constructors.at(-1) ?? results.at(-1)?.result.Constructor;
   const color = teamColor(team?.constructorId);
 
+  // เพื่อนร่วมทีม (คนล่าสุดที่อยู่ทีมเดียวกัน)
+  const mateStanding = team
+    ? standings.find(
+        (s) =>
+          s.Driver.driverId !== id &&
+          s.Constructors.at(-1)?.constructorId === team.constructorId,
+      )
+    : undefined;
+  const mateResults = mateStanding
+    ? await getDriverSeasonResults(SEASON, mateStanding.Driver.driverId)
+    : [];
+
   return (
     <main className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -86,6 +99,17 @@ export default async function DriverPage({ params }: Params) {
             <p className="text-xs text-white/40">ชนะ</p>
           </div>
         </section>
+      )}
+
+      {mateStanding && mateResults.length > 0 && (
+        <TeammateH2H
+          teammateId={mateStanding.Driver.driverId}
+          teammateName={`${mateStanding.Driver.givenName} ${mateStanding.Driver.familyName}`}
+          self={results}
+          mate={mateResults}
+          selfPoints={Number(standing?.points ?? 0)}
+          matePoints={Number(mateStanding.points)}
+        />
       )}
 
       <section className="card overflow-hidden p-0">

@@ -6,12 +6,15 @@ import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import ResultsTable from "@/components/ResultsTable";
 import QualifyingTable from "@/components/QualifyingTable";
+import PodiumGraphic from "@/components/PodiumGraphic";
+import WeatherBadge from "@/components/WeatherBadge";
 import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getRaceResults, getQualifying, getSprintResults, findNextRace,
   getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate,
 } from "@/lib/f1";
+import { getRaceWeather } from "@/lib/weather";
 
 export const revalidate = 600;
 
@@ -51,11 +54,12 @@ export default async function RacePage({ params }: Params) {
 
   const past = isPastRace(race);
   const raceStart = toDate({ date: race.date, time: race.time });
-  const [results, quali, sprint, circuitImg] = await Promise.all([
+  const [results, quali, sprint, circuitImg, weather] = await Promise.all([
     past ? getRaceResults(SEASON, round) : Promise.resolve(null),
     past ? getQualifying(SEASON, round) : Promise.resolve([]),
     past && isSprintWeekend(race) ? getSprintResults(SEASON, round) : Promise.resolve([]),
     getCircuitImage(race.Circuit),
+    past ? Promise.resolve(null) : getRaceWeather(race),
   ]);
   const sessions = getSessions(race);
 
@@ -119,6 +123,11 @@ export default async function RacePage({ params }: Params) {
             <CalendarPlus className="h-4 w-4" />
             เพิ่มลง Google Calendar
           </a>
+          {weather && (
+            <div>
+              <WeatherBadge weather={weather} />
+            </div>
+          )}
         </section>
       )}
 
@@ -151,6 +160,11 @@ export default async function RacePage({ params }: Params) {
         </section>
       )}
 
+      {past && results && results.Results.length >= 3 && (
+        <section className="card p-5">
+          <PodiumGraphic top3={results.Results.slice(0, 3)} />
+        </section>
+      )}
       {past && results && results.Results.length > 0 && (
         <ResultsTable results={results.Results} />
       )}

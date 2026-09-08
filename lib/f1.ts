@@ -10,7 +10,7 @@ export type Race = {
     circuitId: string;
     circuitName: string;
     url?: string;
-    Location: { locality: string; country: string };
+    Location: { locality: string; country: string; lat?: string; long?: string };
   };
   FirstPractice?: SessionTime;
   SecondPractice?: SessionTime;
@@ -189,6 +189,66 @@ export async function getSeasonWinners(
   }
 }
 
+export type SeasonLeader = {
+  driverId: string;
+  name: string;
+  constructorId: string;
+  count: number;
+};
+
+/** นับผู้นำจากรายการ race (helper) */
+function tallyLeader(
+  races: {
+    Results?: { Driver: RaceResult["Driver"]; Constructor: RaceResult["Constructor"] }[];
+    QualifyingResults?: QualifyingResult[];
+  }[],
+  key: "Results" | "QualifyingResults",
+): SeasonLeader | null {
+  const count = new Map<string, SeasonLeader>();
+  for (const r of races) {
+    const top = r[key]?.[0];
+    if (!top) continue;
+    const id = top.Driver.driverId;
+    const cur = count.get(id);
+    if (cur) cur.count++;
+    else
+      count.set(id, {
+        driverId: id,
+        name: `${top.Driver.givenName.charAt(0)}. ${top.Driver.familyName}`,
+        constructorId: top.Constructor.constructorId,
+        count: 1,
+      });
+  }
+  const list = [...count.values()].sort((a, b) => b.count - a.count);
+  return list[0] ?? null;
+}
+
+/** นักแข่งที่ได้ pole เยอะสุดในฤดูกาล */
+export async function getPoleLeader(season: string | number): Promise<SeasonLeader | null> {
+  try {
+    const d = await jolpica<{
+      MRData: { RaceTable?: { Races?: { QualifyingResults?: QualifyingResult[] }[] } };
+    }>(`${season}/qualifying/1/`, 3600);
+    return tallyLeader(d.MRData.RaceTable?.Races ?? [], "QualifyingResults");
+  } catch {
+    return null;
+  }
+}
+
+/** นักแข่งที่ทำ fastest lap เยอะสุดในฤดูกาล */
+export async function getFastestLapLeader(
+  season: string | number,
+): Promise<SeasonLeader | null> {
+  try {
+    const d = await jolpica<{
+      MRData: { RaceTable?: { Races?: { Results?: RaceResult[] }[] } };
+    }>(`${season}/fastest/1/results/`, 3600);
+    return tallyLeader(d.MRData.RaceTable?.Races ?? [], "Results");
+  } catch {
+    return null;
+  }
+}
+
 export type QualifyingResult = {
   position: string;
   Driver: RaceResult["Driver"];
@@ -326,6 +386,35 @@ export async function getDriverSeasonResults(
         raceName: r.raceName,
         Circuit: r.Circuit,
         result: r.Results[0],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export type ConstructorRaceResult = {
+  round: string;
+  raceName: string;
+  results: RaceResult[];
+};
+
+/** ผลรายสนามของทีมหนึ่งทั้งฤดูกาล (นักแข่งทั้ง 2 คน) */
+export async function getConstructorSeasonResults(
+  season: string | number,
+  constructorId: string,
+): Promise<ConstructorRaceResult[]> {
+  try {
+    const d = await jolpica<{
+      MRData: { RaceTable?: { Races?: (Race & { Results: RaceResult[] })[] } };
+    }>(`${season}/constructors/${constructorId}/results/`, 600);
+    return (d.MRData.RaceTable?.Races ?? [])
+      .filter((r) => r.Results?.length)
+      .map((r) => ({
+        round: r.round,
+        raceName: r.raceName,
+        results: [...r.Results].sort(
+          (a, b) => Number(a.position) - Number(b.position),
+        ),
       }));
   } catch {
     return [];

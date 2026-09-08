@@ -13,4 +13,4 @@ export const TEAM_COLOR: Record<string, string> = {
   cadillac: "#B3995D",
 };
 
-export const teamColor = (id?: string) => TEAM_COLOR[id ?? ""] ?? "#666";
+export const teamColor = (id?: string) => TEAM_COLOR[id ?? ""] ?? "#666666";
