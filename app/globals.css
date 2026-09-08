@@ -68,3 +68,49 @@
   font-family: var(--font-display);
   letter-spacing: -0.01em;
 }
+
+/* ---------- ลูกเล่น ---------- */
+
+/* ตัวเลขนับถอยหลัง "ดีด" ตอนเปลี่ยน */
+@keyframes tick {
+  from {
+    transform: translateY(-42%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.animate-tick {
+  animation: tick 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* เส้นกราฟวาดตัวเอง */
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* เนื้อหาหน้า fade + เลื่อนขึ้นเบา ๆ ตอนเปลี่ยนหน้า */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-page-in {
+  animation: page-in 0.28s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tick,
+  .animate-page-in {
+    animation: none;
+  }
+}

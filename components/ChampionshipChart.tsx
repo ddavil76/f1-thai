@@ -102,30 +102,46 @@ export default function ChampionshipChart({
             ) : null,
           )}
 
-          {series.map((s, si) => (
-            <polyline
-              key={s.driverId}
-              fill="none"
-              stroke={teamColor(s.constructorId)}
-              strokeWidth="2"
-              strokeLinejoin="round"
-              strokeDasharray={dashed[si] ? "5 4" : undefined}
-              points={s.points.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
-            />
-          ))}
+          <defs>
+            <clipPath id="champ-reveal">
+              <rect x="0" y="0" height={H} width={W}>
+                <animate
+                  attributeName="width"
+                  from="0"
+                  to={W}
+                  dur="0.9s"
+                  fill="freeze"
+                />
+              </rect>
+            </clipPath>
+          </defs>
 
-          {series.map((s) => (
-            <text
-              key={s.driverId}
-              x={x(rounds.length - 1) + 6}
-              y={y(s.points.at(-1) ?? 0) + 3}
-              fontSize="9"
-              fontWeight="700"
-              fill={teamColor(s.constructorId)}
-            >
-              {last(s)}
-            </text>
-          ))}
+          <g clipPath="url(#champ-reveal)">
+            {series.map((s, si) => (
+              <polyline
+                key={s.driverId}
+                fill="none"
+                stroke={teamColor(s.constructorId)}
+                strokeWidth="2"
+                strokeLinejoin="round"
+                strokeDasharray={dashed[si] ? "5 4" : undefined}
+                points={s.points.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
+              />
+            ))}
+
+            {series.map((s) => (
+              <text
+                key={s.driverId}
+                x={x(rounds.length - 1) + 6}
+                y={y(s.points.at(-1) ?? 0) + 3}
+                fontSize="9"
+                fontWeight="700"
+                fill={teamColor(s.constructorId)}
+              >
+                {last(s)}
+              </text>
+            ))}
+          </g>
 
           {rounds.map((r, i) => (
             <rect

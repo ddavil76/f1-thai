@@ -17,7 +17,7 @@ export default function SessionCountdown({ race }: { race: Race }) {
       <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/50">
         {kicker}
       </p>
-      <Countdown target={target.toISOString()} liveText={liveText} />
+      <Countdown target={target.toISOString()} race={isRace} liveText={liveText} />
     </div>
   );
 }

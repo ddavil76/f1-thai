@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Noto_Sans_Thai, Chakra_Petch } from "next/font/google";
 import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
+import PageTransition from "@/components/PageTransition";
 import TzToggle from "@/components/tz/TzToggle";
 import { getLastResults } from "@/lib/f1";
 import { teamAccent } from "@/lib/theme";
@@ -83,7 +84,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </header>
 
         <div className="mx-auto min-h-[60vh] max-w-5xl px-4 pb-28 pt-6 md:pb-12">
-          {children}
+          <PageTransition>{children}</PageTransition>
         </div>
 
         <BottomNav />
