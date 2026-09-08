@@ -68,6 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       }
     >
       <body className="antialiased">
+        <div className="scroll-progress" aria-hidden="true" />
         <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-md">
           <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3.5">
             <Link href="/" className="flex items-center gap-2">
