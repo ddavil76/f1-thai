@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getDriverStandings, getDriverSeasonResults } from "@/lib/f1";
+import { getDriverImage } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import TeammateH2H from "@/components/TeammateH2H";
@@ -47,6 +49,7 @@ export default async function DriverPage({ params }: Params) {
 
   const team = standing?.Constructors.at(-1) ?? results.at(-1)?.result.Constructor;
   const color = teamColor(team?.constructorId);
+  const photo = await getDriverImage(driver);
 
   // เพื่อนร่วมทีม (คนล่าสุดที่อยู่ทีมเดียวกัน)
   const mateStanding = team
@@ -70,8 +73,27 @@ export default async function DriverPage({ params }: Params) {
           <ArrowLeft className="h-3.5 w-3.5" />
           ตารางคะแนน
         </Link>
-        <div className="mt-2 flex items-center gap-3">
-          <span className="h-10 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
+        <div className="mt-2 flex items-center gap-4">
+          {photo ? (
+            <div
+              className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full"
+              style={{
+                boxShadow: `0 0 0 2px ${color}`,
+                background: `color-mix(in srgb, ${color} 22%, transparent)`,
+              }}
+            >
+              <Image
+                src={photo}
+                alt={`${driver.givenName} ${driver.familyName}`}
+                fill
+                priority
+                sizes="80px"
+                className="object-cover object-top"
+              />
+            </div>
+          ) : (
+            <span className="h-12 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
+          )}
           <div className="min-w-0">
             <h1 className="text-2xl font-black tracking-tight md:text-3xl">
               {flag(driver.nationality)} {driver.givenName}{" "}

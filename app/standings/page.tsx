@@ -5,6 +5,7 @@ import {
   getDriverStandings, getConstructorStandings, getChampionshipProgression,
   getPoleLeader, getFastestLapLeader,
 } from "@/lib/f1";
+import { getDriverImages } from "@/lib/drivers";
 
 export const metadata = { title: "ตารางคะแนน" };
 
@@ -17,10 +18,11 @@ export default async function StandingsPage() {
     getDriverStandings(SEASON),
     getConstructorStandings(SEASON),
   ]);
-  const [progression, poles, fastestLaps] = await Promise.all([
+  const [progression, poles, fastestLaps, driverImages] = await Promise.all([
     getChampionshipProgression(SEASON, drivers),
     getPoleLeader(SEASON),
     getFastestLapLeader(SEASON),
+    getDriverImages(drivers.map((d) => d.Driver)),
   ]);
 
   const winsLeader = [...drivers]
@@ -51,7 +53,11 @@ export default async function StandingsPage() {
         series={progression.series}
       />
 
-      <Standings drivers={drivers} constructors={constructors} />
+      <Standings
+        drivers={drivers}
+        constructors={constructors}
+        driverImages={driverImages}
+      />
 
       <footer className="pb-8 text-center text-xs text-white/30">
         ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ

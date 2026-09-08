@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import {
   getConstructorStandings, getConstructorSeasonResults,
 } from "@/lib/f1";
+import { getDriverImages } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import CountUp from "@/components/CountUp";
@@ -46,6 +48,14 @@ export default async function ConstructorPage({ params }: Params) {
 
   const color = teamColor(id);
 
+  // ไลน์อัพล่าสุด = นักแข่งจากผลสนามล่าสุด
+  const lineup = Array.from(
+    new Map(
+      (results.at(-1)?.results ?? []).map((r) => [r.Driver.driverId, r.Driver]),
+    ).values(),
+  );
+  const lineupImages = await getDriverImages(lineup);
+
   return (
     <main className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -66,6 +76,44 @@ export default async function ConstructorPage({ params }: Params) {
             {info.name}
           </h1>
         </div>
+
+        {lineup.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {lineup.map((d) => (
+              <Link
+                key={d.driverId}
+                href={`/driver/${d.driverId}`}
+                className="flex items-center gap-2 rounded-full bg-white/5 py-1 pl-1 pr-3 text-sm transition-colors hover:bg-white/10"
+              >
+                {lineupImages[d.driverId] ? (
+                  <span
+                    className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full"
+                    style={{
+                      boxShadow: `0 0 0 1.5px ${color}`,
+                      background: `color-mix(in srgb, ${color} 22%, transparent)`,
+                    }}
+                  >
+                    <Image
+                      src={lineupImages[d.driverId]}
+                      alt=""
+                      fill
+                      sizes="28px"
+                      className="object-cover object-top"
+                    />
+                  </span>
+                ) : (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: color }}
+                  />
+                )}
+                <span className="font-medium">
+                  {d.givenName.charAt(0)}. {d.familyName}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {standing && (

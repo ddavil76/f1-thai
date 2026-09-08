@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Trophy } from "lucide-react";
 import type { DriverStanding, ConstructorStanding } from "@/lib/f1";
@@ -56,8 +57,12 @@ function PointsCell({ points, leader }: { points: string; leader: number }) {
 }
 
 export default function Standings({
-  drivers, constructors,
-}: { drivers: DriverStanding[]; constructors: ConstructorStanding[] }) {
+  drivers, constructors, driverImages = {},
+}: {
+  drivers: DriverStanding[];
+  constructors: ConstructorStanding[];
+  driverImages?: Record<string, string>;
+}) {
   const [tab, setTab] = useState<"d" | "c">("d");
 
   const driverLeader = Number(drivers[0]?.points ?? 0);
@@ -82,6 +87,8 @@ export default function Standings({
         {tab === "d"
           ? drivers.map((s) => {
               const c = s.Constructors.at(-1);
+              const teamCol = TEAM_COLOR[c?.constructorId ?? ""] ?? "#666666";
+              const img = driverImages[s.Driver.driverId];
               return (
                 <li key={s.Driver.driverId}>
                   <Link
@@ -89,10 +96,28 @@ export default function Standings({
                     className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.04]"
                   >
                     <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
-                    <span
-                      className="h-8 w-1 rounded-full"
-                      style={{ background: TEAM_COLOR[c?.constructorId ?? ""] ?? "#666" }}
-                    />
+                    {img ? (
+                      <span
+                        className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full"
+                        style={{
+                          boxShadow: `0 0 0 1.5px ${teamCol}`,
+                          background: `color-mix(in srgb, ${teamCol} 22%, transparent)`,
+                        }}
+                      >
+                        <Image
+                          src={img}
+                          alt=""
+                          fill
+                          sizes="36px"
+                          className="object-cover object-top"
+                        />
+                      </span>
+                    ) : (
+                      <span
+                        className="h-8 w-1 rounded-full"
+                        style={{ background: teamCol }}
+                      />
+                    )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">
                         {s.Driver.givenName.charAt(0)}.{" "}

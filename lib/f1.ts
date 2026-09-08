@@ -28,6 +28,7 @@ export type DriverStanding = {
     driverId: string;
     permanentNumber?: string;
     code?: string;
+    url?: string;
     givenName: string;
     familyName: string;
     nationality: string;
@@ -53,6 +54,7 @@ export type RaceResult = {
     driverId: string;
     code?: string;
     permanentNumber?: string;
+    url?: string;
     givenName: string;
     familyName: string;
     nationality?: string;
