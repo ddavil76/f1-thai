@@ -17,7 +17,7 @@ export default async function CalendarPage() {
       <header className="space-y-3">
         <div className="space-y-1">
           <h1 className="text-3xl font-black tracking-tight md:text-4xl">
-            ปฏิทิน <span className="text-[--color-f1]">F1</span> ทั้งฤดูกาล
+            ปฏิทิน <span className="text-(--color-f1)">F1</span> ทั้งฤดูกาล
           </h1>
           <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
         </div>
@@ -45,7 +45,7 @@ export default async function CalendarPage() {
                 >
                   <span
                     className={`w-6 text-right text-sm tabular-nums ${
-                      isNext ? "font-bold text-[--color-f1]" : "text-white/40"
+                      isNext ? "font-bold text-(--color-f1)" : "text-white/40"
                     }`}
                   >
                     {r.round}

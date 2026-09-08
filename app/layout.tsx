@@ -5,6 +5,10 @@ import { Noto_Sans_Thai } from "next/font/google";
 import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
 import TzToggle from "@/components/tz/TzToggle";
+import { getLastResults } from "@/lib/f1";
+import { teamAccent } from "@/lib/theme";
+
+const SEASON = new Date().getFullYear();
 
 const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
@@ -37,16 +41,30 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // ธีมแอคเซนต์ตามทีมของผู้ชนะสนามล่าสุด
+  const lastWinner = (await getLastResults(SEASON))?.Results?.[0]?.Constructor
+    ?.constructorId;
+  const { accent, accentDark } = teamAccent(lastWinner);
+
   return (
-    <html lang="th" className={notoThai.className}>
+    <html
+      lang="th"
+      className={notoThai.className}
+      style={
+        {
+          "--color-f1": accent,
+          "--color-f1-dark": accentDark,
+        } as React.CSSProperties
+      }
+    >
       <body className="antialiased">
         <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-md">
           <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3.5">
             <Link href="/" className="flex items-center gap-2">
-              <span className="inline-flex h-6 w-1.5 rounded-full bg-[--color-f1]" />
+              <span className="inline-flex h-6 w-1.5 rounded-full bg-(--color-f1)" />
               <span className="text-lg font-black tracking-tight">
-                F1 <span className="text-[--color-f1]">Week Race</span>
+                F1 <span className="text-(--color-f1)">Week Race</span>
               </span>
             </Link>
             <HeaderNav />

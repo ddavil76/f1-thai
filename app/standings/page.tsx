@@ -21,7 +21,7 @@ export default async function StandingsPage() {
     <main className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
         <h1 className="text-3xl font-black tracking-tight md:text-4xl">
-          ตารางคะแนน <span className="text-[--color-f1]">F1</span>
+          ตารางคะแนน <span className="text-(--color-f1)">F1</span>
         </h1>
         <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
       </header>

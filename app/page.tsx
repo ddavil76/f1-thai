@@ -65,8 +65,8 @@ export default async function Home() {
         {/* ---- คอลัมน์ซ้าย: การ์ดสนามถัดไป ---- */}
         <div>
           {next && raceStart ? (
-            <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[--color-f1-dark] via-neutral-900 to-neutral-950 p-5 shadow-[0_20px_60px_-20px_rgba(225,6,0,0.45)] sm:p-6">
-              <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[--color-f1]/20 blur-3xl" />
+            <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-(--color-f1-dark) via-neutral-900 to-neutral-950 p-5 shadow-[0_20px_60px_-20px_rgba(225,6,0,0.45)] sm:p-6">
+              <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-(--color-f1)/20 blur-3xl" />
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
                   Round {next.round} · สนามถัดไป

@@ -12,7 +12,7 @@ function TabBtn({
       onClick={onClick}
       className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
         active
-          ? "bg-[--color-f1] text-white shadow-lg shadow-[--color-f1]/30"
+          ? "bg-(--color-f1) text-white shadow-lg shadow-(--color-f1)/30"
           : "bg-white/10 text-white/70 hover:bg-white/20"
       }`}
     >
@@ -30,7 +30,7 @@ function PointsCell({ points, leader }: { points: string; leader: number }) {
       {gap > 0 ? (
         <p className="mt-0.5 text-[11px] tabular-nums text-white/35">−{gap}</p>
       ) : (
-        <p className="mt-0.5 text-[11px] font-semibold text-[--color-f1]">นำ</p>
+        <p className="mt-0.5 text-[11px] font-semibold text-(--color-f1)">นำ</p>
       )}
     </div>
   );

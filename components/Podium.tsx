@@ -46,7 +46,7 @@ export default function Podium({ race }: { race: RaceWithResults }) {
 
       <Link
         href={`/race/${race.round}`}
-        className="mt-3 inline-block text-sm font-medium text-[--color-f1] transition hover:brightness-125"
+        className="mt-3 inline-block text-sm font-medium text-(--color-f1) transition hover:brightness-125"
       >
         ดูผลเต็ม →
       </Link>

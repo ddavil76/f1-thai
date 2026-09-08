@@ -18,7 +18,7 @@ export default function TzToggle() {
           onClick={() => setPref(o.id)}
           aria-pressed={pref === o.id}
           className={`rounded-full px-2.5 py-1 transition ${
-            pref === o.id ? "bg-[--color-f1] text-white" : "text-white/50 hover:text-white"
+            pref === o.id ? "bg-(--color-f1) text-white" : "text-white/50 hover:text-white"
           }`}
         >
           {o.label}

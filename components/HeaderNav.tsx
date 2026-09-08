@@ -17,7 +17,7 @@ export default function HeaderNav() {
             href={item.href}
             className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
               active
-                ? "bg-[--color-f1] text-white"
+                ? "bg-(--color-f1) text-white"
                 : "text-white/60 hover:bg-white/10 hover:text-white"
             }`}
           >

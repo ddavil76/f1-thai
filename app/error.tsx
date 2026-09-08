@@ -24,7 +24,7 @@ export default function Error({
       </div>
       <button
         onClick={() => retry()}
-        className="rounded-full bg-[--color-f1] px-5 py-2 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
+        className="rounded-full bg-(--color-f1) px-5 py-2 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
       >
         ลองอีกครั้ง
       </button>

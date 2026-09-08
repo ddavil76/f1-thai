@@ -16,7 +16,7 @@ export default async function ResultsPage() {
     <main className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
         <h1 className="text-3xl font-black tracking-tight md:text-4xl">
-          ผลการแข่ง <span className="text-[--color-f1]">F1</span>
+          ผลการแข่ง <span className="text-(--color-f1)">F1</span>
         </h1>
         <p className="text-sm text-white/50">
           ฤดูกาล {SEASON} · แข่งไปแล้ว {races.length} สนาม

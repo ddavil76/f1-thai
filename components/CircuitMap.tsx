@@ -26,7 +26,7 @@ export default function CircuitMap({
         </div>
       )}
       <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2 text-xs font-medium text-white/85">
-        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[--color-f1]" />
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-(--color-f1)" />
         {name}
       </figcaption>
     </figure>
