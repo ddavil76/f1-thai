@@ -3,8 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getSchedule, isPastRace } from "@/lib/f1";
-import { getRaceReplay } from "@/lib/replay";
-import ReplayPlayer from "@/components/replay/ReplayPlayer";
+import ReplayLoader from "@/components/replay/ReplayLoader";
 
 export const revalidate = 3600;
 
@@ -37,9 +36,7 @@ export default async function ReplayPage({ params }: Params) {
   const race = races.find((r) => r.round === round);
   if (!race) notFound();
 
-  const replay = isPastRace(race)
-    ? await getRaceReplay(SEASON, race.date)
-    : null;
+  const past = isPastRace(race);
 
   return (
     <main className="mx-auto max-w-5xl space-y-4">
@@ -59,14 +56,10 @@ export default async function ReplayPage({ params }: Params) {
         </p>
       </div>
 
-      {replay ? (
-        <ReplayPlayer replay={replay} />
+      {past ? (
+        <ReplayLoader season={SEASON} raceDate={race.date} />
       ) : (
-        <p className="card p-6 text-sm text-white/60">
-          {isPastRace(race)
-            ? "ยังไม่มีข้อมูลรีเพลย์สำหรับสนามนี้ (รองรับตั้งแต่ปี 2023 และหลังแข่งจบสักพัก)"
-            : "สนามนี้ยังไม่ได้แข่ง"}
-        </p>
+        <p className="card p-6 text-sm text-white/60">สนามนี้ยังไม่ได้แข่ง</p>
       )}
 
       <footer className="pb-8 text-center text-xs text-white/30">

@@ -1,33 +1,26 @@
 /* ---------- Race replay (openf1.org) ---------- */
 // รีเพลย์ไทม์มิ่งย้อนหลังแบบรอบต่อรอบ — ปี 2023+ เท่านั้น
-// ผลแข่งจบแล้วไม่เปลี่ยน → cache ยาว 1 ปี
+// ดึงจาก "ฝั่ง client" (openf1 บล็อก IP ของ serverless/Vercel แต่รองรับ CORS)
 
 const OF1 = "https://api.openf1.org/v1";
-const YEAR = 60 * 60 * 24 * 365;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// openf1 rate-limit burst → ยิงทีละคำขอ + retry
-let chain: Promise<unknown> = Promise.resolve();
+/** ยิง openf1 พร้อม retry เมื่อโดน rate-limit (429) หรือ 5xx */
 async function of1<T>(path: string): Promise<T> {
-  const run = async (): Promise<T> => {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (attempt > 0) await sleep(600 * attempt);
-      try {
-        const res = await fetch(`${OF1}/${path}`, { next: { revalidate: YEAR } });
-        if (res.ok) return (await res.json()) as T;
-        if (res.status !== 429 && res.status < 500) {
-          throw new Error(`openf1 ${res.status} ${path}`);
-        }
-      } catch (e) {
-        if (attempt === 3) throw e;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await sleep(700 * attempt);
+    try {
+      const res = await fetch(`${OF1}/${path}`, { cache: "force-cache" });
+      if (res.ok) return (await res.json()) as T;
+      if (res.status !== 429 && res.status < 500) {
+        throw new Error(`openf1 ${res.status} ${path}`);
       }
+    } catch (e) {
+      if (attempt === 3) throw e;
     }
-    throw new Error(`openf1 failed ${path}`);
-  };
-  const result = chain.then(run, run);
-  chain = result.catch(() => {});
-  return result as Promise<T>;
+  }
+  throw new Error(`openf1 failed ${path}`);
 }
 
 type Session = { session_key: number; date_start: string; year: number };
@@ -138,12 +131,14 @@ export async function getRaceReplay(
   let positions: Of1Pos[];
   let rc: Of1RC[];
   try {
-    drivers = await of1<Of1Driver[]>(`drivers?session_key=${sk}`);
-    laps = await of1<Of1Lap[]>(`laps?session_key=${sk}`);
-    stints = await of1<Of1Stint[]>(`stints?session_key=${sk}`);
-    pits = await of1<Of1Pit[]>(`pit?session_key=${sk}`);
-    positions = await of1<Of1Pos[]>(`position?session_key=${sk}`);
-    rc = await of1<Of1RC[]>(`race_control?session_key=${sk}`);
+    [drivers, laps, stints, pits, positions, rc] = await Promise.all([
+      of1<Of1Driver[]>(`drivers?session_key=${sk}`),
+      of1<Of1Lap[]>(`laps?session_key=${sk}`),
+      of1<Of1Stint[]>(`stints?session_key=${sk}`),
+      of1<Of1Pit[]>(`pit?session_key=${sk}`),
+      of1<Of1Pos[]>(`position?session_key=${sk}`),
+      of1<Of1RC[]>(`race_control?session_key=${sk}`),
+    ]);
   } catch {
     return null;
   }
