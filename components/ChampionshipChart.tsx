@@ -36,6 +36,18 @@ export default function ChampionshipChart({
 
   const last = (s: ChampionshipSeries) => s.name.split(" ").at(-1) ?? s.name;
 
+  // ป้ายชื่อท้ายเส้น — ดันแยกกันแนวตั้งไม่ให้ทับ
+  const LABEL_GAP = 11;
+  const endLabels = series
+    .map((s, i) => ({ s, i, y: y(s.points.at(-1) ?? 0) }))
+    .sort((a, b) => a.y - b.y);
+  for (let k = 1; k < endLabels.length; k++) {
+    const d = endLabels[k].y - endLabels[k - 1].y;
+    if (d < LABEL_GAP) endLabels[k].y = endLabels[k - 1].y + LABEL_GAP;
+  }
+  const overflow = endLabels.at(-1) ? endLabels.at(-1)!.y - (H - PAD.b) : 0;
+  if (overflow > 0) for (const l of endLabels) l.y -= overflow;
+
   return (
     <section className="card p-5">
       <h2 className="text-lg font-bold">แชมป์เปี้ยนชิพ</h2>
@@ -115,11 +127,11 @@ export default function ChampionshipChart({
               />
             ))}
 
-            {series.map((s) => (
+            {endLabels.map(({ s, y: ly }) => (
               <text
                 key={s.driverId}
                 x={x(rounds.length - 1) + 6}
-                y={y(s.points.at(-1) ?? 0) + 3}
+                y={ly + 3}
                 fontSize="9"
                 fontWeight="700"
                 fill={teamColor(s.constructorId)}

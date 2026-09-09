@@ -36,72 +36,52 @@
     overflow-x: clip;
   }
 
-  /* ---- Ambient background — ไล่เฉดสีเต็มจอ (ไม่มีจุดดำ) เลื่อนช้า ๆ ---- */
+  /* ---- Ambient background — ไล่เฉดสีเต็มจอ (ไม่มีจุดดำ) ลอยช้า ๆ ----
+     ใช้ transform (GPU) ไม่ใช่ background-position → ไม่ repaint ทั้งจอทุกเฟรม */
   body::before {
     content: "";
     position: fixed;
-    inset: 0;
+    top: -20%;
+    left: -20%;
+    width: 140%;
+    height: 140%;
     z-index: -1;
     pointer-events: none;
     background-color: var(--color-bg);
     background-image:
       radial-gradient(
-        70% 70% at 10% 8%,
+        58% 55% at 15% 12%,
         color-mix(in srgb, var(--color-f1) 55%, transparent),
         transparent 70%
       ),
-      radial-gradient(65% 65% at 92% 20%, rgba(96, 108, 210, 0.4), transparent 70%),
+      radial-gradient(54% 54% at 88% 22%, rgba(96, 108, 210, 0.4), transparent 70%),
       radial-gradient(
-        80% 80% at 70% 100%,
+        64% 64% at 72% 92%,
         color-mix(in srgb, var(--color-f1-dark) 70%, transparent),
         transparent 72%
       ),
-      radial-gradient(60% 60% at 25% 85%, rgba(78, 66, 150, 0.32), transparent 70%),
+      radial-gradient(50% 54% at 25% 82%, rgba(78, 66, 150, 0.32), transparent 70%),
       linear-gradient(
         135deg,
         color-mix(in srgb, var(--color-f1) 16%, var(--color-bg)),
         color-mix(in srgb, #5c68c8 12%, var(--color-bg)) 50%,
         color-mix(in srgb, var(--color-f1-dark) 24%, var(--color-bg))
       );
-    background-size: 200% 200%, 200% 200%, 200% 200%, 200% 200%, 100% 100%;
     background-repeat: no-repeat;
-    animation: bg-shift 44s ease-in-out infinite;
-    will-change: background-position;
+    animation: bg-drift 40s ease-in-out infinite;
+    will-change: transform;
   }
 
-  @keyframes bg-shift {
+  @keyframes bg-drift {
     0%,
     100% {
-      background-position:
-        0% 50%,
-        0% 50%,
-        0% 50%,
-        0% 50%,
-        0 0;
+      transform: translate3d(0, 0, 0) scale(1);
     }
-    25% {
-      background-position:
-        65% 0%,
-        65% 0%,
-        65% 0%,
-        65% 0%,
-        0 0;
+    33% {
+      transform: translate3d(3%, -2.6%, 0) scale(1.04);
     }
-    50% {
-      background-position:
-        100% 55%,
-        100% 55%,
-        100% 55%,
-        100% 55%,
-        0 0;
-    }
-    75% {
-      background-position:
-        35% 100%,
-        35% 100%,
-        35% 100%,
-        35% 100%,
-        0 0;
+    66% {
+      transform: translate3d(-2.6%, 2%, 0) scale(1.03);
     }
   }
 

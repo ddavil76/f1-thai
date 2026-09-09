@@ -93,11 +93,13 @@ export default async function RacePage({ params }: Params) {
         </p>
       </div>
 
-      <CircuitMap
-        src={circuitImg}
-        name={race.Circuit.circuitName}
-        circuitId={race.Circuit.circuitId}
-      />
+      {!past && (
+        <CircuitMap
+          src={circuitImg}
+          name={race.Circuit.circuitName}
+          circuitId={race.Circuit.circuitId}
+        />
+      )}
 
       {!past && raceStart && (
         <section className="card p-5">
@@ -135,6 +137,26 @@ export default async function RacePage({ params }: Params) {
         </section>
       )}
 
+      {past && results && results.Results.length >= 3 && (
+        <section className="card p-5">
+          <PodiumGraphic top3={results.Results.slice(0, 3)} />
+        </section>
+      )}
+      {past && results && results.Results.length > 0 && (
+        <ResultsTable results={results.Results} />
+      )}
+      {past && sprint.length > 0 && (
+        <ResultsTable results={sprint} title="ผลสปรินต์" />
+      )}
+      {past && quali.length > 0 && <QualifyingTable results={quali} />}
+      {past &&
+        (!results || results.Results.length === 0) &&
+        quali.length === 0 && (
+          <p className="card p-6 text-center text-sm text-white/50">
+            ยังไม่มีผลการแข่งสำหรับสนามนี้
+          </p>
+        )}
+
       {sessions.length > 0 && (
         <section className="card p-5">
           <h2 className="mb-3 text-lg font-bold">ตารางสุดสัปดาห์</h2>
@@ -164,25 +186,14 @@ export default async function RacePage({ params }: Params) {
         </section>
       )}
 
-      {past && results && results.Results.length >= 3 && (
-        <section className="card p-5">
-          <PodiumGraphic top3={results.Results.slice(0, 3)} />
-        </section>
+      {past && (
+        <CircuitMap
+          src={circuitImg}
+          name={race.Circuit.circuitName}
+          circuitId={race.Circuit.circuitId}
+          compact
+        />
       )}
-      {past && results && results.Results.length > 0 && (
-        <ResultsTable results={results.Results} />
-      )}
-      {past && sprint.length > 0 && (
-        <ResultsTable results={sprint} title="ผลสปรินต์" />
-      )}
-      {past && quali.length > 0 && <QualifyingTable results={quali} />}
-      {past &&
-        (!results || results.Results.length === 0) &&
-        quali.length === 0 && (
-          <p className="card p-6 text-center text-sm text-white/50">
-            ยังไม่มีผลการแข่งสำหรับสนามนี้
-          </p>
-        )}
 
       <footer className="pb-8 text-center text-xs text-white/30">
         ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ

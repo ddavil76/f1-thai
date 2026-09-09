@@ -41,9 +41,9 @@ export default async function Home() {
         {/* ---- คอลัมน์ซ้าย: การ์ดสนามถัดไป ---- */}
         <div>
           {next && raceStart ? (
-            <section className="card p-5 sm:p-6">
+            <section className="card p-5 ring-1 ring-inset ring-(--color-f1)/20 sm:p-6">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
+                <p className="text-xs font-semibold uppercase tracking-widest text-(--color-f1)">
                   Round {next.round} · สนามถัดไป
                 </p>
                 {isSprintWeekend(next) && (
@@ -53,7 +53,9 @@ export default async function Home() {
                   </span>
                 )}
               </div>
-              <h2 className="mt-1 text-2xl font-bold">{next.raceName}</h2>
+              <h2 className="mt-1 text-2xl font-bold sm:text-3xl">
+                {next.raceName}
+              </h2>
               <p className="text-sm text-white/70">
                 {next.Circuit.circuitName} · {next.Circuit.Location.locality},{" "}
                 {next.Circuit.Location.country}

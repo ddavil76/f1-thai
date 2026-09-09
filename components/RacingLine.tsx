@@ -11,9 +11,11 @@ import { circuitTrack } from "@/lib/circuits";
 export default function RacingLine({
   circuitId,
   name,
+  compact = false,
 }: {
   circuitId: string;
   name: string;
+  compact?: boolean;
 }) {
   const track = circuitTrack(circuitId);
   if (!track) return null;
@@ -23,7 +25,11 @@ export default function RacingLine({
   const viewBox = `${-pad} ${-pad} ${w + pad * 2} ${h + pad * 2}`;
 
   return (
-    <figure className="relative mt-5 aspect-[16/9] w-full overflow-hidden rounded-xl border border-white/10 bg-black/25">
+    <figure
+      className={`relative mt-5 w-full overflow-hidden rounded-xl border border-white/10 bg-black/25 ${
+        compact ? "aspect-[21/8]" : "aspect-[16/9]"
+      }`}
+    >
       <svg
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"

@@ -8,21 +8,28 @@ export default function CircuitMap({
   src,
   name,
   circuitId,
+  compact = false,
 }: {
   src: string | null;
   name: string;
   circuitId?: string;
+  /** เตี้ยลง — ใช้ในหน้า race detail ที่ผลการแข่งสำคัญกว่า */
+  compact?: boolean;
 }) {
   // มี path เวกเตอร์ของสนามนี้ → ใช้ racing line แทนรูป
   if (circuitId && circuitTrack(circuitId)) {
-    return <RacingLine circuitId={circuitId} name={name} />;
+    return <RacingLine circuitId={circuitId} name={name} compact={compact} />;
   }
 
   // รูปที่มาจาก SVG (ผังแทร็ก) → ทำเป็นเส้นขาวบนพื้นมืดให้กลืนกับการ์ด
   const isTrackMap = src ? /\.svg(\.|$)/i.test(src) : false;
 
   return (
-    <figure className="relative mt-5 aspect-[16/9] w-full overflow-hidden rounded-xl border border-white/10 bg-black/25">
+    <figure
+      className={`relative mt-5 w-full overflow-hidden rounded-xl border border-white/10 bg-black/25 ${
+        compact ? "aspect-[21/8]" : "aspect-[16/9]"
+      }`}
+    >
       {src ? (
         <Image
           src={src}

@@ -67,9 +67,6 @@ export type RaceResult = {
 /** race + ผลการแข่ง (ใช้ทั้งการ์ดโพเดียมและหน้าผลเต็ม) */
 export type RaceWithResults = Race & { Results: RaceResult[] };
 
-/** @deprecated ใช้ RaceWithResults แทน */
-export type LastRace = RaceWithResults;
-
 const BASE = "https://api.jolpi.ca/ergast/f1";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -159,7 +156,8 @@ export async function getLastResults(
   season: string | number,
 ): Promise<RaceWithResults | null> {
   try {
-    const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 120);
+    // ใช้ทั้งธีมสี accent (layout) และการ์ดโพเดียมหน้าแรก — ไม่ต้องสดมาก
+    const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 900);
     return d.MRData.RaceTable?.Races?.[0] ?? null;
   } catch {
     return null;
@@ -501,6 +499,9 @@ export async function getCircuitImage(circuit?: Race["Circuit"]): Promise<string
 }
 
 /* ---------- เวลา ---------- */
+
+/** เวลาปัจจุบัน (ms) — แยกเป็นฟังก์ชันเพื่อเรียกใน server component ได้โดยไม่ผิด purity rule */
+export const nowMs = () => Date.now();
 
 /** รวม date + time (UTC) เป็น Date object; ถ้าไม่มี time ให้ถือเป็น 00:00Z */
 export function toDate(s?: SessionTime | null): Date | null {

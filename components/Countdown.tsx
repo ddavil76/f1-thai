@@ -31,14 +31,19 @@ function StartLights({ left }: { left: number }) {
 
 export default function Countdown({
   target,
+  serverNow,
   race = false,
   liveText = "กำลังแข่งอยู่!",
 }: {
   target: string;
+  /** เวลา ณ ตอน render ฝั่ง server — ให้ SSR แสดงเลขได้เลย ไม่ต้องรอ client */
+  serverNow?: number;
   race?: boolean;
   liveText?: string;
 }) {
-  const [left, setLeft] = useState<number | null>(null);
+  const [left, setLeft] = useState<number | null>(() =>
+    serverNow != null ? new Date(target).getTime() - serverNow : null,
+  );
 
   useEffect(() => {
     const t = new Date(target).getTime();
@@ -48,7 +53,7 @@ export default function Countdown({
     return () => clearInterval(id);
   }, [target]);
 
-  // ครั้งแรกยังไม่ render เลข → กัน hydration mismatch
+  // ไม่มี serverNow และ client ยังไม่ tick → skeleton (กัน hydration mismatch)
   if (left === null) {
     return <div className="h-[74px] animate-pulse rounded-xl bg-white/10" />;
   }
