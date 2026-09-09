@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RotateCcw, Zap } from "lucide-react";
+import { RotateCcw, Volume2, VolumeX, Zap } from "lucide-react";
 
 type Phase = "idle" | "arming" | "go" | "result" | "foul" | "quick";
 
 const HISTORY_KEY = "rt-history";
+const MUTE_KEY = "rt-muted";
 const LIGHT_MS = 850; // เว้นช่วงไฟแต่ละดวง
 const MIN_HUMAN_MS = 100; // ต่ำกว่านี้ = เดาจังหวะไฟ ไม่นับ
 const KEEP = 20; // เก็บประวัติกี่ครั้ง
@@ -106,9 +107,59 @@ export default function ReactionGame() {
   const [lit, setLit] = useState(0); // จำนวนไฟที่ติด 0..5
   const [rt, setRt] = useState<number | null>(null);
   const [history, setHistory] = useState<number[]>([]); // ใหม่สุดก่อน, เฉพาะครั้งที่นับ
+  const [muted, setMuted] = useState(false);
 
   const goAt = useRef(0);
   const timers = useRef<number[]>([]);
+  const audioRef = useRef<AudioContext | null>(null);
+  const mutedRef = useRef(false);
+
+  // ปลดล็อก / สร้าง AudioContext — ต้องเรียกใน user gesture
+  const unlockAudio = useCallback(() => {
+    try {
+      if (!audioRef.current) {
+        const Ctx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (Ctx) audioRef.current = new Ctx();
+      }
+      void audioRef.current?.resume();
+    } catch {
+      /* ไม่รองรับก็เล่นเงียบ ๆ */
+    }
+  }, []);
+
+  // บี๊บสั้น ๆ ตอนไฟติด
+  const beep = useCallback(() => {
+    if (mutedRef.current) return;
+    const ac = audioRef.current;
+    if (!ac) return;
+    const t = ac.currentTime;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = "square";
+    osc.frequency.value = 720;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.12, t + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(t);
+    osc.stop(t + 0.11);
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setMuted((m) => {
+      const next = !m;
+      mutedRef.current = next;
+      try {
+        localStorage.setItem(MUTE_KEY, next ? "1" : "0");
+      } catch {
+        /* เมิน */
+      }
+      return next;
+    });
+  }, []);
 
   const best = history.length ? Math.min(...history) : null;
   const avg5 =
@@ -131,6 +182,10 @@ export default function ReactionGame() {
       if (Array.isArray(arr) && arr.length) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setHistory(arr.filter((n) => typeof n === "number").slice(0, KEEP));
+      }
+      if (localStorage.getItem(MUTE_KEY) === "1") {
+        mutedRef.current = true;
+        setMuted(true);
       }
     } catch {
       /* ไม่มี localStorage ก็ไม่เป็นไร */
@@ -157,7 +212,12 @@ export default function ReactionGame() {
     setRt(null);
 
     for (let i = 1; i <= 5; i++) {
-      timers.current.push(window.setTimeout(() => setLit(i), i * LIGHT_MS));
+      timers.current.push(
+        window.setTimeout(() => {
+          setLit(i);
+          beep();
+        }, i * LIGHT_MS),
+      );
     }
     // ไฟครบ 5 ดวงแล้วหน่วงแบบสุ่ม 0.2–3 วิ ก่อนดับ
     const hold = 200 + Math.random() * 2800;
@@ -168,9 +228,10 @@ export default function ReactionGame() {
         goAt.current = performance.now();
       }, 5 * LIGHT_MS + hold),
     );
-  }, [clearTimers]);
+  }, [clearTimers, beep]);
 
   const tap = useCallback(() => {
+    unlockAudio();
     if (phase === "idle" || phase === "result" || phase === "foul" || phase === "quick") {
       start();
       return;
@@ -191,7 +252,7 @@ export default function ReactionGame() {
       setPhase("result");
       record(ms);
     }
-  }, [phase, start, clearTimers, record]);
+  }, [phase, start, clearTimers, record, unlockAudio]);
 
   // เล่นด้วยสเปซบาร์ / Enter ได้ด้วย
   useEffect(() => {
@@ -219,6 +280,7 @@ export default function ReactionGame() {
 
   return (
     <div className="space-y-4">
+      <div className="relative">
       <button
         type="button"
         onClick={tap}
@@ -299,6 +361,20 @@ export default function ReactionGame() {
           )}
         </div>
       </button>
+
+        <button
+          type="button"
+          onClick={toggleMute}
+          aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}
+          className="absolute right-3 top-3 z-10 rounded-full bg-white/5 p-1.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white/70"
+        >
+          {muted ? (
+            <VolumeX className="h-4 w-4" />
+          ) : (
+            <Volume2 className="h-4 w-4" />
+          )}
+        </button>
+      </div>
 
       {phase === "result" && rt != null && <CompareBars ms={rt} />}
 
