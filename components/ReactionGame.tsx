@@ -3,28 +3,107 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RotateCcw, Zap } from "lucide-react";
 
-type Phase = "idle" | "arming" | "go" | "result" | "foul";
+type Phase = "idle" | "arming" | "go" | "result" | "foul" | "quick";
 
-const BEST_KEY = "rt-best";
+const HISTORY_KEY = "rt-history";
+const LIGHT_MS = 850; // เว้นช่วงไฟแต่ละดวง
+const MIN_HUMAN_MS = 100; // ต่ำกว่านี้ = เดาจังหวะไฟ ไม่นับ
+const KEEP = 20; // เก็บประวัติกี่ครั้ง
+
+const SCALE_MIN = 100;
+const SCALE_MAX = 500;
+const BENCH = [
+  { ms: 200, label: "F1" },
+  { ms: 250, label: "คนทั่วไป" },
+  { ms: 350, label: "มือใหม่" },
+];
 
 /** ระดับตามเวลาตอบสนอง (ms) — อ้างอิงเวลาออกตัวจริงในสนาม F1 (~0.2 วิ) */
 function grade(ms: number): { label: string; tone: string } {
-  if (ms < 150) return { label: "ระดับแชมป์โลก 🏆", tone: "text-(--color-f1)" };
-  if (ms < 200) return { label: "ระดับนักแข่ง F1", tone: "text-(--color-f1)" };
-  if (ms < 250) return { label: "เร็วมาก", tone: "text-green-400" };
-  if (ms < 320) return { label: "ดี", tone: "text-green-400" };
-  if (ms < 400) return { label: "พอใช้", tone: "text-yellow-400" };
+  if (ms < 170) return { label: "ระดับแชมป์โลก 🏆", tone: "text-(--color-f1)" };
+  if (ms < 210) return { label: "ระดับนักแข่ง F1", tone: "text-(--color-f1)" };
+  if (ms < 260) return { label: "เร็วมาก", tone: "text-green-400" };
+  if (ms < 330) return { label: "ดี", tone: "text-green-400" };
+  if (ms < 420) return { label: "พอใช้", tone: "text-yellow-400" };
   return { label: "ช้าไปนิด ลองอีกที", tone: "text-white/60" };
+}
+
+const secs = (ms: number) => `${(ms / 1000).toFixed(3)}`;
+const clampPct = (ms: number) =>
+  Math.max(2, Math.min(98, ((ms - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * 100));
+
+/** แถบเทียบเวลาของเรากับเกณฑ์อ้างอิง */
+function CompareScale({ ms }: { ms: number }) {
+  return (
+    <div className="w-full max-w-xs pt-1">
+      <div className="relative h-2 rounded-full bg-gradient-to-r from-green-500/70 via-yellow-500/60 to-red-500/70">
+        {BENCH.map((b) => (
+          <span
+            key={b.label}
+            className="absolute top-1/2 h-3.5 w-px -translate-y-1/2 bg-white/50"
+            style={{ left: `${clampPct(b.ms)}%` }}
+          />
+        ))}
+        <span
+          className="absolute -top-1 h-4 w-1 -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_2px_rgba(255,255,255,0.7)]"
+          style={{ left: `${clampPct(ms)}%` }}
+        />
+      </div>
+      <div className="relative mt-1 h-3">
+        {BENCH.map((b) => (
+          <span
+            key={b.label}
+            className="absolute -translate-x-1/2 whitespace-nowrap text-[9px] text-white/40"
+            style={{ left: `${clampPct(b.ms)}%` }}
+          >
+            {b.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** แท่งประวัติ 10 ครั้งหลัง (เตี้ย = เร็ว) */
+function History({ times }: { times: number[] }) {
+  if (times.length < 2) return null;
+  const recent = times.slice(0, 10).reverse();
+  const max = Math.max(...recent, 400);
+  return (
+    <div className="flex h-9 items-end gap-1 px-1">
+      {recent.map((t, i) => {
+        const tone =
+          t < 260 ? "bg-green-500/70" : t < 360 ? "bg-yellow-500/70" : "bg-red-500/55";
+        return (
+          <div
+            key={i}
+            className={`flex-1 rounded-sm ${tone}`}
+            style={{ height: `${25 + (t / max) * 75}%` }}
+            title={`${secs(t)} วิ`}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 export default function ReactionGame() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [lit, setLit] = useState(0); // จำนวนไฟที่ติด 0..5
   const [rt, setRt] = useState<number | null>(null);
-  const [best, setBest] = useState<number | null>(null);
+  const [history, setHistory] = useState<number[]>([]); // ใหม่สุดก่อน, เฉพาะครั้งที่นับ
 
   const goAt = useRef(0);
   const timers = useRef<number[]>([]);
+
+  const best = history.length ? Math.min(...history) : null;
+  const avg5 =
+    history.length >= 3
+      ? Math.round(
+          history.slice(0, 5).reduce((a, b) => a + b, 0) /
+            Math.min(5, history.length),
+        )
+      : null;
 
   const clearTimers = useCallback(() => {
     timers.current.forEach(clearTimeout);
@@ -33,14 +112,29 @@ export default function ReactionGame() {
 
   useEffect(() => {
     try {
-      const v = localStorage.getItem(BEST_KEY);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (v) setBest(Number(v));
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const arr = raw ? (JSON.parse(raw) as number[]) : [];
+      if (Array.isArray(arr) && arr.length) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setHistory(arr.filter((n) => typeof n === "number").slice(0, KEEP));
+      }
     } catch {
       /* ไม่มี localStorage ก็ไม่เป็นไร */
     }
     return clearTimers;
   }, [clearTimers]);
+
+  const record = useCallback((ms: number) => {
+    setHistory((h) => {
+      const next = [ms, ...h].slice(0, KEEP);
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        /* เมิน */
+      }
+      return next;
+    });
+  }, []);
 
   const start = useCallback(() => {
     clearTimers();
@@ -49,7 +143,7 @@ export default function ReactionGame() {
     setRt(null);
 
     for (let i = 1; i <= 5; i++) {
-      timers.current.push(window.setTimeout(() => setLit(i), i * 1000));
+      timers.current.push(window.setTimeout(() => setLit(i), i * LIGHT_MS));
     }
     // ไฟครบ 5 ดวงแล้วหน่วงแบบสุ่ม 0.2–3 วิ ก่อนดับ
     const hold = 200 + Math.random() * 2800;
@@ -58,17 +152,16 @@ export default function ReactionGame() {
         setLit(0);
         setPhase("go");
         goAt.current = performance.now();
-      }, 5000 + hold),
+      }, 5 * LIGHT_MS + hold),
     );
   }, [clearTimers]);
 
   const tap = useCallback(() => {
-    if (phase === "idle" || phase === "result" || phase === "foul") {
+    if (phase === "idle" || phase === "result" || phase === "foul" || phase === "quick") {
       start();
       return;
     }
     if (phase === "arming") {
-      // แตะก่อนไฟดับ = ออกตัวเกิน
       clearTimers();
       setLit(0);
       setPhase("foul");
@@ -77,22 +170,19 @@ export default function ReactionGame() {
     if (phase === "go") {
       const ms = Math.round(performance.now() - goAt.current);
       setRt(ms);
+      if (ms < MIN_HUMAN_MS) {
+        setPhase("quick"); // เร็วเกินมนุษย์ = เดาไฟ ไม่บันทึก
+        return;
+      }
       setPhase("result");
-      setBest((b) => {
-        const next = b == null ? ms : Math.min(b, ms);
-        try {
-          localStorage.setItem(BEST_KEY, String(next));
-        } catch {
-          /* เมิน */
-        }
-        return next;
-      });
+      record(ms);
     }
-  }, [phase, start, clearTimers]);
+  }, [phase, start, clearTimers, record]);
 
-  // เล่นด้วยสเปซบาร์ได้ด้วย
+  // เล่นด้วยสเปซบาร์ / Enter ได้ด้วย
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if (e.code === "Space" || e.code === "Enter") {
         e.preventDefault();
         tap();
@@ -101,6 +191,15 @@ export default function ReactionGame() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [tap]);
+
+  const clearStats = () => {
+    setHistory([]);
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch {
+      /* เมิน */
+    }
+  };
 
   const g = rt != null ? grade(rt) : null;
 
@@ -112,13 +211,13 @@ export default function ReactionGame() {
         aria-label="พื้นที่เล่นเกมออกตัว"
         className={`card relative flex aspect-[4/3] w-full flex-col items-center justify-center gap-6 overflow-hidden p-6 text-center transition-colors sm:aspect-[16/9] ${
           phase === "go"
-            ? "bg-green-500/15"
-            : phase === "foul"
+            ? "go-flash bg-green-500/15"
+            : phase === "foul" || phase === "quick"
               ? "bg-(--color-f1)/12"
               : ""
         }`}
-    >
-      {/* แผงไฟสตาร์ท 5 คอลัมน์ (คอลัมน์ละ 2 ดวง) */}
+      >
+        {/* แผงไฟสตาร์ท 5 คอลัมน์ (คอลัมน์ละ 2 ดวง) */}
         <div className="flex gap-2 sm:gap-3">
           {[0, 1, 2, 3, 4].map((col) => {
             const on = col < lit;
@@ -143,7 +242,7 @@ export default function ReactionGame() {
         </div>
 
         {/* ข้อความสถานะ */}
-        <div className="min-h-[3.5rem]">
+        <div className="flex min-h-[5rem] flex-col items-center justify-center">
           {phase === "idle" && (
             <p className="text-lg font-bold">
               แตะเพื่อเริ่ม
@@ -166,45 +265,60 @@ export default function ReactionGame() {
               </span>
             </p>
           )}
+          {phase === "quick" && (
+            <p className="text-lg font-bold text-(--color-f1)">
+              เร็วเกินไป — เดาจังหวะไฟ
+              <span className="mt-1 block text-sm font-normal text-white/50">
+                รอให้ไฟดับก่อนแล้วค่อยแตะ · แตะเพื่อลองใหม่
+              </span>
+            </p>
+          )}
           {phase === "result" && g && rt != null && (
-            <div>
+            <div className="flex flex-col items-center">
               <p className="display text-4xl font-black tabular-nums sm:text-5xl">
-                {(rt / 1000).toFixed(3)}
+                {secs(rt)}
                 <span className="ml-1 text-lg font-bold text-white/40">วิ</span>
               </p>
               <p className={`mt-1 text-sm font-semibold ${g.tone}`}>{g.label}</p>
-              <p className="mt-0.5 text-xs text-white/40">แตะเพื่อเล่นอีกครั้ง</p>
+              <CompareScale ms={rt} />
+              <p className="mt-2 text-xs text-white/40">แตะเพื่อเล่นอีกครั้ง</p>
             </div>
           )}
         </div>
       </button>
 
+      {/* สถิติ */}
       <div className="flex items-center justify-between px-1 text-sm">
-        <span className="flex items-center gap-1.5 text-white/50">
-          <Zap className="h-3.5 w-3.5 text-(--color-f1)" fill="currentColor" />
-          สถิติดีสุด:{" "}
-          <span className="display font-bold text-white">
-            {best != null ? `${(best / 1000).toFixed(3)} วิ` : "—"}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="flex items-center gap-1.5 text-white/50">
+            <Zap className="h-3.5 w-3.5 text-(--color-f1)" fill="currentColor" />
+            ดีสุด{" "}
+            <span className="display font-bold text-white">
+              {best != null ? `${secs(best)} วิ` : "—"}
+            </span>
           </span>
-        </span>
-        {best != null && (
+          {avg5 != null && (
+            <span className="text-white/40">
+              เฉลี่ย 5 ครั้ง{" "}
+              <span className="display font-semibold text-white/70">
+                {secs(avg5)} วิ
+              </span>
+            </span>
+          )}
+        </div>
+        {history.length > 0 && (
           <button
             type="button"
-            onClick={() => {
-              setBest(null);
-              try {
-                localStorage.removeItem(BEST_KEY);
-              } catch {
-                /* เมิน */
-              }
-            }}
-            className="flex items-center gap-1 text-white/40 transition hover:text-white/70"
+            onClick={clearStats}
+            className="flex shrink-0 items-center gap-1 text-white/40 transition hover:text-white/70"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             ล้างสถิติ
           </button>
         )}
       </div>
+
+      <History times={history} />
 
       <p className="px-1 text-xs leading-relaxed text-white/40">
         เวลาตอบสนองเฉลี่ยของคนทั่วไปราว 0.25 วินาที · นักแข่ง F1 ออกตัวได้เร็วราว

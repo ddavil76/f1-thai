@@ -318,6 +318,16 @@
   }
 }
 
+/* ---- เกมออกตัว: แฟลชเขียวตอนไฟดับ ---- */
+@keyframes go-flash {
+  from {
+    background-color: rgba(34, 197, 94, 0.55);
+  }
+}
+.go-flash {
+  animation: go-flash 0.45s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body::before {
     animation: none;
@@ -331,7 +341,8 @@
   .podium-rise,
   .grow-x,
   .track-draw,
-  .racing-dot {
+  .racing-dot,
+  .go-flash {
     animation: none;
   }
   .track-draw {
