@@ -6,6 +6,7 @@ import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import CircuitInfo from "@/components/CircuitInfo";
 import SectionTabs from "@/components/SectionTabs";
+import ReactionPromo from "@/components/ReactionPromo";
 import ResultsTable from "@/components/ResultsTable";
 import QualifyingTable from "@/components/QualifyingTable";
 import PodiumGraphic from "@/components/PodiumGraphic";
@@ -167,6 +168,8 @@ export default async function RacePage({ params }: Params) {
           )}
         </section>
       )}
+
+      {!past && <ReactionPromo />}
 
       {past && results && results.Results.length >= 3 && (
         <section className="card p-5">

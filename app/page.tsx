@@ -4,6 +4,7 @@ import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
 import WeatherBadge from "@/components/WeatherBadge";
+import ReactionPromo from "@/components/ReactionPromo";
 import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
@@ -39,7 +40,7 @@ export default async function Home() {
 
       <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-start">
         {/* ---- คอลัมน์ซ้าย: การ์ดสนามถัดไป ---- */}
-        <div>
+        <div className="space-y-4">
           {next && raceStart ? (
             <section className="card p-5 ring-1 ring-inset ring-(--color-f1)/20 sm:p-6">
               <div className="flex flex-wrap items-center gap-2">
@@ -112,6 +113,8 @@ export default async function Home() {
                 : "จบฤดูกาลแล้ว"}
             </p>
           )}
+
+          <ReactionPromo />
         </div>
 
         {/* ---- คอลัมน์ขวา: ตารางสุดสัปดาห์ / ผลล่าสุด / ถัดไป ---- */}

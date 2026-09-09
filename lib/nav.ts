@@ -3,5 +3,4 @@ export const NAV_ITEMS = [
   { href: "/results", label: "ผล" },
   { href: "/standings", label: "คะแนน" },
   { href: "/calendar", label: "ปฏิทิน" },
-  { href: "/reaction", label: "เกม" },
 ] as const;
