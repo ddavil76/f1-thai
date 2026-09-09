@@ -232,8 +232,12 @@ async function loadReplay(
         if (!cur || lap.lap_number > cur.lap_number) cur = lap;
       }
     }
-    if (!cur?.date_start || cur.lap_duration == null) return 0;
-    const f = (t - ms(cur.date_start)) / (cur.lap_duration * 1000);
+    if (!cur?.date_start) return 0;
+    // รอบนี้ไม่มีเวลาจบ = ออกกลางรอบ (DNF) → ใช้เวลาต่อรอบของรอบก่อนหน้าเป็นตัวประมาณ
+    const dur =
+      cur.lap_duration ?? m.get(cur.lap_number - 1)?.lap_duration ?? null;
+    if (dur == null) return cur.lap_number - 1; // ไม่รู้ → หยุดที่เส้น
+    const f = (t - ms(cur.date_start)) / (dur * 1000);
     return cur.lap_number - 1 + Math.max(0, Math.min(0.999, f));
   };
 

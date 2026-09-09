@@ -67,9 +67,11 @@ export default function TrackMap({
       setDots(
         a.rows.map((ra) => {
           const rb = bByNum[ra.num] ?? ra;
+          // จุดวิ่งเดินหน้าเท่านั้น — คันที่ออกแล้ว/ข้อมูลเพี้ยนไม่ถอยหลัง
+          const target = Math.max(ra.frac, rb.frac);
           return {
             num: ra.num,
-            frac: ra.frac + (rb.frac - ra.frac) * k,
+            frac: ra.frac + (target - ra.frac) * k,
             pos: k < 0.5 ? ra.pos : rb.pos,
             out: ra.out && rb.out,
           };
