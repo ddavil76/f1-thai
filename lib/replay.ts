@@ -409,11 +409,12 @@ async function loadReplay(
     });
   }
 
-  // เผื่อรอบสุดท้ายเวลาเพี้ยน → ทำให้ atMs เพิ่มขึ้นเสมอ
+  // อัด "ช่องว่างยาว" (ธงแดง / SC ยาว) ให้ timeline ไม่ตาย + กัน atMs ถอยหลัง
+  const origAt = frames.map((f) => f.atMs);
   for (let i = 1; i < frames.length; i++) {
-    if (frames[i].atMs <= frames[i - 1].atMs) {
-      frames[i].atMs = frames[i - 1].atMs + 60_000;
-    }
+    const gap = origAt[i] - origAt[i - 1];
+    const keep = gap <= 0 ? 45_000 : gap > 200_000 ? 25_000 : gap;
+    frames[i].atMs = frames[i - 1].atMs + keep;
   }
 
   return {

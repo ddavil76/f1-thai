@@ -267,10 +267,11 @@ export default function ReplayPlayer({
           max={durationMs}
           defaultValue={0}
           step={500}
-          onInput={(e) => {
+          onChange={(e) => {
             setPlaying(false);
-            timeRef.current = Number((e.target as HTMLInputElement).value);
+            timeRef.current = Number(e.target.value);
           }}
+          onPointerDown={() => setPlaying(false)}
           className="h-1 min-w-[8rem] flex-1 accent-(--color-f1)"
           aria-label="เลื่อนเวลา"
         />
