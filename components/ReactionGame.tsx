@@ -138,10 +138,10 @@ export default function ReactionGame() {
     const t = ac.currentTime;
     const osc = ac.createOscillator();
     const gain = ac.createGain();
-    osc.type = "square";
-    osc.frequency.value = 720;
+    osc.type = "sine";
+    osc.frequency.value = 450;
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.12, t + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
     osc.connect(gain).connect(ac.destination);
     osc.start(t);
