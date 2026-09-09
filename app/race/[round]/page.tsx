@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CalendarPlus, Flag, Zap } from "lucide-react";
+import { ArrowLeft, CalendarPlus, Flag, PlayCircle, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import ResultsTable from "@/components/ResultsTable";
@@ -141,6 +141,21 @@ export default async function RacePage({ params }: Params) {
         <section className="card p-5">
           <PodiumGraphic top3={results.Results.slice(0, 3)} />
         </section>
+      )}
+      {past && SEASON >= 2023 && results && results.Results.length > 0 && (
+        <Link
+          href={`/race/${round}/replay`}
+          className="card flex items-center gap-3 p-4 transition hover:border-white/20"
+        >
+          <PlayCircle className="h-5 w-5 shrink-0 text-(--color-f1)" />
+          <span className="flex-1 text-sm font-semibold">
+            ดูรีเพลย์ไทม์มิ่ง
+            <span className="ml-2 font-normal text-white/45">
+              ตำแหน่ง · ยาง · เวลาต่อรอบ แบบเล่นย้อนหลัง
+            </span>
+          </span>
+          <ArrowLeft className="h-4 w-4 rotate-180 text-white/30" />
+        </Link>
       )}
       {past && results && results.Results.length > 0 && (
         <ResultsTable results={results.Results} />
