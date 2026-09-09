@@ -2,6 +2,7 @@ import Standings from "@/components/Standings";
 import ChampionshipChart from "@/components/ChampionshipChart";
 import SeasonStats from "@/components/SeasonStats";
 import TitleRace from "@/components/TitleRace";
+import SectionTabs from "@/components/SectionTabs";
 import {
   getDriverStandings, getConstructorStandings, getChampionshipProgression,
   getPoleLeader, getFastestLapLeader, getSchedule, isPastRace, isSprintWeekend,
@@ -55,21 +56,41 @@ export default async function StandingsPage() {
 
       <SeasonStats wins={wins} poles={poles} fastestLaps={fastestLaps} />
 
-      <TitleRace
-        drivers={drivers}
-        racesLeft={racesLeft}
-        sprintsLeft={sprintsLeft}
-      />
-
-      <ChampionshipChart
-        rounds={progression.rounds}
-        series={progression.series}
-      />
-
-      <Standings
-        drivers={drivers}
-        constructors={constructors}
-        driverImages={driverImages}
+      <SectionTabs
+        tabs={[
+          {
+            key: "table",
+            label: "ตารางคะแนน",
+            content: (
+              <Standings
+                drivers={drivers}
+                constructors={constructors}
+                driverImages={driverImages}
+              />
+            ),
+          },
+          {
+            key: "title",
+            label: "ลุ้นแชมป์",
+            content: (
+              <TitleRace
+                drivers={drivers}
+                racesLeft={racesLeft}
+                sprintsLeft={sprintsLeft}
+              />
+            ),
+          },
+          {
+            key: "chart",
+            label: "กราฟแต้มสะสม",
+            content: (
+              <ChampionshipChart
+                rounds={progression.rounds}
+                series={progression.series}
+              />
+            ),
+          },
+        ]}
       />
 
       <footer className="pb-8 text-center text-xs text-white/30">

@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { TrackPath } from "@/lib/circuits";
 import type { Cell, RaceReplay, ReplayDriver, ReplayFrame } from "@/lib/replay";
+import SectionTabs from "../SectionTabs";
 import TrackMap from "./TrackMap";
 import TyreStrategy from "./TyreStrategy";
 
@@ -323,13 +324,30 @@ export default function ReplayPlayer({
         </span>
       </div>
 
-      <TimingTower frame={frame} drivers={meta} />
-
-      <TyreStrategy
-        stints={replay.stints}
-        totalLaps={totalLaps}
-        finalOrder={frames[frames.length - 1].rows}
-        drivers={meta}
+      <SectionTabs
+        tabs={[
+          {
+            key: "timing",
+            label: "ไทม์มิ่ง",
+            content: <TimingTower frame={frame} drivers={meta} />,
+          },
+          ...(replay.stints.length > 0
+            ? [
+                {
+                  key: "tyres",
+                  label: "กลยุทธ์ยาง",
+                  content: (
+                    <TyreStrategy
+                      stints={replay.stints}
+                      totalLaps={totalLaps}
+                      finalOrder={frames[frames.length - 1].rows}
+                      drivers={meta}
+                    />
+                  ),
+                },
+              ]
+            : []),
+        ]}
       />
 
       <p className="px-1 text-xs text-white/35">

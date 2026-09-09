@@ -5,6 +5,7 @@ import { ArrowLeft, CalendarPlus, Flag, PlayCircle, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import CircuitInfo from "@/components/CircuitInfo";
+import SectionTabs from "@/components/SectionTabs";
 import ResultsTable from "@/components/ResultsTable";
 import QualifyingTable from "@/components/QualifyingTable";
 import PodiumGraphic from "@/components/PodiumGraphic";
@@ -63,6 +64,35 @@ export default async function RacePage({ params }: Params) {
     past ? Promise.resolve(null) : getRaceWeather(race),
   ]);
   const sessions = getSessions(race);
+
+  const sessionsCard = sessions.length > 0 && (
+    <section className="card p-5">
+      <h2 className="mb-3 text-lg font-bold">ตารางสุดสัปดาห์</h2>
+      <ul className="divide-y divide-white/5">
+        {sessions.map((s) => (
+          <li key={s.label} className="flex items-center justify-between py-2">
+            <span className="font-medium">{s.label}</span>
+            <span className="text-right text-sm">
+              <span className="text-white/50">
+                <LocalTime
+                  iso={s.at.toISOString()}
+                  kind="date"
+                  circuitId={race.Circuit.circuitId}
+                />
+              </span>{" "}
+              <span className="font-semibold tabular-nums">
+                <LocalTime
+                  iso={s.at.toISOString()}
+                  kind="time"
+                  circuitId={race.Circuit.circuitId}
+                />
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 
   return (
     <main className="mx-auto max-w-3xl space-y-6">
@@ -158,13 +188,6 @@ export default async function RacePage({ params }: Params) {
           <ArrowLeft className="h-4 w-4 rotate-180 text-white/30" />
         </Link>
       )}
-      {past && results && results.Results.length > 0 && (
-        <ResultsTable results={results.Results} />
-      )}
-      {past && sprint.length > 0 && (
-        <ResultsTable results={sprint} title="ผลสปรินต์" />
-      )}
-      {past && quali.length > 0 && <QualifyingTable results={quali} />}
       {past &&
         (!results || results.Results.length === 0) &&
         quali.length === 0 && (
@@ -173,44 +196,66 @@ export default async function RacePage({ params }: Params) {
           </p>
         )}
 
-      {sessions.length > 0 && (
-        <section className="card p-5">
-          <h2 className="mb-3 text-lg font-bold">ตารางสุดสัปดาห์</h2>
-          <ul className="divide-y divide-white/5">
-            {sessions.map((s) => (
-              <li key={s.label} className="flex items-center justify-between py-2">
-                <span className="font-medium">{s.label}</span>
-                <span className="text-right text-sm">
-                  <span className="text-white/50">
-                    <LocalTime
-                      iso={s.at.toISOString()}
-                      kind="date"
-                      circuitId={race.Circuit.circuitId}
-                    />
-                  </span>{" "}
-                  <span className="font-semibold tabular-nums">
-                    <LocalTime
-                      iso={s.at.toISOString()}
-                      kind="time"
-                      circuitId={race.Circuit.circuitId}
-                    />
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {past && (
-        <CircuitMap
-          src={circuitImg}
-          name={race.Circuit.circuitName}
-          circuitId={race.Circuit.circuitId}
-          compact
+      {past ? (
+        <SectionTabs
+          tabs={[
+            ...(results && results.Results.length > 0
+              ? [
+                  {
+                    key: "race",
+                    label: "ผลการแข่ง",
+                    content: (
+                      <>
+                        <ResultsTable results={results.Results} />
+                        {sprint.length > 0 && (
+                          <ResultsTable results={sprint} title="ผลสปรินต์" />
+                        )}
+                      </>
+                    ),
+                  },
+                ]
+              : []),
+            ...(quali.length > 0
+              ? [
+                  {
+                    key: "quali",
+                    label: "ควอลิฟาย",
+                    content: <QualifyingTable results={quali} />,
+                  },
+                ]
+              : []),
+            ...(sessions.length > 0
+              ? [
+                  {
+                    key: "sessions",
+                    label: "สุดสัปดาห์",
+                    content: sessionsCard,
+                  },
+                ]
+              : []),
+            {
+              key: "circuit",
+              label: "สนาม",
+              content: (
+                <>
+                  <CircuitMap
+                    src={circuitImg}
+                    name={race.Circuit.circuitName}
+                    circuitId={race.Circuit.circuitId}
+                    compact
+                  />
+                  <CircuitInfo circuitId={race.Circuit.circuitId} />
+                </>
+              ),
+            },
+          ]}
         />
+      ) : (
+        <>
+          {sessionsCard}
+          <CircuitInfo circuitId={race.Circuit.circuitId} />
+        </>
       )}
-      <CircuitInfo circuitId={race.Circuit.circuitId} />
 
       <footer className="pb-8 text-center text-xs text-white/30">
         ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
