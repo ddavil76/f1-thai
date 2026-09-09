@@ -6,23 +6,25 @@ const OF1 = "https://api.openf1.org/v1";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// openf1 (ไม่มี API key) จำกัด ~ไม่กี่ req/วินาที → ยิงทีละคำขอ เว้นระยะ
+// openf1 (ไม่มี API key) จำกัด ~1 req ต่อ 1-2 วิ → ยิงทีละคำขอ เว้นระยะกว้าง ๆ
+const ATTEMPTS = 5;
 let queue: Promise<unknown> = Promise.resolve();
 async function of1<T>(path: string): Promise<T> {
   const task = queue.then(async () => {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1)); // 1s, 2s, 4s
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+      if (attempt > 0) await sleep(Math.min(8000, 1200 * 2 ** (attempt - 1)));
       try {
         const res = await fetch(`${OF1}/${path}`, { cache: "force-cache" });
         if (res.ok) {
-          await sleep(350); // เว้นก่อนคำขอถัดไป
-          return (await res.json()) as T;
+          const json = (await res.json()) as T;
+          await sleep(750); // เว้นก่อนคำขอถัดไป
+          return json;
         }
         if (res.status !== 429 && res.status < 500) {
           throw new Error(`openf1 ${res.status} ${path}`);
         }
       } catch (e) {
-        if (attempt === 3) throw e;
+        if (attempt === ATTEMPTS - 1) throw e;
       }
     }
     throw new Error(`openf1 failed ${path}`);

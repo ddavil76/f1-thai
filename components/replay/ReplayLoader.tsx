@@ -61,8 +61,13 @@ export default function ReplayLoader({
   if (state.s === "loading") {
     return (
       <div className="card flex items-center gap-3 p-6 text-sm text-white/55">
-        <Loader2 className="h-4 w-4 animate-spin text-(--color-f1)" />
-        กำลังโหลดข้อมูลรีเพลย์…
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-(--color-f1)" />
+        <span>
+          กำลังโหลดข้อมูลรีเพลย์…
+          <span className="block text-xs text-white/35">
+            ดึงจาก openf1 ทีละส่วน · ครั้งแรกอาจ ~10 วิ
+          </span>
+        </span>
       </div>
     );
   }
