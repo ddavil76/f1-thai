@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RotateCcw, Volume2, VolumeX, Zap } from "lucide-react";
+import { RotateCcw, Sparkles, Volume2, VolumeX, Zap } from "lucide-react";
 
 type Phase = "idle" | "arming" | "go" | "result" | "foul" | "quick";
 
@@ -108,6 +108,7 @@ export default function ReactionGame() {
   const [rt, setRt] = useState<number | null>(null);
   const [history, setHistory] = useState<number[]>([]); // ใหม่สุดก่อน, เฉพาะครั้งที่นับ
   const [muted, setMuted] = useState(false);
+  const [newBest, setNewBest] = useState(false);
 
   const goAt = useRef(0);
   const timers = useRef<number[]>([]);
@@ -146,6 +147,28 @@ export default function ReactionGame() {
     osc.connect(gain).connect(ac.destination);
     osc.start(t);
     osc.stop(t + 0.11);
+  }, []);
+
+  // เสียงฉลองตอนทำลายสถิติ — สองโน้ตไล่ขึ้น
+  const chime = useCallback(() => {
+    if (mutedRef.current) return;
+    const ac = audioRef.current;
+    if (!ac) return;
+    const note = (freq: number, at: number) => {
+      const t = ac.currentTime + at;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      osc.connect(gain).connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.17);
+    };
+    note(523.25, 0); // C5
+    note(783.99, 0.11); // G5
   }, []);
 
   const toggleMute = useCallback(() => {
@@ -210,6 +233,7 @@ export default function ReactionGame() {
     setPhase("arming");
     setLit(0);
     setRt(null);
+    setNewBest(false);
 
     for (let i = 1; i <= 5; i++) {
       timers.current.push(
@@ -249,10 +273,13 @@ export default function ReactionGame() {
         setPhase("quick"); // เร็วเกินมนุษย์ = เดาไฟ ไม่บันทึก
         return;
       }
+      const beat = best != null && ms < best;
+      setNewBest(beat);
       setPhase("result");
       record(ms);
+      if (beat) chime();
     }
-  }, [phase, start, clearTimers, record, unlockAudio]);
+  }, [phase, start, clearTimers, record, unlockAudio, best, chime]);
 
   // เล่นด้วยสเปซบาร์ / Enter ได้ด้วย
   useEffect(() => {
@@ -351,7 +378,17 @@ export default function ReactionGame() {
           )}
           {phase === "result" && g && rt != null && (
             <div className="flex flex-col items-center">
-              <p className="display text-4xl font-black tabular-nums sm:text-5xl">
+              {newBest && (
+                <p className="animate-fade-up mb-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-(--color-f1)">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  สถิติใหม่!
+                </p>
+              )}
+              <p
+                className={`display text-4xl font-black tabular-nums sm:text-5xl ${
+                  newBest ? "text-(--color-f1)" : ""
+                }`}
+              >
                 {secs(rt)}
                 <span className="ml-1 text-lg font-bold text-white/40">วิ</span>
               </p>
