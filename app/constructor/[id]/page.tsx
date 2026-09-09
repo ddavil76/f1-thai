@@ -10,10 +10,10 @@ import { getDriverImages } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import CountUp from "@/components/CountUp";
+import { SEASON } from "@/lib/season";
 
 export const revalidate = 600;
 
-const SEASON = new Date().getFullYear();
 
 type Params = { params: Promise<{ id: string }> };
 

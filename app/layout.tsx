@@ -8,8 +8,8 @@ import PageTransition from "@/components/PageTransition";
 import TzToggle from "@/components/tz/TzToggle";
 import { getLastResults } from "@/lib/f1";
 import { teamAccent } from "@/lib/theme";
+import { SEASON } from "@/lib/season";
 
-const SEASON = new Date().getFullYear();
 
 const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],

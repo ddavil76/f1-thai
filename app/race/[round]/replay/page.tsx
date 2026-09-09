@@ -5,10 +5,10 @@ import { ArrowLeft } from "lucide-react";
 import { getSchedule, isPastRace } from "@/lib/f1";
 import { circuitTrack } from "@/lib/circuits";
 import ReplayLoader from "@/components/replay/ReplayLoader";
+import { SEASON } from "@/lib/season";
 
 export const revalidate = 3600;
 
-const SEASON = new Date().getFullYear();
 
 type Params = { params: Promise<{ round: string }> };
 

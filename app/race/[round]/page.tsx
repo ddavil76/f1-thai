@@ -17,10 +17,10 @@ import {
   getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate,
 } from "@/lib/f1";
 import { getRaceWeather } from "@/lib/weather";
+import { SEASON } from "@/lib/season";
 
 export const revalidate = 600;
 
-const SEASON = new Date().getFullYear();
 
 type Params = { params: Promise<{ round: string }> };
 

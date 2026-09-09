@@ -2,12 +2,12 @@ import Link from "next/link";
 import { CalendarArrowDown, ChevronRight } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
 import { getSchedule, findNextRace, isPastRace, toDate } from "@/lib/f1";
+import { SEASON } from "@/lib/season";
 
 export const metadata = { title: "ปฏิทินทั้งฤดูกาล" };
 
 export const revalidate = 600;
 
-const SEASON = new Date().getFullYear();
 
 export default async function CalendarPage() {
   const races = await getSchedule(SEASON);
@@ -22,16 +22,24 @@ export default async function CalendarPage() {
           </h1>
           <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
         </div>
-        <a
-          href="/calendar.ics"
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 active:scale-95"
-        >
-          <CalendarArrowDown className="h-4 w-4" />
-          ดาวน์โหลดปฏิทิน (.ics) ทุก session
-        </a>
+        {races.length > 0 && (
+          <a
+            href="/calendar.ics"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 active:scale-95"
+          >
+            <CalendarArrowDown className="h-4 w-4" />
+            ดาวน์โหลดปฏิทิน (.ics) ทุก session
+          </a>
+        )}
       </header>
 
-      <section className="card p-2 sm:p-4">
+      {races.length === 0 && (
+        <p className="card p-6 text-sm text-white/60">
+          ปฏิทินฤดูกาล {SEASON} ยังไม่ประกาศ — กลับมาดูใหม่อีกครั้งนะ
+        </p>
+      )}
+
+      <section className={races.length === 0 ? "hidden" : "card p-2 sm:p-4"}>
         <ul className="stagger divide-y divide-white/5">
           {races.map((r, i) => {
             const d = toDate({ date: r.date, time: r.time })!;

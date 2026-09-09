@@ -11,10 +11,10 @@ import {
   getCircuitImage, isSprintWeekend, toDate,
 } from "@/lib/f1";
 import { getRaceWeather } from "@/lib/weather";
+import { SEASON } from "@/lib/season";
 
 export const revalidate = 600;
 
-const SEASON = new Date().getFullYear();
 
 export default async function Home() {
   const [races, lastRace] = await Promise.all([
@@ -106,8 +106,10 @@ export default async function Home() {
             </section>
           ) : (
             <p className="card flex items-center gap-2 p-6 text-white/60">
-              <PartyPopper className="h-5 w-5" />
-              จบฤดูกาลแล้ว
+              <PartyPopper className="h-5 w-5 shrink-0" />
+              {races.length === 0
+                ? `ปฏิทินฤดูกาล ${SEASON} ยังไม่ประกาศ`
+                : "จบฤดูกาลแล้ว"}
             </p>
           )}
         </div>

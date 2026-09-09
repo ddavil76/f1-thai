@@ -1,9 +1,9 @@
 import { getSchedule, getSessions } from "@/lib/f1";
 import { buildIcs, type IcsEvent } from "@/lib/ics";
+import { SEASON } from "@/lib/season";
 
 export const revalidate = 3600;
 
-const SEASON = new Date().getFullYear();
 
 // ระยะเวลาโดยประมาณของแต่ละ session (นาที)
 function durationMin(label: string) {

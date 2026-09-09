@@ -5,12 +5,12 @@ import LocalTime from "@/components/tz/LocalTime";
 import { getSeasonWinners, toDate } from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
+import { SEASON } from "@/lib/season";
 
 export const metadata = { title: "ผลการแข่ง" };
 
 export const revalidate = 600;
 
-const SEASON = new Date().getFullYear();
 
 export default async function ResultsPage() {
   const races = await getSeasonWinners(SEASON);

@@ -1,20 +1,24 @@
 import { ImageResponse } from "next/og";
 import { getSchedule, findNextRace, toDate } from "@/lib/f1";
+import { SEASON } from "@/lib/season";
 
 export const alt = "F1 Week Race — ตารางแข่ง F1 เวลาไทย";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 export const revalidate = 3600;
 
-const SEASON = new Date().getFullYear();
 
 export default async function Image() {
-  let next: Awaited<ReturnType<typeof getSchedule>>[number] | undefined;
+  let races: Awaited<ReturnType<typeof getSchedule>> = [];
   try {
-    next = findNextRace(await getSchedule(SEASON));
+    races = await getSchedule(SEASON);
   } catch {
-    next = undefined;
+    races = [];
   }
+  const next = findNextRace(races);
+  const idle = races.length === 0
+    ? `Season ${SEASON} · coming soon`
+    : `Season ${SEASON} has finished`;
 
   const start = next ? toDate({ date: next.date, time: next.time }) : null;
   const when = start
@@ -68,7 +72,9 @@ export default async function Image() {
             </div>
           </div>
         ) : (
-          <div style={{ fontSize: 64, fontWeight: 900 }}>Season {SEASON} has finished</div>
+          <div style={{ display: "flex", fontSize: 64, fontWeight: 900 }}>
+            {idle}
+          </div>
         )}
 
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>

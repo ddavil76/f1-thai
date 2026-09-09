@@ -8,12 +8,12 @@ import {
   getPoleLeader, getFastestLapLeader, getSchedule, isPastRace, isSprintWeekend,
 } from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
+import { SEASON } from "@/lib/season";
 
 export const metadata = { title: "ตารางคะแนน" };
 
 export const revalidate = 600;
 
-const SEASON = new Date().getFullYear();
 
 export default async function StandingsPage() {
   const [drivers, constructors] = await Promise.all([

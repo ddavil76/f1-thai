@@ -128,18 +128,18 @@ type ErgastResponse = {
   };
 };
 
+/**
+ * ปฏิทินทั้งฤดูกาล — ไม่ throw เด็ดขาด
+ * · ดึงได้แต่ว่าง = ฤดูกาลยังไม่ประกาศ → คืน [] ให้หน้าจัดการเอง
+ * · ดึงไม่ได้ = Jolpica ล่ม → ใช้สแนปช็อตถ้ามี
+ */
 export async function getSchedule(season: string | number): Promise<Race[]> {
   try {
     const d = await jolpica<ErgastResponse>(`${season}/races/`, 60 * 60 * 6);
-    const races = d.MRData.RaceTable?.Races ?? [];
-    if (races.length) return races;
+    return d.MRData.RaceTable?.Races ?? [];
   } catch {
-    /* ตกไป fallback */
+    return SCHEDULE_FALLBACK[String(season)] ?? [];
   }
-  // Jolpica ล่ม → ใช้สแนปช็อตปฏิทิน (ตารางแทบไม่เปลี่ยนกลางฤดูกาล)
-  const fb = SCHEDULE_FALLBACK[String(season)];
-  if (fb) return fb;
-  throw new Error(`getSchedule: no data for ${season}`);
 }
 
 export async function getDriverStandings(season: string | number): Promise<DriverStanding[]> {
