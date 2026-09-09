@@ -1,32 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TrackPath } from "@/lib/circuits";
-import type { ReplayDriver, ReplayRow } from "@/lib/replay";
+import type { ReplayDriver, ReplayFrame } from "@/lib/replay";
 
 type Pt = { x: number; y: number };
+type Dot = { num: number; frac: number; pos: number; out: boolean };
 
-/** จุดรถวิ่งบนผังสนาม — ตำแหน่งประมาณจากสัดส่วนเวลาในรอบ */
+/** จุดรถวิ่งบนผังสนาม — interpolate ตำแหน่งตามเวลาแข่ง */
 export default function TrackMap({
   track,
-  rows,
+  frames,
   drivers,
-  playing,
-  stepMs,
+  timeRef,
 }: {
   track: TrackPath;
-  rows: ReplayRow[];
+  frames: ReplayFrame[];
   drivers: Record<number, ReplayDriver>;
-  playing: boolean;
-  stepMs: number;
+  timeRef: React.RefObject<number>;
 }) {
   const [pathEl, setPathEl] = useState<SVGPathElement | null>(null);
   const [samples, setSamples] = useState<Pt[]>([]);
-  const [disp, setDisp] = useState<Record<number, number>>({});
-  const target = useRef<Record<number, number>>({});
+  const [dots, setDots] = useState<Dot[]>([]);
   const raf = useRef(0);
 
-  // สุ่มจุดตามเส้นครั้งเดียว → lerp ตอน render (เร็วกว่าเรียก getPointAtLength ทุกเฟรม)
+  // สุ่มจุดตามเส้นครั้งเดียว
   useEffect(() => {
     if (!pathEl) return;
     const L = pathEl.getTotalLength();
@@ -40,66 +38,59 @@ export default function TrackMap({
     setSamples(arr);
   }, [pathEl, track.d]);
 
-  // ตั้งเป้าหมายเมื่อเฟรมเปลี่ยน (r.frac = ระยะทางสะสม เพิ่มขึ้นเรื่อย ๆ)
+  // rAF: interpolate จาก timeRef → dots
   useEffect(() => {
-    setDisp((prev) => {
-      const next = { ...prev };
-      for (const r of rows) {
-        target.current[r.num] = r.frac;
-        const cur = prev[r.num];
-        // ครั้งแรก / scrub / กระโดดไกล → snap ทันที
-        if (cur == null || !playing || Math.abs(r.frac - cur) > 1.6) {
-          next[r.num] = r.frac;
-        }
+    const loop = () => {
+      const t = timeRef.current ?? 0;
+      // ก่อนผู้นำจบรอบแรก → ออกตัวจากเส้น
+      if (t < frames[0].atMs) {
+        const k = frames[0].atMs > 0 ? Math.max(0, t / frames[0].atMs) : 1;
+        setDots(
+          frames[0].rows.map((r) => ({
+            num: r.num,
+            frac: r.frac * k,
+            pos: r.pos,
+            out: false,
+          })),
+        );
+        raf.current = requestAnimationFrame(loop);
+        return;
       }
-      return next;
-    });
-  }, [rows, playing]);
-
-  // ease เข้าหาเป้าหมาย
-  useEffect(() => {
-    let last = performance.now();
-    const step = (now: number) => {
-      const dt = now - last;
-      last = now;
-      const rate = Math.min(1, (dt / (playing ? stepMs : 200)) * 2);
-      setDisp((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const num in target.current) {
-          const t = target.current[num];
-          const cur = prev[num] ?? t;
-          const d = t - cur;
-          if (Math.abs(d) < 0.0004) {
-            if (cur !== t) {
-              next[num] = t;
-              changed = true;
-            }
-            continue;
-          }
-          next[num] = cur + d * rate;
-          changed = true;
-        }
-        return changed ? next : prev;
-      });
-      raf.current = requestAnimationFrame(step);
+      let i = 0;
+      while (i < frames.length - 1 && frames[i + 1].atMs <= t) i++;
+      const a = frames[i];
+      const b = frames[Math.min(i + 1, frames.length - 1)];
+      const span = b.atMs - a.atMs;
+      const k = span > 0 ? Math.max(0, Math.min(1, (t - a.atMs) / span)) : 0;
+      const bByNum: Record<number, (typeof b.rows)[number]> = {};
+      for (const r of b.rows) bByNum[r.num] = r;
+      setDots(
+        a.rows.map((ra) => {
+          const rb = bByNum[ra.num] ?? ra;
+          return {
+            num: ra.num,
+            frac: ra.frac + (rb.frac - ra.frac) * k,
+            pos: k < 0.5 ? ra.pos : rb.pos,
+            out: ra.out && rb.out,
+          };
+        }),
+      );
+      raf.current = requestAnimationFrame(loop);
     };
-    raf.current = requestAnimationFrame(step);
+    raf.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf.current);
-  }, [playing, stepMs]);
+  }, [frames, timeRef]);
 
-  const pointAt = useMemo(() => {
-    return (frac: number): Pt => {
-      if (samples.length < 2) return { x: 0, y: 0 };
-      const f = ((frac % 1) + 1) % 1;
-      const idx = f * (samples.length - 1);
-      const i = Math.floor(idx);
-      const t = idx - i;
-      const a = samples[i];
-      const b = samples[Math.min(i + 1, samples.length - 1)];
-      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    };
-  }, [samples]);
+  const pointAt = (frac: number): Pt => {
+    if (samples.length < 2) return { x: 0, y: 0 };
+    const f = ((frac % 1) + 1) % 1;
+    const idx = f * (samples.length - 1);
+    const i = Math.floor(idx);
+    const tt = idx - i;
+    const p1 = samples[i];
+    const p2 = samples[Math.min(i + 1, samples.length - 1)];
+    return { x: p1.x + (p2.x - p1.x) * tt, y: p1.y + (p2.y - p1.y) * tt };
+  };
 
   const pad = 8;
   const { d, w, h } = track;
@@ -126,16 +117,16 @@ export default function TrackMap({
           <circle cx={sf.x} cy={sf.y} r={1.6} fill="rgba(255,255,255,0.55)" />
         )}
         {samples.length > 1 &&
-          [...rows]
+          [...dots]
             .sort((a, b) => b.pos - a.pos)
-            .map((r) => {
-              const pt = pointAt(disp[r.num] ?? r.frac);
-              const c = drivers[r.num]?.colour ?? "#888";
+            .map((dot) => {
+              const pt = pointAt(dot.frac);
+              const c = drivers[dot.num]?.colour ?? "#888";
               return (
                 <g
-                  key={r.num}
+                  key={dot.num}
                   transform={`translate(${pt.x} ${pt.y})`}
-                  opacity={r.out ? 0.25 : 1}
+                  opacity={dot.out ? 0.25 : 1}
                 >
                   <circle r={2.6} fill={c} stroke="#0b0b0d" strokeWidth={0.5} />
                   <text
@@ -148,7 +139,7 @@ export default function TrackMap({
                     strokeWidth={0.6}
                     paintOrder="stroke"
                   >
-                    {drivers[r.num]?.code}
+                    {drivers[dot.num]?.code}
                   </text>
                 </g>
               );

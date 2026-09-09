@@ -1,3 +1,5 @@
+import { SCHEDULE_FALLBACK } from "./schedule-fallback";
+
 export type SessionTime = { date: string; time?: string };
 
 export type Race = {
@@ -127,8 +129,17 @@ type ErgastResponse = {
 };
 
 export async function getSchedule(season: string | number): Promise<Race[]> {
-  const d = await jolpica<ErgastResponse>(`${season}/races/`);
-  return d.MRData.RaceTable?.Races ?? [];
+  try {
+    const d = await jolpica<ErgastResponse>(`${season}/races/`, 60 * 60 * 6);
+    const races = d.MRData.RaceTable?.Races ?? [];
+    if (races.length) return races;
+  } catch {
+    /* ตกไป fallback */
+  }
+  // Jolpica ล่ม → ใช้สแนปช็อตปฏิทิน (ตารางแทบไม่เปลี่ยนกลางฤดูกาล)
+  const fb = SCHEDULE_FALLBACK[String(season)];
+  if (fb) return fb;
+  throw new Error(`getSchedule: no data for ${season}`);
 }
 
 export async function getDriverStandings(season: string | number): Promise<DriverStanding[]> {

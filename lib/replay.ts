@@ -90,9 +90,16 @@ export type ReplayRow = {
   bestLap: number | null;
   s: [Cell, Cell, Cell];
 };
-export type ReplayFrame = { lap: number; flag: string | null; rows: ReplayRow[] };
+export type ReplayFrame = {
+  lap: number;
+  /** เวลาแข่งที่ผ่านไป (ms) เมื่อผู้นำจบรอบนี้ */
+  atMs: number;
+  flag: string | null;
+  rows: ReplayRow[];
+};
 export type RaceReplay = {
   totalLaps: number;
+  durationMs: number;
   drivers: ReplayDriver[];
   frames: ReplayFrame[];
 };
@@ -215,14 +222,6 @@ async function loadReplay(
       .filter((x): x is string => !!x)
       .map(ms),
   );
-  // เวลาอ้างอิงของเฟรม — "กลางรอบ L" ของผู้นำ (ให้จุดบนแผนที่กระจายทั้งแทร็ก)
-  const frameTime = (L: number): number => {
-    const end = leaderCross(L);
-    const start = L === 1 ? lap1Start : leaderCross(L - 1);
-    if (!isFinite(end) || !isFinite(start)) return end;
-    return start + (end - start) * 0.55;
-  };
-
   // ระยะทางสะสม ณ เวลา t = (รอบที่จบแล้ว) + สัดส่วนในรอบปัจจุบัน — ใช้วางจุดบนแผนที่
   const fracAt = (n: number, t: number): number => {
     const m = byDriver.get(n);
@@ -307,8 +306,7 @@ async function loadReplay(
   const frames: ReplayFrame[] = [];
 
   for (let L = 1; L <= totalLaps; L++) {
-    const asOf = leaderCross(L); // อันดับ/ระยะห่าง = ตอนจบรอบ (แม่นกับ timing)
-    const mapT = frameTime(L); // จุดบนแผนที่ = กลางรอบ (กระจายทั้งแทร็ก)
+    const asOf = leaderCross(L); // เวลาที่ผู้นำจบรอบ L
 
     // อัปเดต best จากรอบ L
     for (const n of nums) {
@@ -349,7 +347,7 @@ async function loadReplay(
         num: n,
         pos: posAt(n, asOf),
         lap: done,
-        frac: fracAt(n, mapT),
+        frac: fracAt(n, asOf),
         gapLeader: "",
         gapAhead: "",
         compound,
@@ -403,11 +401,24 @@ async function loadReplay(
       }
     }
 
-    frames.push({ lap: L, flag: flagAt(L), rows });
+    frames.push({
+      lap: L,
+      atMs: isFinite(asOf) ? Math.max(0, asOf - lap1Start) : 0,
+      flag: flagAt(L),
+      rows,
+    });
+  }
+
+  // เผื่อรอบสุดท้ายเวลาเพี้ยน → ทำให้ atMs เพิ่มขึ้นเสมอ
+  for (let i = 1; i < frames.length; i++) {
+    if (frames[i].atMs <= frames[i - 1].atMs) {
+      frames[i].atMs = frames[i - 1].atMs + 60_000;
+    }
   }
 
   return {
     totalLaps,
+    durationMs: frames.at(-1)?.atMs ?? 0,
     drivers: nums.map((n) => dMeta.get(n)!),
     frames,
   };
