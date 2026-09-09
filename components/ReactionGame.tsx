@@ -10,10 +10,8 @@ const LIGHT_MS = 850; // เว้นช่วงไฟแต่ละดวง
 const MIN_HUMAN_MS = 100; // ต่ำกว่านี้ = เดาจังหวะไฟ ไม่นับ
 const KEEP = 20; // เก็บประวัติกี่ครั้ง
 
-const SCALE_MIN = 100;
-const SCALE_MAX = 500;
 const BENCH = [
-  { ms: 200, label: "F1" },
+  { ms: 200, label: "นักแข่ง F1" },
   { ms: 250, label: "คนทั่วไป" },
   { ms: 350, label: "มือใหม่" },
 ];
@@ -29,38 +27,54 @@ function grade(ms: number): { label: string; tone: string } {
 }
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(3)}`;
-const clampPct = (ms: number) =>
-  Math.max(2, Math.min(98, ((ms - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * 100));
 
-/** แถบเทียบเวลาของเรากับเกณฑ์อ้างอิง */
-function CompareScale({ ms }: { ms: number }) {
+/** เทียบเวลาของเรากับเกณฑ์อ้างอิง — แถบแนวนอน อ่านง่าย */
+function CompareBars({ ms }: { ms: number }) {
+  // สเกลให้เกณฑ์ที่ช้าสุด (มือใหม่ 0.35) เห็นเกือบเต็มเสมอ
+  const axisMax = Math.min(Math.max(ms * 1.1, 380), 800);
+  const w = (v: number) =>
+    `${Math.max(5, Math.min(100, (v / axisMax) * 100))}%`;
+
+  const rows = [
+    { label: "คุณ", ms, you: true },
+    ...BENCH.map((b) => ({ ...b, you: false })),
+  ];
+
   return (
-    <div className="w-full max-w-xs pt-1">
-      <div className="relative h-2 rounded-full bg-gradient-to-r from-green-500/70 via-yellow-500/60 to-red-500/70">
-        {BENCH.map((b) => (
-          <span
-            key={b.label}
-            className="absolute top-1/2 h-3.5 w-px -translate-y-1/2 bg-white/50"
-            style={{ left: `${clampPct(b.ms)}%` }}
-          />
-        ))}
-        <span
-          className="absolute -top-1 h-4 w-1 -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_2px_rgba(255,255,255,0.7)]"
-          style={{ left: `${clampPct(ms)}%` }}
-        />
-      </div>
-      <div className="relative mt-1 h-3">
-        {BENCH.map((b) => (
-          <span
-            key={b.label}
-            className="absolute -translate-x-1/2 whitespace-nowrap text-[9px] text-white/40"
-            style={{ left: `${clampPct(b.ms)}%` }}
+    <section className="card p-4">
+      <p className="mb-3 text-xs font-medium text-white/50">เทียบเวลาตอบสนอง</p>
+      <div className="space-y-2.5">
+        {rows.map((r) => (
+          <div
+            key={r.label}
+            className="grid grid-cols-[4.5rem_1fr_3.25rem] items-center gap-2.5"
           >
-            {b.label}
-          </span>
+            <span
+              className={`text-xs ${
+                r.you ? "font-bold text-white" : "text-white/50"
+              }`}
+            >
+              {r.label}
+            </span>
+            <span className="h-3 overflow-hidden rounded-full bg-white/10">
+              <span
+                className={`block h-full rounded-full ${
+                  r.you ? "bg-(--color-f1)" : "bg-white/25"
+                }`}
+                style={{ width: w(r.ms) }}
+              />
+            </span>
+            <span
+              className={`display text-right text-xs tabular-nums ${
+                r.you ? "font-bold text-white" : "text-white/45"
+              }`}
+            >
+              {secs(r.ms)}
+            </span>
+          </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -280,12 +294,13 @@ export default function ReactionGame() {
                 <span className="ml-1 text-lg font-bold text-white/40">วิ</span>
               </p>
               <p className={`mt-1 text-sm font-semibold ${g.tone}`}>{g.label}</p>
-              <CompareScale ms={rt} />
               <p className="mt-2 text-xs text-white/40">แตะเพื่อเล่นอีกครั้ง</p>
             </div>
           )}
         </div>
       </button>
+
+      {phase === "result" && rt != null && <CompareBars ms={rt} />}
 
       {/* สถิติ */}
       <div className="flex items-center justify-between px-1 text-sm">
