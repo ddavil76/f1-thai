@@ -6,21 +6,29 @@ const OF1 = "https://api.openf1.org/v1";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** ยิง openf1 พร้อม retry เมื่อโดน rate-limit (429) หรือ 5xx */
+// openf1 (ไม่มี API key) จำกัด ~ไม่กี่ req/วินาที → ยิงทีละคำขอ เว้นระยะ
+let queue: Promise<unknown> = Promise.resolve();
 async function of1<T>(path: string): Promise<T> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await sleep(700 * attempt);
-    try {
-      const res = await fetch(`${OF1}/${path}`, { cache: "force-cache" });
-      if (res.ok) return (await res.json()) as T;
-      if (res.status !== 429 && res.status < 500) {
-        throw new Error(`openf1 ${res.status} ${path}`);
+  const task = queue.then(async () => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1)); // 1s, 2s, 4s
+      try {
+        const res = await fetch(`${OF1}/${path}`, { cache: "force-cache" });
+        if (res.ok) {
+          await sleep(350); // เว้นก่อนคำขอถัดไป
+          return (await res.json()) as T;
+        }
+        if (res.status !== 429 && res.status < 500) {
+          throw new Error(`openf1 ${res.status} ${path}`);
+        }
+      } catch (e) {
+        if (attempt === 3) throw e;
       }
-    } catch (e) {
-      if (attempt === 3) throw e;
     }
-  }
-  throw new Error(`openf1 failed ${path}`);
+    throw new Error(`openf1 failed ${path}`);
+  });
+  queue = task.catch(() => {});
+  return task as Promise<T>;
 }
 
 type Session = { session_key: number; date_start: string; year: number };
@@ -47,7 +55,7 @@ type Of1Stint = {
   compound: string | null;
   tyre_age_at_start: number | null;
 };
-type Of1Pit = { driver_number: number; lap_number: number };
+
 type Of1Pos = { driver_number: number; position: number; date: string };
 type Of1RC = {
   date: string;
@@ -127,22 +135,22 @@ export async function getRaceReplay(
   let drivers: Of1Driver[];
   let laps: Of1Lap[];
   let stints: Of1Stint[];
-  let pits: Of1Pit[];
   let positions: Of1Pos[];
-  let rc: Of1RC[];
   try {
-    [drivers, laps, stints, pits, positions, rc] = await Promise.all([
-      of1<Of1Driver[]>(`drivers?session_key=${sk}`),
-      of1<Of1Lap[]>(`laps?session_key=${sk}`),
-      of1<Of1Stint[]>(`stints?session_key=${sk}`),
-      of1<Of1Pit[]>(`pit?session_key=${sk}`),
-      of1<Of1Pos[]>(`position?session_key=${sk}`),
-      of1<Of1RC[]>(`race_control?session_key=${sk}`),
-    ]);
+    // ยิงทีละคำขอ (queue จัดการ) — 4 อันที่จำเป็น
+    drivers = await of1<Of1Driver[]>(`drivers?session_key=${sk}`);
+    laps = await of1<Of1Lap[]>(`laps?session_key=${sk}`);
+    stints = await of1<Of1Stint[]>(`stints?session_key=${sk}`);
+    positions = await of1<Of1Pos[]>(`position?session_key=${sk}`);
   } catch {
     return null;
   }
   if (!laps?.length || !drivers?.length) return null;
+
+  // ธง SC/VSC — เสริม ถ้าโหลดไม่ได้ก็ข้าม
+  const rc = await of1<Of1RC[]>(`race_control?session_key=${sk}`).catch(
+    () => [] as Of1RC[],
+  );
 
   const nums = [...new Set(laps.map((l) => l.driver_number))];
   const dMeta = new Map<number, ReplayDriver>();
@@ -211,7 +219,11 @@ export async function getRaceReplay(
       age: (s.tyre_age_at_start ?? 0) + (L - s.lap_start),
     };
   };
-  const pitLaps = new Set(pits.map((p) => `${p.driver_number}:${p.lap_number}`));
+  // รอบที่เข้าพิท = จุดเริ่ม stint ใหม่ (ที่ไม่ใช่ stint แรก) — เข้าพิทตอนจบรอบก่อนหน้า
+  const pitLaps = new Set<string>();
+  for (const s of stints) {
+    if (s.lap_start > 1) pitLaps.add(`${s.driver_number}:${s.lap_start - 1}`);
+  }
 
   // ธง/SC ต่อ lap — เอาเฉพาะที่มีผลทั้งสนาม (SC/VSC/RED/ธงหมากรุก) ข้าม yellow/blue
   const flagWindows: { from: number; to: number; label: string }[] = [];
