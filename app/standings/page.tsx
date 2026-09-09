@@ -1,9 +1,10 @@
 import Standings from "@/components/Standings";
 import ChampionshipChart from "@/components/ChampionshipChart";
 import SeasonStats from "@/components/SeasonStats";
+import TitleRace from "@/components/TitleRace";
 import {
   getDriverStandings, getConstructorStandings, getChampionshipProgression,
-  getPoleLeader, getFastestLapLeader,
+  getPoleLeader, getFastestLapLeader, getSchedule, isPastRace, isSprintWeekend,
 } from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
 
@@ -18,12 +19,18 @@ export default async function StandingsPage() {
     getDriverStandings(SEASON),
     getConstructorStandings(SEASON),
   ]);
-  const [progression, poles, fastestLaps, driverImages] = await Promise.all([
-    getChampionshipProgression(SEASON, drivers),
-    getPoleLeader(SEASON),
-    getFastestLapLeader(SEASON),
-    getDriverImages(drivers.map((d) => d.Driver)),
-  ]);
+  const [progression, poles, fastestLaps, driverImages, schedule] =
+    await Promise.all([
+      getChampionshipProgression(SEASON, drivers),
+      getPoleLeader(SEASON),
+      getFastestLapLeader(SEASON),
+      getDriverImages(drivers.map((d) => d.Driver)),
+      getSchedule(SEASON).catch(() => []),
+    ]);
+
+  const upcoming = schedule.filter((r) => !isPastRace(r));
+  const racesLeft = upcoming.length;
+  const sprintsLeft = upcoming.filter(isSprintWeekend).length;
 
   const winsLeader = [...drivers]
     .filter((d) => Number(d.wins) > 0)
@@ -47,6 +54,12 @@ export default async function StandingsPage() {
       </header>
 
       <SeasonStats wins={wins} poles={poles} fastestLaps={fastestLaps} />
+
+      <TitleRace
+        drivers={drivers}
+        racesLeft={racesLeft}
+        sprintsLeft={sprintsLeft}
+      />
 
       <ChampionshipChart
         rounds={progression.rounds}

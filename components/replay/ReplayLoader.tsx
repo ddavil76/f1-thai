@@ -28,7 +28,7 @@ export default function ReplayLoader({
   useEffect(() => {
     if (!raceDate) return;
     let alive = true;
-    const key = `replay:v3:${season}:${raceDate}`; // bump เมื่อรูปข้อมูลเปลี่ยน
+    const key = `replay:v4:${season}:${raceDate}`; // bump เมื่อรูปข้อมูลเปลี่ยน
     Promise.resolve()
       .then((): RaceReplay | null | Promise<RaceReplay | null> => {
         try {

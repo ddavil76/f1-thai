@@ -99,11 +99,20 @@ export type ReplayFrame = {
   flag: string | null;
   rows: ReplayRow[];
 };
+/** ช่วงยางหนึ่งชุด (ใช้ทำกราฟกลยุทธ์ยาง) */
+export type ReplayStint = {
+  num: number;
+  from: number;
+  to: number;
+  compound: string;
+  age: number;
+};
 export type RaceReplay = {
   totalLaps: number;
   durationMs: number;
   drivers: ReplayDriver[];
   frames: ReplayFrame[];
+  stints: ReplayStint[];
 };
 
 const COMPOUND_SHORT: Record<string, string> = {
@@ -441,5 +450,14 @@ async function loadReplay(
     durationMs: frames.at(-1)?.atMs ?? 0,
     drivers: nums.map((n) => dMeta.get(n)!),
     frames,
+    stints: stints
+      .filter((s) => s.lap_start && s.lap_end && s.lap_end >= s.lap_start)
+      .map((s) => ({
+        num: s.driver_number,
+        from: s.lap_start,
+        to: Math.min(s.lap_end, totalLaps),
+        compound: s.compound ? compoundShort(s.compound) : "",
+        age: s.tyre_age_at_start ?? 0,
+      })),
   };
 }

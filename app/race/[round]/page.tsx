@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarPlus, Flag, PlayCircle, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
+import CircuitInfo from "@/components/CircuitInfo";
 import ResultsTable from "@/components/ResultsTable";
 import QualifyingTable from "@/components/QualifyingTable";
 import PodiumGraphic from "@/components/PodiumGraphic";
@@ -209,6 +210,7 @@ export default async function RacePage({ params }: Params) {
           compact
         />
       )}
+      <CircuitInfo circuitId={race.Circuit.circuitId} />
 
       <footer className="pb-8 text-center text-xs text-white/30">
         ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ

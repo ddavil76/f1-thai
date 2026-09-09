@@ -5,6 +5,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { TrackPath } from "@/lib/circuits";
 import type { Cell, RaceReplay, ReplayDriver, ReplayFrame } from "@/lib/replay";
 import TrackMap from "./TrackMap";
+import TyreStrategy from "./TyreStrategy";
 
 const ROW_H = 34;
 const SPEEDS = [15, 40, 90, 200] as const; // ตัวคูณเวลาแข่ง
@@ -323,6 +324,13 @@ export default function ReplayPlayer({
       </div>
 
       <TimingTower frame={frame} drivers={meta} />
+
+      <TyreStrategy
+        stints={replay.stints}
+        totalLaps={totalLaps}
+        finalOrder={frames[frames.length - 1].rows}
+        drivers={meta}
+      />
 
       <p className="px-1 text-xs text-white/35">
         <span className="text-fuchsia-400">■</span> เร็วสุดในสนาม ·{" "}
