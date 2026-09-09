@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import type { TrackPath } from "@/lib/circuits";
 import { getRaceReplay, type RaceReplay } from "@/lib/replay";
 import ReplayPlayer from "./ReplayPlayer";
 
@@ -14,9 +15,11 @@ type State =
 export default function ReplayLoader({
   season,
   raceDate,
+  track,
 }: {
   season: number;
   raceDate: string | null;
+  track?: TrackPath | null;
 }) {
   const [state, setState] = useState<State>(
     raceDate ? { s: "loading" } : { s: "err" },
@@ -71,5 +74,5 @@ export default function ReplayLoader({
       </p>
     );
   }
-  return <ReplayPlayer replay={state.data} />;
+  return <ReplayPlayer replay={state.data} track={track} />;
 }

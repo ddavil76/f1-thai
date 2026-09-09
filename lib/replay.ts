@@ -78,6 +78,8 @@ export type ReplayRow = {
   num: number;
   pos: number;
   lap: number;
+  /** ระยะทางสะสม (รอบที่จบ + สัดส่วนในรอบ) — ใช้วางจุดบนผังสนาม */
+  frac: number;
   gapLeader: string;
   gapAhead: string;
   compound: string;
@@ -124,7 +126,21 @@ async function findRaceSession(
   }
 }
 
-export async function getRaceReplay(
+// รวมคำขอที่กำลังทำอยู่ (กัน StrictMode dev / กดซ้ำ ยิง openf1 ซ้ำ)
+const pending = new Map<string, Promise<RaceReplay | null>>();
+export function getRaceReplay(
+  season: number,
+  raceDate: string,
+): Promise<RaceReplay | null> {
+  const key = `${season}:${raceDate}`;
+  const hit = pending.get(key);
+  if (hit) return hit;
+  const p = loadReplay(season, raceDate).finally(() => pending.delete(key));
+  pending.set(key, p);
+  return p;
+}
+
+async function loadReplay(
   season: number,
   raceDate: string,
 ): Promise<RaceReplay | null> {
@@ -192,6 +208,34 @@ export async function getRaceReplay(
       .map((n) => crossTime(n, L))
       .filter((t): t is number => t != null);
     return times.length ? Math.min(...times) : Infinity;
+  };
+  const lap1Start = Math.min(
+    ...nums
+      .map((n) => byDriver.get(n)?.get(1)?.date_start)
+      .filter((x): x is string => !!x)
+      .map(ms),
+  );
+  // เวลาอ้างอิงของเฟรม — "กลางรอบ L" ของผู้นำ (ให้จุดบนแผนที่กระจายทั้งแทร็ก)
+  const frameTime = (L: number): number => {
+    const end = leaderCross(L);
+    const start = L === 1 ? lap1Start : leaderCross(L - 1);
+    if (!isFinite(end) || !isFinite(start)) return end;
+    return start + (end - start) * 0.55;
+  };
+
+  // ระยะทางสะสม ณ เวลา t = (รอบที่จบแล้ว) + สัดส่วนในรอบปัจจุบัน — ใช้วางจุดบนแผนที่
+  const fracAt = (n: number, t: number): number => {
+    const m = byDriver.get(n);
+    if (!m) return 0;
+    let cur: Of1Lap | null = null;
+    for (const lap of m.values()) {
+      if (lap.date_start && ms(lap.date_start) <= t) {
+        if (!cur || lap.lap_number > cur.lap_number) cur = lap;
+      }
+    }
+    if (!cur?.date_start || cur.lap_duration == null) return 0;
+    const f = (t - ms(cur.date_start)) / (cur.lap_duration * 1000);
+    return cur.lap_number - 1 + Math.max(0, Math.min(0.999, f));
   };
 
   // ตำแหน่ง ณ เวลา t (step function)
@@ -263,7 +307,8 @@ export async function getRaceReplay(
   const frames: ReplayFrame[] = [];
 
   for (let L = 1; L <= totalLaps; L++) {
-    const asOf = leaderCross(L);
+    const asOf = leaderCross(L); // อันดับ/ระยะห่าง = ตอนจบรอบ (แม่นกับ timing)
+    const mapT = frameTime(L); // จุดบนแผนที่ = กลางรอบ (กระจายทั้งแทร็ก)
 
     // อัปเดต best จากรอบ L
     for (const n of nums) {
@@ -304,6 +349,7 @@ export async function getRaceReplay(
         num: n,
         pos: posAt(n, asOf),
         lap: done,
+        frac: fracAt(n, mapT),
         gapLeader: "",
         gapAhead: "",
         compound,

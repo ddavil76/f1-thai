@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import type { TrackPath } from "@/lib/circuits";
 import type { Cell, RaceReplay, ReplayRow } from "@/lib/replay";
+import TrackMap from "./TrackMap";
 
 const ROW_H = 34; // px ต่อแถว
 const SPEEDS = [1, 2, 4, 8] as const;
@@ -33,7 +35,13 @@ function Time({ cell }: { cell: Cell }) {
   );
 }
 
-export default function ReplayPlayer({ replay }: { replay: RaceReplay }) {
+export default function ReplayPlayer({
+  replay,
+  track,
+}: {
+  replay: RaceReplay;
+  track?: TrackPath | null;
+}) {
   const { totalLaps, frames } = replay;
   const meta = Object.fromEntries(replay.drivers.map((d) => [d.num, d]));
 
@@ -41,6 +49,7 @@ export default function ReplayPlayer({ replay }: { replay: RaceReplay }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(2);
   const timer = useRef<number | null>(null);
+  const stepMs = 1400 / speed;
 
   useEffect(() => {
     if (!playing) return;
@@ -52,16 +61,25 @@ export default function ReplayPlayer({ replay }: { replay: RaceReplay }) {
         }
         return l + 1;
       });
-    }, 1400 / speed);
+    }, stepMs);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, [playing, speed, totalLaps]);
+  }, [playing, stepMs, totalLaps]);
 
   const frame = frames[Math.min(lap, totalLaps) - 1];
 
   return (
     <div className="space-y-3">
+      {track && (
+        <TrackMap
+          track={track}
+          rows={frame.rows}
+          drivers={meta}
+          playing={playing}
+          stepMs={stepMs}
+        />
+      )}
       {/* แถบควบคุม */}
       <div className="card flex flex-wrap items-center gap-3 p-3">
         <button
@@ -177,11 +195,13 @@ export default function ReplayPlayer({ replay }: { replay: RaceReplay }) {
               return (
                 <div
                   key={r.num}
-                  className="absolute inset-x-0 flex items-center gap-2 rounded-md px-2 text-sm transition-[transform,opacity] duration-500 ease-[cubic-bezier(.3,.9,.3,1)]"
+                  className="absolute inset-x-0 flex items-center gap-2 rounded-md px-2 text-sm transition-[transform,opacity] ease-[cubic-bezier(.3,.9,.3,1)]"
                   style={{
                     height: ROW_H,
                     transform: `translateY(${(r.pos - 1) * ROW_H}px)`,
                     opacity: r.out ? 0.4 : 1,
+                    background: "var(--color-surface)",
+                    transitionDuration: `${playing ? Math.min(420, stepMs * 0.55) : 300}ms`,
                   }}
                 >
                   <span className="w-6 text-center font-bold tabular-nums text-white/50">

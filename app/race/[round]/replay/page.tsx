@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getSchedule, isPastRace } from "@/lib/f1";
+import { circuitTrack } from "@/lib/circuits";
 import ReplayLoader from "@/components/replay/ReplayLoader";
 
 export const revalidate = 3600;
@@ -57,7 +58,11 @@ export default async function ReplayPage({ params }: Params) {
       </div>
 
       {past ? (
-        <ReplayLoader season={SEASON} raceDate={race.date} />
+        <ReplayLoader
+          season={SEASON}
+          raceDate={race.date}
+          track={circuitTrack(race.Circuit.circuitId)}
+        />
       ) : (
         <p className="card p-6 text-sm text-white/60">สนามนี้ยังไม่ได้แข่ง</p>
       )}
