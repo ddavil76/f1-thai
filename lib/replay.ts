@@ -272,33 +272,46 @@ async function loadReplay(
     if (s.lap_start > 1) pitLaps.add(`${s.driver_number}:${s.lap_start - 1}`);
   }
 
-  // ธง/SC ต่อ lap — เอาเฉพาะที่มีผลทั้งสนาม (SC/VSC/RED/ธงหมากรุก) ข้าม yellow/blue
+  // ธง/SC ต่อ lap — เอาเฉพาะที่มีผลทั้งสนาม (SC/VSC/RED) ข้าม yellow/blue
   const flagWindows: { from: number; to: number; label: string }[] = [];
-  const scEvents = rc
-    .filter((x) => x.category === "SafetyCar" || x.flag === "RED")
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  for (let i = 0; i < scEvents.length; i++) {
-    const e = scEvents[i];
-    const msg = (e.message ?? "").toUpperCase();
-    const lap = e.lap_number ?? 1;
-    if (e.flag === "RED") {
-      flagWindows.push({ from: lap, to: lap + 1, label: "RED" });
-    } else if (/DEPLOYED/.test(msg)) {
-      const label = /VSC/.test(msg) ? "VSC" : "SC";
-      const end = scEvents
+  const evts = rc
+    .filter(
+      (x) =>
+        x.lap_number != null &&
+        (x.category === "SafetyCar" ||
+          /RED FLAG|SUSPENDED/i.test(x.message ?? "")),
+    )
+    .map((x) => ({
+      lap: x.lap_number as number,
+      msg: (x.message ?? "").toUpperCase(),
+    }))
+    .sort((a, b) => a.lap - b.lap);
+  for (let i = 0; i < evts.length; i++) {
+    const e = evts[i];
+    if (/RED FLAG|SUSPENDED/.test(e.msg)) {
+      flagWindows.push({ from: e.lap, to: e.lap + 2, label: "RED" });
+    } else if (/DEPLOYED/.test(e.msg)) {
+      const isVsc = /VSC|VIRTUAL/.test(e.msg);
+      const end = evts
         .slice(i + 1)
-        .find((x) => /IN THIS LAP|ENDING/.test((x.message ?? "").toUpperCase()));
+        .find(
+          (x) =>
+            /ENDING|IN THIS LAP/.test(x.msg) &&
+            /VSC|VIRTUAL/.test(x.msg) === isVsc &&
+            x.lap - e.lap < 20,
+        );
       flagWindows.push({
-        from: lap,
-        to: end?.lap_number ? end.lap_number + 1 : lap + 3,
-        label,
+        from: e.lap,
+        to: end ? end.lap + 1 : e.lap + (isVsc ? 2 : 4),
+        label: isVsc ? "VSC" : "SC",
       });
     }
   }
   const flagAt = (L: number): string | null => {
     if (L >= totalLaps) return "🏁";
-    const w = flagWindows.find((x) => L >= x.from && L <= x.to);
-    return w?.label ?? null;
+    const active = flagWindows.filter((x) => L >= x.from && L <= x.to);
+    if (active.some((x) => x.label === "RED")) return "RED";
+    return active[0]?.label ?? null;
   };
 
   // best (สะสมถึง lap L) ต่อคน

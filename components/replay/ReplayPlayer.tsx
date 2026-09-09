@@ -253,11 +253,35 @@ export default function ReplayPlayer({
           <SkipForward className="h-4 w-4" />
         </button>
 
-        <span
-          ref={clockRef}
-          className="display shrink-0 text-sm font-bold tabular-nums"
-        >
-          รอบ 1 · 00:00
+        <span className="flex shrink-0 items-center gap-2">
+          <span
+            ref={clockRef}
+            className="display text-sm font-bold tabular-nums"
+          >
+            รอบ 1 · 00:00
+          </span>
+          {frame.flag && (
+            <span
+              className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${
+                frame.flag === "RED"
+                  ? "bg-red-500/25 text-red-300"
+                  : frame.flag === "🏁"
+                    ? "bg-white/10 text-white/70"
+                    : "bg-yellow-400/20 text-yellow-300"
+              }`}
+              title={
+                frame.flag === "SC"
+                  ? "เซฟตี้คาร์"
+                  : frame.flag === "VSC"
+                    ? "เวอร์ชวลเซฟตี้คาร์"
+                    : frame.flag === "RED"
+                      ? "ธงแดง — ระงับการแข่ง"
+                      : "ธงหมากรุก — จบการแข่ง"
+              }
+            >
+              {frame.flag === "RED" ? "ธงแดง" : frame.flag}
+            </span>
+          )}
         </span>
 
         <input
@@ -294,22 +318,8 @@ export default function ReplayPlayer({
         </div>
 
         <span className="shrink-0 text-xs tabular-nums text-white/35">
-          / {totalLaps} รอบ
+          จาก {totalLaps} รอบ
         </span>
-
-        {frame.flag && (
-          <span
-            className={`shrink-0 rounded-md px-2 py-1 text-xs font-bold ${
-              frame.flag === "SC" || frame.flag === "VSC"
-                ? "bg-yellow-400/20 text-yellow-300"
-                : frame.flag === "RED"
-                  ? "bg-red-500/25 text-red-300"
-                  : "bg-white/10 text-white/70"
-            }`}
-          >
-            {frame.flag}
-          </span>
-        )}
       </div>
 
       <TimingTower frame={frame} drivers={meta} />
