@@ -44,7 +44,35 @@ export async function getPuUsage(season: number): Promise<PuUsage | null> {
 export const overBy = (used: PuUsed) =>
   PU_KEYS.reduce((n, k) => n + Math.max(0, used[k] - PU_INFO[k].limit), 0);
 
-export const totalUsed = (used: PuUsed) => PU_KEYS.reduce((n, k) => n + used[k], 0);
+/** ตัวย่อที่ใช้แสดง (ตัด "PU-" ออก) */
+export const puLabel = (k: PuKey) => k.replace("PU-", "");
+
+export type PuStatus = "penalized" | "edge" | "safe";
+export const PU_STATUS_ORDER: PuStatus[] = ["penalized", "edge", "safe"];
+
+/** โดนโทษแล้ว = เคยใช้เกินโควตา · ใกล้โดน = มีชิ้นที่ครบโควตาพอดี · ปลอดภัย = ทุกชิ้นยังเหลือ */
+export function puStatus(used: PuUsed): PuStatus {
+  if (PU_KEYS.some((k) => used[k] > PU_INFO[k].limit)) return "penalized";
+  if (PU_KEYS.some((k) => used[k] === PU_INFO[k].limit)) return "edge";
+  return "safe";
+}
+
+/**
+ * ถ้าเปลี่ยนอีก 1 ชิ้นจะโดนเท่าไหร่ — เกินโควตาครั้งแรกของชิ้นนั้นถอย 10, ครั้งต่อ ๆ ไป 5
+ * (ตรงกับคำตัดสิน FIA 2026: Stroll −40, Lawson −35, Antonelli −30, Albon −20)
+ */
+export function nextChange(used: PuUsed): { penalty: 10 | 5; keys: PuKey[] }[] {
+  const atQuota = PU_KEYS.filter((k) => used[k] === PU_INFO[k].limit);
+  const over = PU_KEYS.filter((k) => used[k] > PU_INFO[k].limit);
+  return [
+    ...(atQuota.length ? [{ penalty: 10 as const, keys: atQuota }] : []),
+    ...(over.length ? [{ penalty: 5 as const, keys: over }] : []),
+  ];
+}
+
+/** ชิ้นที่เหลือเผื่อน้อยที่สุด */
+export const minSpare = (used: PuUsed) =>
+  Math.min(...PU_KEYS.map((k) => PU_INFO[k].limit - used[k]));
 
 // ชื่อทีมใน FIA พ่วงชื่อผู้ผลิตเครื่อง ("Haas Ferrari") → เช็คชื่อทีมก่อนชื่อเครื่อง
 const TEAM_IDS: [RegExp, string][] = [

@@ -1,4 +1,4 @@
-import { PU_INFO, PU_KEYS, type PuUsed } from "@/lib/power-units";
+import { PU_INFO, PU_KEYS, puLabel, type PuUsed } from "@/lib/power-units";
 
 /** 7 ช่องชิ้นส่วน: จำนวนที่ใช้ + จุดเทียบโควตา (เกินโควตา = แดง) */
 export default function PuCells({ used }: { used: PuUsed }) {
@@ -19,14 +19,13 @@ export default function PuCells({ used }: { used: PuUsed }) {
             }`}
           >
             <p className="truncate text-[9px] font-semibold tracking-wide text-white/40">
-              {k.replace("PU-", "")}
+              {puLabel(k)}
             </p>
-            <p
-              className={`display text-base font-bold leading-tight tabular-nums ${
-                over > 0 ? "text-red-400" : ""
-              }`}
-            >
-              {n}
+            <p className="leading-tight tabular-nums">
+              <span className={`display text-base font-bold ${over > 0 ? "text-red-400" : ""}`}>
+                {n}
+              </span>
+              <span className="text-[10px] text-white/35">/{limit}</span>
             </p>
             <div className="mt-1 flex flex-wrap justify-center gap-px px-0.5">
               {Array.from({ length: Math.max(n, limit) }, (_, i) => (

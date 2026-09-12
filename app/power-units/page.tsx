@@ -3,10 +3,11 @@ import Link from "next/link";
 import { FileText, TriangleAlert } from "lucide-react";
 import SectionTabs from "@/components/SectionTabs";
 import PuCells from "@/components/PuCells";
+import { PU_STATUS_UI, PuNextChange, PuStatusBadge } from "@/components/PuVerdict";
 import { getDriverStandings, type DriverStanding } from "@/lib/f1";
 import {
-  getPuUsage, findUsage, overBy, totalUsed, teamIdOf, decisionTh, sessionTh,
-  PU_INFO, PU_KEYS, type PuDriver,
+  getPuUsage, findUsage, overBy, minSpare, puStatus, puLabel, teamIdOf, decisionTh, sessionTh,
+  PU_INFO, PU_KEYS, PU_STATUS_ORDER, type PuDriver,
 } from "@/lib/power-units";
 import { teamColor, teamName } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
@@ -15,7 +16,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "ชิ้นส่วนเครื่องยนต์",
-  description: `นักขับ F1 แต่ละคนใช้เครื่องยนต์ เทอร์โบ แบตเตอรี่ และชิ้นส่วน power unit ไปกี่ชิ้นในฤดูกาล ${SEASON} เทียบโควตา พร้อมโทษกริด`,
+  description: `นักขับ F1 คนไหนใช้เครื่องยนต์และชิ้นส่วน power unit เกินโควตาแล้ว ใครใกล้โดนโทษกริด — ฤดูกาล ${SEASON}`,
 };
 
 const thDay = (iso: string) =>
@@ -75,15 +76,15 @@ export default async function PowerUnitsPage() {
 
   const teamIdFor = (r: PuDriver) =>
     teamIdOf(r.team) || standingOf.get(r.number)?.Constructors.at(-1)?.constructorId || "";
+  const teamLabel = (r: PuDriver) => {
+    const id = teamIdFor(r);
+    return teamName(id, constructorName.get(id) ?? r.team);
+  };
 
   const teams = new Map<string, { id: string; name: string; rows: PuDriver[] }>();
   for (const r of pu.drivers) {
     const id = teamIdFor(r) || r.team;
-    const team = teams.get(id) ?? {
-      id,
-      name: teamName(id, constructorName.get(id) ?? r.team),
-      rows: [],
-    };
+    const team = teams.get(id) ?? { id, name: teamLabel(r), rows: [] };
     team.rows.push(r);
     teams.set(id, team);
   }
@@ -98,111 +99,168 @@ export default async function PowerUnitsPage() {
       <span className={className}>{r.driver}</span>
     );
   };
-  const shortName = (r: PuDriver) => r.driver.split(" ").at(-1);
 
-  const overList = pu.drivers.filter((r) => overBy(r.used) > 0);
-  const maxIce = Math.max(...pu.drivers.map((r) => r.used.ICE));
-  const iceTop = pu.drivers.filter((r) => r.used.ICE === maxIce);
-  const leanest = [...pu.drivers].sort((a, b) => totalUsed(a.used) - totalUsed(b.used))[0];
+  // เรียง: สถานะหนักสุดก่อน → เกินมากก่อน → ชิ้นที่ครบโควตามากก่อน → เหลือเผื่อน้อยก่อน
+  const statusOf = new Map(pu.drivers.map((r) => [r.number, puStatus(r.used)]));
+  const atQuota = (r: PuDriver) =>
+    PU_KEYS.filter((k) => r.used[k] === PU_INFO[k].limit).length;
   const ranked = [...pu.drivers].sort(
-    (a, b) => overBy(b.used) - overBy(a.used) || totalUsed(b.used) - totalUsed(a.used),
+    (a, b) =>
+      PU_STATUS_ORDER.indexOf(statusOf.get(a.number)!) -
+        PU_STATUS_ORDER.indexOf(statusOf.get(b.number)!) ||
+      overBy(b.used) - overBy(a.used) ||
+      atQuota(b) - atQuota(a) ||
+      minSpare(a.used) - minSpare(b.used),
+  );
+  const groups = PU_STATUS_ORDER.map((status) => ({
+    status,
+    rows: ranked.filter((r) => statusOf.get(r.number) === status),
+  }));
+
+  const overview = (
+    <div className="space-y-4">
+      <p className="text-sm text-white/55">
+        ใช้ชิ้นไหนเกินโควตาครั้งแรก ถอยกริด 10 อันดับ ชิ้นเดิมครั้งต่อ ๆ ไปถอยชิ้นละ 5
+        มีผลกับเรซถัดไป
+      </p>
+      {groups.map(
+        ({ status, rows }) =>
+          rows.length > 0 && (
+            <section key={status} className="card overflow-hidden p-0">
+              <header className="border-b border-white/5 px-4 py-3 sm:px-5">
+                <h2 className="flex items-center gap-2 font-bold">
+                  <span className={`h-2 w-2 rounded-full ${PU_STATUS_UI[status].dot}`} />
+                  {PU_STATUS_UI[status].title}
+                  <span className="text-sm font-normal text-white/40 tabular-nums">
+                    {rows.length} คน
+                  </span>
+                </h2>
+                <p className="mt-0.5 text-xs text-white/40">{PU_STATUS_UI[status].desc}</p>
+              </header>
+              <ul className="divide-y divide-white/5">
+                {rows.map((r) => (
+                  <li key={r.number} className="flex gap-3 px-4 py-3 sm:px-5">
+                    <span
+                      className="mt-1 h-4 w-1 shrink-0 rounded-full"
+                      style={{ background: teamColor(teamIdFor(r)) }}
+                    />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <p className="text-sm">
+                        {driverName(r, "font-semibold")}
+                        <span className="ml-2 text-xs text-white/40">{teamLabel(r)}</span>
+                      </p>
+                      <PuNextChange used={r.used} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ),
+      )}
+    </div>
   );
 
   const byTeam = (
-    <div className="grid gap-4 md:grid-cols-2">
-      {[...teams.values()].map((t) => (
-        <section key={t.id} className="card p-4 sm:p-5">
-          <h2 className="flex items-center gap-2 font-bold">
-            <span
-              className="h-4 w-1 shrink-0 rounded-full"
-              style={{ background: teamColor(t.id) }}
-            />
-            {t.name}
-          </h2>
-          <div className="mt-3 space-y-4">
-            {t.rows.map((r) => {
-              const over = overBy(r.used);
-              return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-white/50">
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-white/60" />
+          ใช้ไปแล้ว
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-white/15" />
+          เหลือในโควตา
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+          ครบโควตาพอดี
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+          เกินโควตา
+        </span>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {[...teams.values()].map((t) => (
+          <section key={t.id} className="card p-4 sm:p-5">
+            <h2 className="flex items-center gap-2 font-bold">
+              <span
+                className="h-4 w-1 shrink-0 rounded-full"
+                style={{ background: teamColor(t.id) }}
+              />
+              {t.name}
+            </h2>
+            <div className="mt-3 space-y-4">
+              {t.rows.map((r) => (
                 <div key={r.number}>
                   <div className="mb-1.5 flex items-baseline justify-between gap-2 text-sm">
                     <span className="min-w-0 truncate">
                       {driverName(r, "font-medium")}
                       <span className="ml-1.5 text-xs text-white/35">#{Number(r.number)}</span>
                     </span>
-                    <span
-                      className={`shrink-0 text-xs ${over > 0 ? "text-red-400" : "text-white/40"}`}
-                    >
-                      {over > 0 ? `เกินโควตา ${over} ชิ้น` : "ในโควตา"}
-                    </span>
+                    <PuStatusBadge status={statusOf.get(r.number)!} />
                   </div>
                   <PuCells used={r.used} />
                 </div>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 
-  const byDriver = (
+  const table = (
     <section className="card overflow-hidden p-0">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[540px] text-sm tabular-nums">
+        <table className="w-full min-w-[600px] text-sm tabular-nums">
           <thead>
             <tr className="border-b border-white/5 text-[11px] text-white/40">
               <th className="px-4 py-3 text-left font-medium">นักขับ</th>
               {PU_KEYS.map((k) => (
                 <th key={k} title={PU_INFO[k].th} className="px-1 py-3 text-center font-semibold">
-                  {k.replace("PU-", "")}
+                  {puLabel(k)}
                   <span className="block font-normal text-white/25">/{PU_INFO[k].limit}</span>
                 </th>
               ))}
-              <th className="px-4 py-3 text-right font-medium">เกิน</th>
+              <th className="px-4 py-3 text-right font-medium">สถานะ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {ranked.map((r) => {
-              const over = overBy(r.used);
-              return (
-                <tr key={r.number} className="transition-colors hover:bg-white/[0.03]">
-                  <td className="px-4 py-2.5">
-                    <span className="flex items-center gap-2 whitespace-nowrap">
-                      <span
-                        className="h-3 w-1 shrink-0 rounded-full"
-                        style={{ background: teamColor(teamIdFor(r)) }}
-                      />
-                      {driverName(r, "font-medium")}
-                    </span>
-                  </td>
-                  {PU_KEYS.map((k) => {
-                    const n = r.used[k];
-                    const limit = PU_INFO[k].limit;
-                    return (
-                      <td
-                        key={k}
-                        className={`px-1 py-2.5 text-center ${
-                          n > limit
-                            ? "font-bold text-red-400"
-                            : n === limit
-                              ? "text-white"
-                              : "text-white/45"
-                        }`}
-                      >
-                        {n}
-                      </td>
-                    );
-                  })}
-                  <td
-                    className={`px-4 py-2.5 text-right font-bold ${
-                      over > 0 ? "text-red-400" : "text-white/25"
-                    }`}
-                  >
-                    {over > 0 ? `+${over}` : "–"}
-                  </td>
-                </tr>
-              );
-            })}
+            {ranked.map((r) => (
+              <tr key={r.number} className="transition-colors hover:bg-white/[0.03]">
+                <td className="px-4 py-2.5">
+                  <span className="flex items-center gap-2 whitespace-nowrap">
+                    <span
+                      className="h-3 w-1 shrink-0 rounded-full"
+                      style={{ background: teamColor(teamIdFor(r)) }}
+                    />
+                    {driverName(r, "font-medium")}
+                  </span>
+                </td>
+                {PU_KEYS.map((k) => {
+                  const n = r.used[k];
+                  const limit = PU_INFO[k].limit;
+                  return (
+                    <td
+                      key={k}
+                      className={`px-1 py-2.5 text-center ${
+                        n > limit
+                          ? "font-bold text-red-400"
+                          : n === limit
+                            ? "text-white"
+                            : "text-white/45"
+                      }`}
+                    >
+                      {n}
+                    </td>
+                  );
+                })}
+                <td className="px-4 py-2.5 text-right">
+                  <PuStatusBadge status={statusOf.get(r.number)!} />
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -275,48 +333,22 @@ export default async function PowerUnitsPage() {
       {header}
 
       <section className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
-        <div className="p-4">
-          <p className="display text-2xl font-bold tabular-nums">
-            {overList.length}
-            <span className="text-base text-white/35">/{pu.drivers.length}</span>
-          </p>
-          <p className="text-xs text-white/40">ใช้เกินโควตาแล้ว</p>
-        </div>
-        <div className="min-w-0 p-4">
-          <p className="display text-2xl font-bold tabular-nums">{maxIce}</p>
-          <p className="text-xs text-white/40">ICE มากสุด</p>
-          <p className="truncate text-xs text-white/70">{iceTop.map(shortName).join(", ")}</p>
-        </div>
-        <div className="min-w-0 p-4">
-          <p className="display text-2xl font-bold tabular-nums">{totalUsed(leanest.used)}</p>
-          <p className="text-xs text-white/40">ใช้รวมน้อยสุด</p>
-          <p className="truncate text-xs text-white/70">{shortName(leanest)}</p>
-        </div>
+        {groups.map(({ status, rows }) => (
+          <div key={status} className="p-4">
+            <p className="display text-2xl font-bold tabular-nums">{rows.length}</p>
+            <p className="flex items-center justify-center gap-1.5 text-xs text-white/50">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PU_STATUS_UI[status].dot}`} />
+              {PU_STATUS_UI[status].badge}
+            </p>
+          </div>
+        ))}
       </section>
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-white/50">
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-white/60" />
-          ใช้ไปแล้ว
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-white/15" />
-          เหลือในโควตา
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
-          ครบโควตาพอดี
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-          เกินโควตา = โดนโทษกริด
-        </span>
-      </div>
 
       <SectionTabs
         tabs={[
+          { key: "overview", label: "ภาพรวม", content: overview },
           { key: "team", label: "ตามทีม", content: byTeam },
-          { key: "driver", label: "เรียงตามนักขับ", content: byDriver },
+          { key: "table", label: "ตารางละเอียด", content: table },
           ...(penalties ? [{ key: "penalty", label: "โทษกริด", content: penalties }] : []),
           { key: "explain", label: "ชิ้นส่วนคืออะไร", content: explainer },
         ]}
