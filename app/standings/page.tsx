@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronRight, Cog } from "lucide-react";
 import Standings from "@/components/Standings";
 import ChampionshipChart from "@/components/ChampionshipChart";
 import SeasonStats from "@/components/SeasonStats";
@@ -92,6 +94,20 @@ export default async function StandingsPage() {
           },
         ]}
       />
+
+      <Link
+        href="/power-units"
+        className="card flex items-center gap-3 p-4 transition hover:border-white/20"
+      >
+        <Cog className="h-5 w-5 shrink-0 text-(--color-f1)" />
+        <span className="flex-1 text-sm font-semibold">
+          ชิ้นส่วนเครื่องยนต์
+          <span className="ml-2 font-normal text-white/45">
+            ใครใช้เครื่องยนต์เกินโควตาแล้วบ้าง
+          </span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+      </Link>
 
       <footer className="pb-8 text-center text-xs text-white/30">
         ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ

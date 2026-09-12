@@ -9,6 +9,8 @@ import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import TeammateH2H from "@/components/TeammateH2H";
 import CountUp from "@/components/CountUp";
+import PuCard from "@/components/PuCard";
+import { getPuUsage, findUsage } from "@/lib/power-units";
 import { SEASON } from "@/lib/season";
 
 export const revalidate = 600;
@@ -38,9 +40,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function DriverPage({ params }: Params) {
   const { id } = await params;
-  const [standings, results] = await Promise.all([
+  const [standings, results, pu] = await Promise.all([
     getDriverStandings(SEASON),
     getDriverSeasonResults(SEASON, id),
+    getPuUsage(SEASON),
   ]);
 
   const standing = standings.find((s) => s.Driver.driverId === id);
@@ -62,6 +65,7 @@ export default async function DriverPage({ params }: Params) {
   const mateResults = mateStanding
     ? await getDriverSeasonResults(SEASON, mateStanding.Driver.driverId)
     : [];
+  const puRow = pu ? findUsage(pu, driver) : undefined;
 
   return (
     <main className="mx-auto max-w-3xl space-y-6">
@@ -139,6 +143,10 @@ export default async function DriverPage({ params }: Params) {
           selfPoints={Number(standing?.points ?? 0)}
           matePoints={Number(mateStanding.points)}
         />
+      )}
+
+      {pu && puRow && (
+        <PuCard event={pu.event} rows={[{ key: puRow.number, used: puRow.used }]} />
       )}
 
       <section className="card overflow-hidden p-0">

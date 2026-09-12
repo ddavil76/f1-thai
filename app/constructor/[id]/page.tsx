@@ -10,6 +10,8 @@ import { getDriverImages } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import CountUp from "@/components/CountUp";
+import PuCard from "@/components/PuCard";
+import { getPuUsage, findUsage } from "@/lib/power-units";
 import { SEASON } from "@/lib/season";
 
 export const revalidate = 600;
@@ -37,9 +39,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ConstructorPage({ params }: Params) {
   const { id } = await params;
-  const [standings, results] = await Promise.all([
+  const [standings, results, pu] = await Promise.all([
     getConstructorStandings(SEASON),
     getConstructorSeasonResults(SEASON, id),
+    getPuUsage(SEASON),
   ]);
 
   const standing = standings.find((s) => s.Constructor.constructorId === id);
@@ -55,6 +58,19 @@ export default async function ConstructorPage({ params }: Params) {
     ).values(),
   );
   const lineupImages = await getDriverImages(lineup);
+  const puRows = pu
+    ? lineup.flatMap((d) => {
+        const r = findUsage(pu, d);
+        return r
+          ? [{
+              key: r.number,
+              name: `${d.givenName} ${d.familyName}`,
+              href: `/driver/${d.driverId}`,
+              used: r.used,
+            }]
+          : [];
+      })
+    : [];
 
   return (
     <main className="mx-auto max-w-3xl space-y-6">
@@ -138,6 +154,8 @@ export default async function ConstructorPage({ params }: Params) {
           </div>
         </section>
       )}
+
+      {pu && puRows.length > 0 && <PuCard event={pu.event} rows={puRows} />}
 
       <section className="card overflow-hidden p-0">
         <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">
