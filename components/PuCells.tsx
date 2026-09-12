@@ -23,7 +23,7 @@ export default function PuCells({ used }: { used: PuUsed }) {
             </p>
             <p
               className={`display text-base font-bold leading-tight tabular-nums ${
-                over > 0 ? "text-red-400" : over === 0 ? "text-amber-300" : ""
+                over > 0 ? "text-red-400" : ""
               }`}
             >
               {n}
@@ -33,7 +33,13 @@ export default function PuCells({ used }: { used: PuUsed }) {
                 <span
                   key={i}
                   className={`h-1 w-1 rounded-full ${
-                    i >= n ? "bg-white/15" : i >= limit ? "bg-red-400" : "bg-white/60"
+                    i >= n
+                      ? "bg-white/15"
+                      : i >= limit
+                        ? "bg-red-400"
+                        : over === 0
+                          ? "bg-amber-300" // ครบโควตาพอดี — บอกแค่ที่จุด ไม่ให้แย่งความเด่นจากช่องแดง
+                          : "bg-white/60"
                   }`}
                 />
               ))}

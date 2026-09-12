@@ -14,3 +14,13 @@ export const TEAM_COLOR: Record<string, string> = {
 };
 
 export const teamColor = (id?: string) => TEAM_COLOR[id ?? ""] ?? "#666666";
+
+// ชื่อจาก Jolpica บางทีมเก่า/ยาว ("RB F1 Team") → ชื่อที่ใช้แสดง
+const TEAM_NAME: Record<string, string> = {
+  rb: "Racing Bulls",
+  alpine: "Alpine",
+  haas: "Haas",
+  cadillac: "Cadillac",
+};
+
+export const teamName = (id: string, fallback: string) => TEAM_NAME[id] ?? fallback;

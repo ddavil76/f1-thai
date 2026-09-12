@@ -8,7 +8,7 @@ import {
   getPuUsage, findUsage, overBy, totalUsed, teamIdOf, decisionTh, sessionTh,
   PU_INFO, PU_KEYS, type PuDriver,
 } from "@/lib/power-units";
-import { teamColor } from "@/lib/teams";
+import { teamColor, teamName } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
 
 export const revalidate = 3600;
@@ -79,7 +79,11 @@ export default async function PowerUnitsPage() {
   const teams = new Map<string, { id: string; name: string; rows: PuDriver[] }>();
   for (const r of pu.drivers) {
     const id = teamIdFor(r) || r.team;
-    const team = teams.get(id) ?? { id, name: constructorName.get(id) ?? r.team, rows: [] };
+    const team = teams.get(id) ?? {
+      id,
+      name: teamName(id, constructorName.get(id) ?? r.team),
+      rows: [],
+    };
     team.rows.push(r);
     teams.set(id, team);
   }
@@ -181,8 +185,8 @@ export default async function PowerUnitsPage() {
                           n > limit
                             ? "font-bold text-red-400"
                             : n === limit
-                              ? "text-amber-300"
-                              : "text-white/70"
+                              ? "text-white"
+                              : "text-white/45"
                         }`}
                       >
                         {n}
@@ -300,7 +304,7 @@ export default async function PowerUnitsPage() {
           เหลือในโควตา
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="font-bold text-amber-300">3</span>
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
           ครบโควตาพอดี
         </span>
         <span className="flex items-center gap-1.5">
