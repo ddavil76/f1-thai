@@ -224,17 +224,25 @@ export type SeasonLeader = {
   count: number;
 };
 
-/** นับผู้นำจากรายการ race (helper) */
-function tallyLeader(
+/**
+ * นับผู้นำจากรายการ race
+ * · QualifyingResults: endpoint `qualifying/1` ไม่ได้คืนแค่คนได้ pole — บางสนามพ่วงแถว
+ *   อันดับ 2, 4, 7 มาด้วย จึงต้องหาแถว position "1" เอง ไม่ใช่หยิบแถวแรก
+ * · Results: จาก `fastest/1/results` → แถวที่ FastestLap.rank เป็น "1"
+ */
+export function tallyLeader(
   races: {
-    Results?: { Driver: RaceResult["Driver"]; Constructor: RaceResult["Constructor"] }[];
+    Results?: Pick<RaceResult, "Driver" | "Constructor" | "FastestLap">[];
     QualifyingResults?: QualifyingResult[];
   }[],
   key: "Results" | "QualifyingResults",
 ): SeasonLeader | null {
   const count = new Map<string, SeasonLeader>();
   for (const r of races) {
-    const top = r[key]?.[0];
+    const top =
+      key === "QualifyingResults"
+        ? r.QualifyingResults?.find((q) => q.position === "1")
+        : (r.Results?.find((x) => x.FastestLap?.rank === "1") ?? r.Results?.[0]);
     if (!top) continue;
     const id = top.Driver.driverId;
     const cur = count.get(id);

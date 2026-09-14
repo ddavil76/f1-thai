@@ -1,5 +1,6 @@
 import Link from "next/link";
 import CountUp from "@/components/CountUp";
+import RefreshOnMissing from "@/components/RefreshOnMissing";
 import type { SeasonLeader } from "@/lib/f1";
 import { teamColor } from "@/lib/teams";
 
@@ -47,6 +48,8 @@ export default function SeasonStats({
   if (!wins && !poles && !fastestLaps) return null;
   return (
     <section className="card grid grid-cols-3 divide-x divide-white/5 p-0">
+      {/* มีผู้ชนะแล้วแต่ pole/fastest lap ว่าง = ตอนเรนเดอร์ดึงข้อมูลไม่สำเร็จ ไม่ใช่ไม่มีข้อมูล */}
+      {wins && (!poles || !fastestLaps) && <RefreshOnMissing />}
       <Tile label="ชนะมากสุด" leader={wins} unit="ครั้ง" />
       <Tile label="pole มากสุด" leader={poles} unit="ครั้ง" />
       <Tile label="fastest lap" leader={fastestLaps} unit="ครั้ง" />
