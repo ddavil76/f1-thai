@@ -415,21 +415,12 @@ const WIKI_TTL = { next: { revalidate: 60 * 60 * 24 * 7 } }; // cache 7 วั�
 const TRACK_MAP_RE =
   /(track[ _-]?map|circuit[ _-]*(layout|map)|street[ _-]?circuit|grand[ _-]?prix[ _-]?layout|\(20\d\d\)\.svg|[ _-]layout\.svg|_map\.svg)/i;
 
-/**
- * override เฉพาะสนามที่ heuristic เลือกรูปพลาด — key = Ergast circuitId,
- * value = URL รูปเต็ม (แนะนำ .svg.png จาก upload.wikimedia.org)
- */
-const CIRCUIT_IMAGE_OVERRIDE: Record<string, string> = {};
-
 const cleanWikiUrl = (u: string) =>
   (u.startsWith("//") ? `https:${u}` : u).split("?")[0].replace(/\/\d+px-/, "/1280px-");
 
 /** URL รูปผังสนาม; ลอง media-list ก่อน (เจอผังแทร็กแม่นกว่า) แล้วค่อย fallback */
 export async function getCircuitImage(circuit?: Race["Circuit"]): Promise<string | null> {
   if (!circuit) return null;
-
-  const override = CIRCUIT_IMAGE_OVERRIDE[circuit.circuitId];
-  if (override) return override;
 
   const title = decodeURIComponent(circuit.url?.split("/wiki/")[1] ?? "");
   if (!title) return null;
@@ -509,10 +500,6 @@ const OPTS: Record<TimeKind, Intl.DateTimeFormatOptions> = {
 export function formatInTz(d: Date, kind: TimeKind, timeZone = TZ) {
   return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone, ...OPTS[kind] }).format(d);
 }
-
-export const thaiFull = (d: Date) => formatInTz(d, "full");
-export const thaiTimeOnly = (d: Date) => formatInTz(d, "time");
-export const thaiDateOnly = (d: Date) => formatInTz(d, "date");
 
 /** ดึงทุก session ของสุดสัปดาห์ เรียงตามเวลา */
 export function getSessions(race: Race) {
