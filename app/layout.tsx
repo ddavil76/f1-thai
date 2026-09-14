@@ -9,6 +9,7 @@ import TzToggle from "@/components/tz/TzToggle";
 import { getLastResults } from "@/lib/f1";
 import { teamAccent } from "@/lib/theme";
 import { SEASON } from "@/lib/season";
+import { SITE_URL } from "@/lib/site";
 
 
 const notoThai = Noto_Sans_Thai({
@@ -25,7 +26,6 @@ const chakra = Chakra_Petch({
   variable: "--font-display-src",
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 const TITLE = "F1 Week Race";
 const DESCRIPTION = "ตารางแข่ง F1 นับถอยหลัง และตารางคะแนน เวลาไทย (GMT+7)";
 
