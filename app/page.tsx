@@ -5,11 +5,13 @@ import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
 import WeatherBadge from "@/components/WeatherBadge";
 import ReactionPromo from "@/components/ReactionPromo";
+import ResultsPending from "@/components/ResultsPending";
+import ResultsRefresher from "@/components/ResultsRefresher";
 import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getLastResults, findNextRace, getUpcomingRaces, getSessions,
-  getCircuitImage, isSprintWeekend, toDate,
+  getCircuitImage, isSprintWeekend, toDate, resultsGap, firstRaceWithoutResults,
 } from "@/lib/f1";
 import { getRaceWeather } from "@/lib/weather";
 import { SEASON } from "@/lib/season";
@@ -30,6 +32,12 @@ export default async function Home() {
   const [circuitImg, weather] = next
     ? await Promise.all([getCircuitImage(next.Circuit), getRaceWeather(next)])
     : [null, null];
+
+  // สนามถัดจากผลล่าสุดที่มี — ถ้าแข่งจบแล้วแต่ยังไม่มีผล ให้บอกและคอยอัปเดตหน้าเอง
+  const lastRound = Number(lastRace?.round ?? 0);
+  const pending = firstRaceWithoutResults(races, (r) => Number(r.round) <= lastRound);
+  const pendingStart = pending ? toDate({ date: pending.date, time: pending.time }) : null;
+  const pendingGap = pending ? resultsGap(pending) : null;
 
   return (
     <main className="mx-auto max-w-3xl lg:max-w-none">
@@ -151,6 +159,10 @@ export default async function Home() {
             </section>
           )}
 
+          {pendingStart && <ResultsRefresher startIso={pendingStart.toISOString()} />}
+          {pending && pendingGap === "awaiting" && (
+            <ResultsPending race={pending} status="awaiting" href={`/race/${pending.round}`} />
+          )}
           {lastRace && <Podium race={lastRace} />}
 
           {following.length > 0 && (

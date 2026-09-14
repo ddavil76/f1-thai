@@ -7,6 +7,8 @@ import CircuitMap from "@/components/CircuitMap";
 import CircuitInfo from "@/components/CircuitInfo";
 import SectionTabs from "@/components/SectionTabs";
 import ReactionPromo from "@/components/ReactionPromo";
+import ResultsPending from "@/components/ResultsPending";
+import ResultsRefresher from "@/components/ResultsRefresher";
 import ResultsTable from "@/components/ResultsTable";
 import QualifyingTable from "@/components/QualifyingTable";
 import PodiumGraphic from "@/components/PodiumGraphic";
@@ -15,7 +17,7 @@ import LocalTime from "@/components/tz/LocalTime";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getRaceResults, getQualifying, getSprintResults, findNextRace,
-  getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate,
+  getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate, resultsGap,
 } from "@/lib/f1";
 import { getRaceWeather } from "@/lib/weather";
 import { SEASON } from "@/lib/season";
@@ -65,6 +67,8 @@ export default async function RacePage({ params }: Params) {
     past ? Promise.resolve(null) : getRaceWeather(race),
   ]);
   const sessions = getSessions(race);
+  const hasResults = Boolean(results && results.Results.length > 0);
+  const gap = past && !hasResults ? resultsGap(race) : null;
 
   const sessionsCard = sessions.length > 0 && (
     <section className="card p-5">
@@ -191,13 +195,18 @@ export default async function RacePage({ params }: Params) {
           <ArrowLeft className="h-4 w-4 rotate-180 text-white/30" />
         </Link>
       )}
+      {!hasResults && raceStart && <ResultsRefresher startIso={raceStart.toISOString()} />}
       {past &&
-        (!results || results.Results.length === 0) &&
-        quali.length === 0 && (
-          <p className="card p-6 text-center text-sm text-white/50">
-            ยังไม่มีผลการแข่งสำหรับสนามนี้
-          </p>
-        )}
+        !hasResults &&
+        (gap ? (
+          <ResultsPending race={race} status={gap} />
+        ) : (
+          quali.length === 0 && (
+            <p className="card p-6 text-center text-sm text-white/50">
+              ยังไม่มีผลการแข่งสำหรับสนามนี้
+            </p>
+          )
+        ))}
 
       {past ? (
         <SectionTabs

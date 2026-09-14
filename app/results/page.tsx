@@ -2,7 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronRight, Trophy } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
-import { getSeasonWinners, toDate } from "@/lib/f1";
+import ResultsPending from "@/components/ResultsPending";
+import ResultsRefresher from "@/components/ResultsRefresher";
+import {
+  getSchedule, getSeasonWinners, toDate, resultsGap, firstRaceWithoutResults,
+} from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
@@ -13,10 +17,19 @@ export const revalidate = 600;
 
 
 export default async function ResultsPage() {
-  const races = await getSeasonWinners(SEASON);
+  const [races, schedule] = await Promise.all([
+    getSeasonWinners(SEASON),
+    getSchedule(SEASON),
+  ]);
   const winnerImages = await getDriverImages(
     races.flatMap((r) => (r.Results[0] ? [r.Results[0].Driver] : [])),
   );
+
+  // สนามแรกที่ยังไม่มีผู้ชนะ — กำลังแข่ง/รอผล หรือสนามถัดไปที่หน้านี้ต้องคอยอัปเดต
+  const won = new Set(races.map((r) => r.round));
+  const pending = firstRaceWithoutResults(schedule, (r) => won.has(r.round));
+  const pendingStart = pending ? toDate({ date: pending.date, time: pending.time }) : null;
+  const pendingGap = pending ? resultsGap(pending) : null;
 
   // สรุปฤดูกาลจากรายชื่อผู้ชนะ (ไม่ต้องยิง request เพิ่ม)
   const winCount = new Map<string, { name: string; n: number }>();
@@ -85,6 +98,11 @@ export default async function ResultsPage() {
             )}
           </div>
         </section>
+      )}
+
+      {pendingStart && <ResultsRefresher startIso={pendingStart.toISOString()} />}
+      {pending && pendingGap && (
+        <ResultsPending race={pending} status={pendingGap} href={`/race/${pending.round}`} />
       )}
 
       {races.length === 0 ? (

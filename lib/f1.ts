@@ -1,4 +1,5 @@
 import { SCHEDULE_FALLBACK } from "./schedule-fallback";
+import { RACE_TAIL_MS, RESULTS_WAIT_MS } from "./race-window";
 
 export type SessionTime = { date: string; time?: string };
 
@@ -557,8 +558,6 @@ export function getSessions(race: Race) {
     .sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
-const RACE_TAIL_MS = 2 * 60 * 60 * 1000;
-
 /** ระยะเวลาโดยประมาณของแต่ละ session (ms) — ใช้เช็คว่าจบหรือยัง */
 const SESSION_DUR_MS: Record<string, number> = {
   "Race": RACE_TAIL_MS,
@@ -606,4 +605,28 @@ export function isSprintWeekend(race: Race) {
 export function isPastRace(race: Race, now = new Date()) {
   const d = toDate({ date: race.date, time: race.time });
   return d ? d.getTime() < now.getTime() : false;
+}
+
+/**
+ * race ที่เริ่มแล้วแต่ยังไม่มีผล (ผู้เรียกเช็คเองว่าไม่มีผล):
+ * "live" = ยังอยู่ในช่วงแข่ง · "awaiting" = จบแล้วรอ Jolpica ลงผล · null = ยังไม่เริ่ม/เลยช่วงรอ
+ */
+export function resultsGap(race: Race, now = nowMs()): "live" | "awaiting" | null {
+  const d = toDate({ date: race.date, time: race.time });
+  if (!d) return null;
+  const since = now - d.getTime();
+  if (since < 0 || since > RESULTS_WAIT_MS) return null;
+  return since < RACE_TAIL_MS ? "live" : "awaiting";
+}
+
+/** สนามแรกที่ยังไม่มีผลและยังอยู่ในช่วงที่ควรรอ (รวมสนามที่ยังไม่แข่ง) */
+export function firstRaceWithoutResults(
+  races: Race[],
+  hasResults: (race: Race) => boolean,
+  now = nowMs(),
+) {
+  return races.find((r) => {
+    const d = toDate({ date: r.date, time: r.time });
+    return d !== null && d.getTime() + RESULTS_WAIT_MS > now && !hasResults(r);
+  });
 }
