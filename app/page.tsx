@@ -48,8 +48,10 @@ export default async function Home() {
       <p className="mb-5 text-sm text-white/40">ฤดูกาล {SEASON}</p>
 
       <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-start">
-        {/* ---- คอลัมน์ซ้าย: การ์ดสนามถัดไป ---- */}
-        <div className="space-y-4">
+        {/* ---- คอลัมน์ซ้าย: การ์ดสนามถัดไป ----
+             min-w-0: grid item ตั้งต้นเป็น min-width:auto ซึ่งหดต่ำกว่าขนาด
+             ขั้นต่ำของตัวเองไม่ได้ พอจอแคบกว่า ~375px การ์ดเลยดันทะลุออกนอกจอ */}
+        <div className="min-w-0 space-y-4">
           {next && raceStart ? (
             <section className="card p-5 ring-1 ring-inset ring-(--color-f1)/20 sm:p-6">
               <div className="flex flex-wrap items-center gap-2">
@@ -127,7 +129,7 @@ export default async function Home() {
         </div>
 
         {/* ---- คอลัมน์ขวา: ตารางสุดสัปดาห์ / ผลล่าสุด / ถัดไป ---- */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {next && sessions.length > 0 && (
             <section className="card p-5">
               <h2 className="mb-3 text-lg font-bold">ตารางสุดสัปดาห์นี้</h2>
