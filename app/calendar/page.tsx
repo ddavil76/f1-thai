@@ -15,7 +15,7 @@ export default async function CalendarPage() {
   const nextRound = findNextRace(races)?.round;
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6">
+    <main className="mx-auto max-w-3xl space-y-6 lg:max-w-5xl">
       <header className="space-y-3">
         <div className="space-y-1">
           <h1 className="text-3xl font-black tracking-tight md:text-4xl">
@@ -41,7 +41,7 @@ export default async function CalendarPage() {
       )}
 
       <section className={races.length === 0 ? "hidden" : "card p-2 sm:p-4"}>
-        <ul className="stagger divide-y divide-white/5">
+        <ul className="stagger divide-y divide-white/5 lg:grid lg:grid-cols-2 lg:gap-x-4 lg:divide-y-0 lg:[&>li]:border-b lg:[&>li]:border-white/5">
           {races.map((r, i) => {
             const d = toDate({ date: r.date, time: r.time })!;
             const past = isPastRace(r);
@@ -52,6 +52,10 @@ export default async function CalendarPage() {
                   href={`/race/${r.round}`}
                   className={`flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/[0.05] ${
                     past ? "opacity-40 hover:opacity-100" : ""
+                  } ${
+                    isNext
+                      ? "bg-(--color-f1)/8 ring-1 ring-inset ring-(--color-f1)/30"
+                      : ""
                   }`}
                 >
                   <span
@@ -62,24 +66,33 @@ export default async function CalendarPage() {
                     {r.round}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{r.raceName}</p>
+                    <p className="truncate font-medium">
+                      {r.raceName}
+                      {isNext && (
+                        <span className="ml-2 rounded-full bg-(--color-f1) px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider text-white">
+                          ถัดไป
+                        </span>
+                      )}
+                    </p>
                     <p className="truncate text-xs text-white/50">
                       {r.Circuit.Location.locality}, {r.Circuit.Location.country}
                     </p>
                   </div>
-                  <span className="text-right text-xs tabular-nums text-white/70">
+                  <span className="shrink-0 text-right text-xs tabular-nums text-white/70">
                     <LocalTime
                       iso={d.toISOString()}
                       kind="date"
                       circuitId={r.Circuit.circuitId}
                     />
-                    <br />
-                    <LocalTime
-                      iso={d.toISOString()}
-                      kind="time"
-                      circuitId={r.Circuit.circuitId}
-                    />{" "}
-                    น.
+                    {/* จอแคบขึ้นบรรทัดใหม่ จอกว้างต่อท้ายไปเลย */}
+                    <span className="block sm:ml-1.5 sm:inline">
+                      <LocalTime
+                        iso={d.toISOString()}
+                        kind="time"
+                        circuitId={r.Circuit.circuitId}
+                      />{" "}
+                      น.
+                    </span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
                 </Link>

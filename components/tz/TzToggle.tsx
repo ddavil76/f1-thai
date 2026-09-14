@@ -34,7 +34,9 @@ export default function TzToggle() {
             onClick={() => setPref(o.id)}
             aria-pressed={pref === o.id}
             title={o.title}
-            className={`relative z-10 rounded-full px-2.5 py-1 transition-colors ${
+            // ปุ่มจริงสูงแค่ ~24px ซึ่งเล็กเกินสำหรับนิ้ว — ขยายพื้นที่กดด้วย
+            // pseudo-element สูง 44px คร่อมกลางปุ่ม โดยไม่ไปดันเลย์เอาต์ของ header
+            className={`relative z-10 rounded-full px-2.5 py-1 transition-colors after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-[''] ${
               pref === o.id ? "text-white" : "text-white/50 hover:text-white"
             }`}
           >
