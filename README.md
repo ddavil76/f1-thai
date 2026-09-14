@@ -8,10 +8,18 @@
 
 ## เริ่มใช้งาน
 
+ต้องใช้ Node 20.9 ขึ้นไป (`.nvmrc` ตั้งไว้ที่ 22 — `nvm use` ได้เลย)
+
 ```bash
 npm install
 npm run dev     # http://localhost:3000
 ```
+
+> **เรื่อง lockfile:** `package-lock.json` ถูกสร้างด้วย npm 11+ ซึ่งเขียนฟิลด์
+> `libc` ให้ optional dependency ที่เป็น native binary ถ้ารัน `npm install`
+> ด้วย npm 10 มันจะตัดฟิลด์พวกนั้นทิ้ง (38 จุด) กลายเป็น diff ที่ไม่ได้ตั้งใจ
+> เจอแบบนั้นให้ `git checkout package-lock.json` แล้วอัปเกรด npm ก่อน · CI ใช้
+> `npm ci` ซึ่งไม่แตะ lockfile เลย จึงไม่มีปัญหานี้
 
 | สคริปต์ | ทำอะไร |
 | --- | --- |
