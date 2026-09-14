@@ -491,14 +491,40 @@ const TZ = "Asia/Bangkok";
 export type TimeKind = "full" | "time" | "date";
 
 const OPTS: Record<TimeKind, Intl.DateTimeFormatOptions> = {
-  full: { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" },
+  full: { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" },
   time: { hour: "2-digit", minute: "2-digit" },
-  date: { weekday: "short", day: "numeric", month: "short" },
+  date: { day: "numeric", month: "short" },
 };
+
+/** kind ไหนขึ้นต้นด้วยชื่อวัน */
+const SHOWS_WEEKDAY: Record<TimeKind, boolean> = { full: true, time: false, date: true };
+
+/**
+ * ชื่อวันแบบย่อ — เขียนตารางเองแทนที่จะใช้ weekday:"short" ของ Intl
+ *
+ * ICU ของ Node กับของเบราว์เซอร์ให้ผลไม่ตรงกัน: Node (ICU 78) คืนชื่อเต็ม
+ * "อาทิตย์" ส่วน Chromium คืน "อา." พอ SSR กับ client ได้คนละข้อความ React
+ * ก็ throw hydration error #418 ทุกหน้าที่มีชื่อวัน
+ */
+const TH_WEEKDAY = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+
+const EN_WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** วันในสัปดาห์ตามโซนเวลาที่ระบุ (0 = อาทิตย์) — ตัวย่อ en-US นิ่งข้าม ICU ทุกเวอร์ชัน */
+function weekdayIn(d: Date, timeZone: string) {
+  const en = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(d);
+  return EN_WEEKDAY.indexOf(en);
+}
 
 /** format วันเวลาเป็นภาษาไทย (ca-gregory กัน พ.ศ.) ในโซนเวลาที่ระบุ */
 export function formatInTz(d: Date, kind: TimeKind, timeZone = TZ) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone, ...OPTS[kind] }).format(d);
+  const body = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone,
+    ...OPTS[kind],
+  }).format(d);
+  if (!SHOWS_WEEKDAY[kind]) return body;
+  const i = weekdayIn(d, timeZone);
+  return i < 0 ? body : `${TH_WEEKDAY[i]} ${body}`;
 }
 
 /** ดึงทุก session ของสุดสัปดาห์ เรียงตามเวลา */
