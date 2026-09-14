@@ -44,8 +44,18 @@ CI รัน `npm ci` → `tsc --noEmit` → `lint` → `test` → `build` ท�
 
 | ตัวแปร | ค่าเริ่มต้น | ใช้ทำอะไร |
 | --- | --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` | `metadataBase` สำหรับ OG image และ canonical URL — **ต้องตั้งตอน deploy** ไม่งั้นลิงก์พรีวิวจะชี้ localhost |
+| `NEXT_PUBLIC_SITE_URL` | โดเมน production ของ Vercel · ไม่งั้น `http://localhost:3000` | `metadataBase` สำหรับ OG image, `sitemap.xml` และ `robots.txt` |
 | `NEXT_PUBLIC_SEASON` | ปีปัจจุบัน | ล็อกฤดูกาลที่แสดง มีประโยชน์ช่วงต้นปีที่ Jolpica ยังไม่ปล่อยปฏิทินปีใหม่ (จะได้ค้างปีเก่าไว้ก่อน) และใช้ทดสอบการข้ามปี |
+
+`SITE_URL` (`lib/site.ts`) ไล่หาตามลำดับนี้
+
+1. `NEXT_PUBLIC_SITE_URL` ถ้าตั้งไว้ — ใช้เมื่อมีโดเมนของตัวเอง หรือ deploy ที่อื่น
+2. `VERCEL_PROJECT_PRODUCTION_URL` ที่ Vercel ใส่ให้เองทุก deploy — **deploy บน Vercel
+   จึงไม่ต้องตั้งอะไรเลย** ค่าที่ได้เป็นโดเมนเปล่า โค้ดเติม `https://` ให้
+3. `http://localhost:3000` ตอน dev
+
+เผลอใส่ค่ามาไม่มี protocol ก็เติม `https://` ให้ และตัด `/` ท้ายทิ้ง — `new URL()`
+ใน `metadataBase` จะได้ไม่ throw ทั้ง build เพราะพิมพ์ตกตัวเดียว
 
 > `SEASON` ถูกคำนวณครั้งเดียวตอนโหลดโมดูล เซิร์ฟเวอร์ที่รันค้างข้ามปีจะยังเห็นปีเก่า
 > จนกว่าจะ restart — ถ้าเจอเคสนี้ให้ตั้ง `NEXT_PUBLIC_SEASON` แล้ว redeploy
