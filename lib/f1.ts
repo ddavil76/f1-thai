@@ -1,5 +1,6 @@
 import { SCHEDULE_FALLBACK } from "./schedule-fallback";
 import { RACE_TAIL_MS, RESULTS_WAIT_MS } from "./race-window";
+import { createGate, fetchRetry } from "./http";
 
 export type SessionTime = { date: string; time?: string };
 
@@ -72,48 +73,22 @@ export type RaceWithResults = Race & { Results: RaceResult[] };
 
 const BASE = "https://api.jolpi.ca/ergast/f1";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 /**
  * จำกัดจำนวน request พร้อมกันไป Jolpica — ตอน build มี ~60 หน้า render
  * พร้อมกัน ถ้าปล่อยยิงหมดจะโดน rate-limit ยับ
  */
-let active = 0;
-const queue: (() => void)[] = [];
-const MAX_CONCURRENT = 4;
-
-async function gate<T>(fn: () => Promise<T>): Promise<T> {
-  if (active >= MAX_CONCURRENT) {
-    await new Promise<void>((resolve) => queue.push(resolve));
-  }
-  active++;
-  try {
-    return await fn();
-  } finally {
-    active--;
-    queue.shift()?.();
-  }
-}
+const gate = createGate(4);
 
 /** เรียก Jolpica พร้อม retry + จำกัด concurrency — API ตัวนี้ rate-limit บ่อย */
 async function jolpica<T>(path: string, revalidate = 3600): Promise<T> {
-  const url = `${BASE}/${path}?format=json`;
-  let lastErr: unknown;
-
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await sleep(500 * 2 ** (attempt - 1)); // 0.5s, 1s, 2s
-    try {
-      const res = await gate(() => fetch(url, { next: { revalidate } }));
-      if (res.ok) return (await res.json()) as T;
-      lastErr = new Error(`Jolpica ${res.status} on ${path}`);
-      // 429/5xx = ลองใหม่, 4xx อื่น ๆ = เลิก (ยิงอีกก็ได้ผลเดิม)
-      // ต้อง break ไม่ใช่ throw — throw ตรงนี้จะถูก catch ข้างล่างกลืนแล้ววนต่อ
-      if (res.status !== 429 && res.status < 500) break;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error(`Jolpica failed on ${path}`);
+  const res = await fetchRetry(`${BASE}/${path}?format=json`, {
+    source: "Jolpica",
+    init: { next: { revalidate } } as RequestInit,
+    attempts: 4,
+    backoffMs: (n) => 500 * 2 ** (n - 1), // 0.5s, 1s, 2s
+    gate, // ห่อเฉพาะตอนยิง — ระหว่าง backoff ปล่อยสล็อตให้คนอื่นใช้
+  });
+  return (await res.json()) as T;
 }
 
 type ErgastResponse = {

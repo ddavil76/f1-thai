@@ -6,6 +6,7 @@
 // ไฟล์นี้ห้าม import อะไรของ Next — สคริปต์สร้างสแนปช็อตรันด้วย node ตรง ๆ
 
 import { getDocumentProxy } from "unpdf";
+import { createGate, fetchRetry } from "./http";
 
 export const PU_KEYS = ["ICE", "TC", "EXH", "MGU-K", "ES", "PU-CE", "PU-ANC"] as const;
 export type PuKey = (typeof PU_KEYS)[number];
@@ -38,41 +39,26 @@ const LISTING = `${FIA}/documents/championships/fia-formula-one-world-championsh
 const HOUR = 60 * 60;
 const HEADERS = { "user-agent": "Mozilla/5.0 (compatible; f1-week-race)" };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 // CloudFront ของ FIA ตอบ 502/504 เป็นพัก ๆ (บางไฟล์ค้างนาน) → จำกัดทีละ 3 + timeout + retry
-let active = 0;
-const queue: (() => void)[] = [];
+const gate = createGate(3);
 
 type GetOpts = { attempts?: number; deadline?: number };
 
-async function get(
-  url: string,
-  revalidate: number,
-  { attempts = 3, deadline }: GetOpts = {},
-): Promise<Response> {
-  if (active >= 3) await new Promise<void>((resolve) => queue.push(resolve));
-  active++;
-  try {
-    let status = 0;
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      if (deadline && Date.now() > deadline) throw new Error(`FIA time budget spent before ${url}`);
-      if (attempt > 0) await sleep(800 * attempt);
-      const res = await fetch(url, {
+/** กอดสล็อตไว้ทั้งชุดรวม backoff — FIA อืดอยู่แล้ว ไม่ต้องไปเร่งซ้ำ */
+const get = (url: string, revalidate: number, { attempts = 3, deadline }: GetOpts = {}) =>
+  gate(() =>
+    fetchRetry(url, {
+      source: "FIA",
+      init: {
         headers: HEADERS,
         signal: AbortSignal.timeout(15_000),
         next: { revalidate },
-      }).catch(() => null);
-      if (res?.ok) return res;
-      status = res?.status ?? 0;
-      if (status >= 400 && status < 500 && status !== 429) break;
-    }
-    throw new Error(`FIA ${status || "network error"} on ${url}`);
-  } finally {
-    active--;
-    queue.shift()?.();
-  }
-}
+      } as RequestInit,
+      attempts,
+      backoffMs: (n) => 800 * n,
+      deadline,
+    }),
+  );
 
 const decode = (s: string) =>
   s
@@ -116,10 +102,10 @@ async function seasonIndex(season: number) {
   if (!href) return null;
 
   const html = await (await get(FIA + href, 3 * HOUR)).text();
-  const active = html.match(/class="event-title active">\s*([^<]*?)\s*</)?.[1];
-  if (!active) return null;
+  const latest = html.match(/class="event-title active">\s*([^<]*?)\s*</)?.[1];
+  if (!latest) return null;
   return {
-    latest: { name: decode(active), docs: parseDocs(html) } as FiaEvent,
+    latest: { name: decode(latest), docs: parseDocs(html) } as FiaEvent,
     older: [...html.matchAll(/class="event-title data-id-(\d+)\s+use-ajax">\s*([^<]*?)\s*<\/a>/g)].map(
       (m) => ({ id: m[1], name: decode(m[2]) }),
     ),
