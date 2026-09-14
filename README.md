@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# F1 Week Race
 
-## Getting Started
+เว็บตารางแข่ง Formula 1 ภาษาไทย — สนามถัดไป นับถอยหลังรายเซสชัน ผลการแข่ง
+ตารางคะแนน และปฏิทินทั้งฤดูกาล แสดงเป็นเวลาไทย (GMT+7) หรือเวลาท้องถิ่นของสนามก็ได้
 
-First, run the development server:
+สร้างด้วย Next.js (App Router) + Tailwind CSS v4 · เป็น server component เกือบทั้งหมด
+และ deploy เป็น static/ISR ไม่ต้องมีฐานข้อมูล
+
+## เริ่มใช้งาน
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| สคริปต์ | ทำอะไร |
+| --- | --- |
+| `npm run dev` | dev server |
+| `npm run build` | build โปรดักชัน (prerender หน้าส่วนใหญ่) |
+| `npm start` | รันผลลัพธ์จาก `build` |
+| `npm run lint` | ESLint |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+ยังไม่มีชุดเทสต์ ตรวจงานก่อน commit ด้วย `npx tsc --noEmit && npm run lint && npm run build`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ตัวแปรสภาพแวดล้อม
 
-## Learn More
+ทั้งสองตัวเป็น optional — ไม่ตั้งก็รันได้
 
-To learn more about Next.js, take a look at the following resources:
+| ตัวแปร | ค่าเริ่มต้น | ใช้ทำอะไร |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` | `metadataBase` สำหรับ OG image และ canonical URL — **ต้องตั้งตอน deploy** ไม่งั้นลิงก์พรีวิวจะชี้ localhost |
+| `NEXT_PUBLIC_SEASON` | ปีปัจจุบัน | ล็อกฤดูกาลที่แสดง มีประโยชน์ช่วงต้นปีที่ Jolpica ยังไม่ปล่อยปฏิทินปีใหม่ (จะได้ค้างปีเก่าไว้ก่อน) และใช้ทดสอบการข้ามปี |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> `SEASON` ถูกคำนวณครั้งเดียวตอนโหลดโมดูล เซิร์ฟเวอร์ที่รันค้างข้ามปีจะยังเห็นปีเก่า
+> จนกว่าจะ restart — ถ้าเจอเคสนี้ให้ตั้ง `NEXT_PUBLIC_SEASON` แล้ว redeploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## แหล่งข้อมูล
 
-## Deploy on Vercel
+เว็บนี้ไม่มี backend ของตัวเอง ดึงสดจาก 4 แหล่ง แล้วพึ่ง ISR cache ของ Next เป็นหลัก
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| แหล่ง | ใช้ทำอะไร | อยู่ที่ |
+| --- | --- | --- |
+| [Jolpica-F1](https://github.com/jolpica/jolpica-f1) (Ergast ตัวสืบทอด) | ปฏิทิน ผลการแข่ง ควอลิฟาย สปรินต์ ตารางคะแนน | `lib/f1.ts` |
+| [openf1.org](https://openf1.org) | ไทม์มิ่งรายรอบสำหรับหน้ารีเพลย์ + รูป headshot ทางการ | `lib/replay.ts`, `lib/drivers.ts` |
+| Wikipedia REST API | ผังสนาม และรูปนักแข่ง (fallback) | `lib/f1.ts`, `lib/drivers.ts` |
+| เอกสาร PDF ของ FIA | ยอดใช้ชิ้นส่วน power unit และคำตัดสินโทษกริด | `lib/pu-parse.ts` |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+ทุกตัวมี rate limit และล่มได้ ฟังก์ชันดึงข้อมูลเลย **ไม่ throw หลุดขึ้นไปถึงหน้าเว็บ** —
+คืนค่าว่างหรือสแนปช็อตแทน แล้วให้หน้าเว็บตัดสินใจว่าจะแสดงอะไร
+
+### สแนปช็อตสำรอง
+
+`lib/schedule-fallback.ts` และ `lib/pu-fallback.ts` เป็นข้อมูลนิ่งที่ commit ไว้ในรีโป
+ใช้เมื่อต้นทางล่ม (ปฏิทินทั้งฤดูกาล และยอดใช้ชิ้นส่วนล่าสุด) หน้า power units จะขึ้นป้าย
+บอกผู้ใช้เองเมื่อกำลังอ่านจากสแนปช็อตแทนของสด
+
+สแนปช็อต PU สร้างจาก `fetchPuData()` ใน `lib/pu-parse.ts` — ไฟล์นั้นจงใจไม่ import อะไร
+ของ Next เพื่อให้รันด้วย node ตรง ๆ ได้ อย่าเพิ่มการพึ่งพา Next เข้าไป
+
+### หมายเหตุเรื่องรีเพลย์
+
+openf1 บล็อก IP ของ serverless (Vercel) แต่เปิด CORS ให้ ข้อมูลรีเพลย์เลยดึง
+**จากฝั่งเบราว์เซอร์** ไม่ใช่ฝั่งเซิร์ฟเวอร์ และคำขอทุกตัวต่อคิวกันเส้นเดียวเว้นระยะ ~750ms
+เพราะ openf1 แบบไม่มี API key จำกัดราว 1 req/วินาที รองรับเฉพาะฤดูกาล 2023 ขึ้นไป
+
+## โครงสร้าง
+
+```
+app/                  หน้าเว็บ (App Router) — ทุกไฟล์เป็น server component ถ้าไม่เขียน "use client"
+  page.tsx              สนามถัดไป + นับถอยหลัง + ผลล่าสุด
+  results/              ผลการแข่งทั้งฤดูกาล
+  standings/            ตารางคะแนน + กราฟแต้มสะสม + เครื่องคำนวณลุ้นแชมป์
+  calendar/             ปฏิทินทั้งฤดูกาล
+  calendar.ics/         ฟีด .ics ทุก session (route handler)
+  race/[round]/         รายละเอียดสนาม (ตาราง ผัง ผล ควอลิฟาย)
+  race/[round]/replay/  รีเพลย์ไทม์มิ่งรอบต่อรอบ
+  driver/[id]/          โปรไฟล์นักแข่ง + เทียบเพื่อนร่วมทีม
+  constructor/[id]/     โปรไฟล์ทีม
+  power-units/          ยอดใช้ชิ้นส่วนเครื่องยนต์และโทษกริด
+  reaction/             เกมวัดรีแอคชันตอนไฟดับ
+components/           UI ที่ใช้ซ้ำ (client component ส่วนใหญ่อยู่ที่นี่)
+lib/                  ดึงข้อมูล แปลงข้อมูล และตารางค่าคงที่
+```
+
+### ข้อตกลงที่ควรรู้ก่อนแก้โค้ด
+
+- **เวลา** — ฟอร์แมตด้วย `formatInTz()` ใน `lib/f1.ts` เท่านั้น (ล็อก `ca-gregory` กันเลขปี
+  กลายเป็น พ.ศ.) ถ้าต้องแสดงเวลาที่สลับโซนตามที่ผู้ใช้เลือกได้ ให้ใช้ `<LocalTime>`
+  ซึ่ง SSR เป็นเวลาไทยเสมอแล้วค่อยสลับฝั่ง client — กัน hydration mismatch
+- **ค่า ISR** — แต่ละหน้าตั้ง `export const revalidate` ของตัวเอง และแต่ละ fetch
+  ตั้ง `revalidate` ของตัวเองอีกชั้น ข้อมูลที่นิ่งแล้ว (แต้มสะสมย้อนหลัง) แคชยาวได้เป็นสัปดาห์
+- **retry** — โค้ดยิง API ทั้งสามที่ (`lib/f1.ts`, `lib/replay.ts`, `lib/pu-parse.ts`)
+  retry เฉพาะ 429/5xx ส่วน 4xx อื่นให้เลิกทันทีด้วย `break` **อย่าใช้ `throw`** ใน loop
+  เพราะจะโดน `catch` ของตัวเองกลืนแล้ววน retry จนครบ
+- **แอนิเมชัน** — ทุกอันต้องมีคู่ใน `@media (prefers-reduced-motion: reduce)`
+  ที่ท้าย `app/globals.css`
+
+## เครดิต
+
+ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ · F1 และ Formula 1 เป็นเครื่องหมายการค้าของ
+Formula One Licensing B.V.
