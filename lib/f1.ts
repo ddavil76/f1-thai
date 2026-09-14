@@ -105,11 +105,10 @@ async function jolpica<T>(path: string, revalidate = 3600): Promise<T> {
     try {
       const res = await gate(() => fetch(url, { next: { revalidate } }));
       if (res.ok) return (await res.json()) as T;
-      // 429/5xx = ลองใหม่, 4xx อื่น ๆ = เลิก
-      if (res.status !== 429 && res.status < 500) {
-        throw new Error(`Jolpica ${res.status} on ${path}`);
-      }
       lastErr = new Error(`Jolpica ${res.status} on ${path}`);
+      // 429/5xx = ลองใหม่, 4xx อื่น ๆ = เลิก (ยิงอีกก็ได้ผลเดิม)
+      // ต้อง break ไม่ใช่ throw — throw ตรงนี้จะถูก catch ข้างล่างกลืนแล้ววนต่อ
+      if (res.status !== 429 && res.status < 500) break;
     } catch (err) {
       lastErr = err;
     }

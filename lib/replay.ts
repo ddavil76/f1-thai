@@ -11,6 +11,7 @@ const ATTEMPTS = 5;
 let queue: Promise<unknown> = Promise.resolve();
 async function of1<T>(path: string): Promise<T> {
   const task = queue.then(async () => {
+    let lastErr: unknown;
     for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
       if (attempt > 0) await sleep(Math.min(8000, 1200 * 2 ** (attempt - 1)));
       try {
@@ -20,14 +21,16 @@ async function of1<T>(path: string): Promise<T> {
           await sleep(750); // เว้นก่อนคำขอถัดไป
           return json;
         }
-        if (res.status !== 429 && res.status < 500) {
-          throw new Error(`openf1 ${res.status} ${path}`);
-        }
+        lastErr = new Error(`openf1 ${res.status} ${path}`);
+        // 429/5xx = ลองใหม่, 4xx อื่น ๆ = เลิก (ยิงอีกก็ได้ผลเดิม)
+        // ต้อง break ไม่ใช่ throw — throw ตรงนี้จะถูก catch ข้างล่างกลืน แล้วหน่วง
+        // คิวทั้งเส้นไว้ ~16 วิ เพราะคำขอทุกตัวต่อแถวกันอยู่
+        if (res.status !== 429 && res.status < 500) break;
       } catch (e) {
-        if (attempt === ATTEMPTS - 1) throw e;
+        lastErr = e;
       }
     }
-    throw new Error(`openf1 failed ${path}`);
+    throw lastErr instanceof Error ? lastErr : new Error(`openf1 failed ${path}`);
   });
   queue = task.catch(() => {});
   return task as Promise<T>;
