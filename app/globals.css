@@ -322,7 +322,14 @@
   .grow-x,
   .track-draw,
   .racing-dot,
-  .go-flash {
+  .go-flash,
+  /* ยูทิลิตี้ของ Tailwind — ทั้งสามวนไม่รู้จบ: จุดสถานะ "กำลังแข่ง"/"รอผล" (ping),
+     สปินเนอร์ตอนโหลดรีเพลย์ (spin) และโครงหน้าตอนโหลด (pulse)
+     ping วางทับจุดทึบสีเดียวกันอยู่แล้ว หยุดนิ่งจึงยังเห็นเป็นจุดปกติ
+     ส่วน spin/pulse มีข้อความกำกับอยู่ ไม่ได้สื่อความหมายด้วยการเคลื่อนไหวอย่างเดียว */
+  .animate-ping,
+  .animate-spin,
+  .animate-pulse {
     animation: none;
   }
   .track-draw {
