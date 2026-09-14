@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { getDriverStandings, getDriverSeasonResults } from "@/lib/f1";
+import { getDriverStandings, getDriverSeasonResults, isClassifiedFinish } from "@/lib/f1";
 import { getDriverImage } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
@@ -137,6 +137,7 @@ export default async function DriverPage({ params }: Params) {
 
       {mateStanding && mateResults.length > 0 && (
         <TeammateH2H
+          selfId={id}
           teammateId={mateStanding.Driver.driverId}
           teammateName={`${mateStanding.Driver.givenName} ${mateStanding.Driver.familyName}`}
           self={results}
@@ -160,7 +161,7 @@ export default async function DriverPage({ params }: Params) {
             const grid = Number(r.result.grid);
             const finish = Number(pos);
             const delta = grid && finish ? grid - finish : 0;
-            const dnf = r.result.status !== "Finished" && !r.result.status.startsWith("+");
+            const dnf = !isClassifiedFinish(r.result.status);
             return (
               <li key={r.round} style={{ "--i": i } as React.CSSProperties}>
                 <Link

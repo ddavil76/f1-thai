@@ -1,25 +1,11 @@
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import type { DriverRaceResult } from "@/lib/f1";
-
-function Bar({ label, a, b }: { label: string; a: number; b: number }) {
-  const total = a + b || 1;
-  const aPct = (a / total) * 100;
-  return (
-    <div>
-      <div className="mb-1 flex justify-between text-xs">
-        <span className="font-semibold tabular-nums text-white/80">{a}</span>
-        <span className="text-white/40">{label}</span>
-        <span className="font-semibold tabular-nums text-white/50">{b}</span>
-      </div>
-      <div className="flex h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div className="grow-x bg-(--color-f1)" style={{ width: `${aPct}%` }} />
-        <div className="flex-1 bg-white/25" />
-      </div>
-    </div>
-  );
-}
+import { raceHeadToHead } from "@/lib/compare";
+import H2HBar from "./H2HBar";
 
 export default function TeammateH2H({
+  selfId,
   teammateId,
   teammateName,
   self,
@@ -27,6 +13,7 @@ export default function TeammateH2H({
   selfPoints,
   matePoints,
 }: {
+  selfId: string;
   teammateId: string;
   teammateName: string;
   self: DriverRaceResult[];
@@ -34,33 +21,8 @@ export default function TeammateH2H({
   selfPoints: number;
   matePoints: number;
 }) {
-  const mateByRound = new Map(mate.map((r) => [r.round, r.result]));
-  let gridSelf = 0;
-  let gridMate = 0;
-  let finSelf = 0;
-  let finMate = 0;
-
-  for (const r of self) {
-    const m = mateByRound.get(r.round);
-    if (!m) continue;
-    const gs = Number(r.result.grid);
-    const gm = Number(m.grid);
-    if (gs && gm) {
-      if (gs < gm) gridSelf++;
-      else gridMate++;
-    }
-
-    const fin = (x: string) => x === "Finished" || x.startsWith("+");
-    const ps = Number(r.result.position);
-    const pm = Number(m.position);
-    if (fin(r.result.status) && fin(m.status)) {
-      if (ps < pm) finSelf++;
-      else finMate++;
-    } else if (fin(r.result.status)) finSelf++;
-    else if (fin(m.status)) finMate++;
-  }
-
-  if (gridSelf + gridMate + finSelf + finMate === 0) return null;
+  const { grid, race } = raceHeadToHead(self, mate);
+  if (grid[0] + grid[1] + race[0] + race[1] === 0) return null;
 
   return (
     <section className="card p-5">
@@ -75,10 +37,17 @@ export default function TeammateH2H({
         </Link>
       </p>
       <div className="space-y-3">
-        <Bar label="ออกตัวนำ" a={gridSelf} b={gridMate} />
-        <Bar label="จบก่อน" a={finSelf} b={finMate} />
-        <Bar label="แต้มสะสม" a={selfPoints} b={matePoints} />
+        <H2HBar label="ออกตัวนำ" a={grid[0]} b={grid[1]} />
+        <H2HBar label="จบก่อน" a={race[0]} b={race[1]} />
+        <H2HBar label="แต้มสะสม" a={selfPoints} b={matePoints} />
       </div>
+      <Link
+        href={`/compare?a=${selfId}&b=${teammateId}`}
+        className="mt-4 inline-flex items-center gap-0.5 text-sm font-medium text-(--color-f1) transition hover:gap-1"
+      >
+        เทียบละเอียด หรือเลือกนักขับคนอื่น
+        <ChevronRight className="h-4 w-4" />
+      </Link>
     </section>
   );
 }

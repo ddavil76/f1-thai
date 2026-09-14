@@ -71,6 +71,13 @@ export type RaceResult = {
 /** race + ผลการแข่ง (ใช้ทั้งการ์ดโพเดียมและหน้าผลเต็ม) */
 export type RaceWithResults = Race & { Results: RaceResult[] };
 
+/**
+ * จบการแข่งและได้รับการจัดอันดับ — ปี 2026 Jolpica ใช้สถานะ "Lapped" กับรถที่โดนน็อครอบ
+ * (ปีก่อน ๆ เป็น "+1 Lap") เช็คแค่ "Finished"/"+" จะนับรถพวกนี้เป็น DNF ผิด ๆ
+ */
+export const isClassifiedFinish = (status: string) =>
+  status === "Finished" || status === "Lapped" || status.startsWith("+");
+
 const BASE = "https://api.jolpi.ca/ergast/f1";
 
 /**
@@ -80,8 +87,8 @@ const BASE = "https://api.jolpi.ca/ergast/f1";
 const gate = createGate(4);
 
 /** เรียก Jolpica พร้อม retry + จำกัด concurrency — API ตัวนี้ rate-limit บ่อย */
-async function jolpica<T>(path: string, revalidate = 3600): Promise<T> {
-  const res = await fetchRetry(`${BASE}/${path}?format=json`, {
+async function jolpica<T>(path: string, revalidate = 3600, query = ""): Promise<T> {
+  const res = await fetchRetry(`${BASE}/${path}?format=json${query}`, {
     source: "Jolpica",
     init: { next: { revalidate } } as RequestInit,
     attempts: 4,
@@ -89,6 +96,41 @@ async function jolpica<T>(path: string, revalidate = 3600): Promise<T> {
     gate, // ห่อเฉพาะตอนยิง — ระหว่าง backoff ปล่อยสล็อตให้คนอื่นใช้
   });
   return (await res.json()) as T;
+}
+
+type RacesPage<K extends string, Item> = {
+  MRData: { total: string; RaceTable?: { Races?: (Race & Partial<Record<K, Item[]>>)[] } };
+};
+
+/**
+ * ดึงครบทุกหน้า — Jolpica ให้สูงสุด 100 แถวต่อ request และ race ที่แถวยาวคร่อมหน้า
+ * จะโผล่ซ้ำในหน้าถัดไปพร้อมแถวที่เหลือ → รวมกลับเป็น race เดียวด้วย season+round
+ */
+async function jolpicaRaces<K extends string, Item>(
+  path: string,
+  revalidate: number,
+  listKey: K,
+): Promise<(Race & Record<K, Item[]>)[]> {
+  const LIMIT = 100;
+  const MAX_PAGES = 20;
+  const merged = new Map<string, Race & Record<K, Item[]>>();
+  let total = Infinity;
+  for (let page = 0; page * LIMIT < total && page < MAX_PAGES; page++) {
+    const d = await jolpica<RacesPage<K, Item>>(
+      path,
+      revalidate,
+      `&limit=${LIMIT}&offset=${page * LIMIT}`,
+    );
+    total = Number(d.MRData.total) || 0;
+    for (const race of d.MRData.RaceTable?.Races ?? []) {
+      const key = `${race.season}-${race.round}`;
+      const rows = (race as Partial<Record<K, Item[]>>)[listKey] ?? [];
+      const prev = merged.get(key);
+      if (prev) (prev as Record<K, Item[]>)[listKey].push(...rows);
+      else merged.set(key, { ...race, [listKey]: [...rows] } as Race & Record<K, Item[]>);
+    }
+  }
+  return [...merged.values()];
 }
 
 type ErgastResponse = {
@@ -402,6 +444,78 @@ export async function getConstructorSeasonResults(
           (a, b) => Number(a.position) - Number(b.position),
         ),
       }));
+  } catch {
+    return [];
+  }
+}
+
+/* ---------- ประวัติสนาม / พิทสต็อป / เทียบนักขับ ---------- */
+
+/** ผู้ชนะทุกครั้งที่สนามนี้เคยจัด F1 (เก่า → ใหม่) — ย้อนหลังนิ่งแล้ว แคช 1 วัน */
+export async function getCircuitWinners(circuitId: string): Promise<RaceWithResults[]> {
+  try {
+    const races = await jolpicaRaces<"Results", RaceResult>(
+      `circuits/${encodeURIComponent(circuitId)}/results/1/`,
+      60 * 60 * 24,
+      "Results",
+    );
+    return races.filter((r) => r.Results.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+export type PitStop = {
+  driverId: string;
+  lap: string;
+  stop: string;
+  time: string;
+  duration: string;
+};
+
+/** พิทสต็อปทั้งหมดของ round — `duration` คือเวลาในพิทเลนตั้งแต่เข้าจนออก ไม่ใช่เวลาจอดเปลี่ยนยาง */
+export async function getPitStops(
+  season: string | number,
+  round: string | number,
+): Promise<PitStop[]> {
+  try {
+    const races = await jolpicaRaces<"PitStops", PitStop>(
+      `${season}/${round}/pitstops/`,
+      60 * 30,
+      "PitStops",
+    );
+    return races[0]?.PitStops ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** ผลการแข่งเต็มทุก round ของฤดูกาล — ยิงราว 4 request แทนการยิงทีละสนาม */
+export async function getSeasonResults(season: string | number): Promise<RaceWithResults[]> {
+  try {
+    return await jolpicaRaces<"Results", RaceResult>(`${season}/results/`, 600, "Results");
+  } catch {
+    return [];
+  }
+}
+
+export type DriverQualiResult = { round: string; position: number };
+
+/** อันดับควอลิฟายรายสนามของนักแข่งคนหนึ่ง */
+export async function getDriverSeasonQualifying(
+  season: string | number,
+  driverId: string,
+): Promise<DriverQualiResult[]> {
+  try {
+    const races = await jolpicaRaces<"QualifyingResults", QualifyingResult>(
+      `${season}/drivers/${encodeURIComponent(driverId)}/qualifying/`,
+      600,
+      "QualifyingResults",
+    );
+    return races.flatMap((r) => {
+      const q = r.QualifyingResults[0];
+      return q ? [{ round: r.round, position: Number(q.position) }] : [];
+    });
   } catch {
     return [];
   }

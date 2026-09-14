@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, Cog } from "lucide-react";
+import { ChevronRight, Cog, Timer, Users } from "lucide-react";
 import Standings from "@/components/Standings";
 import ChampionshipChart from "@/components/ChampionshipChart";
 import SeasonStats from "@/components/SeasonStats";
@@ -58,6 +58,31 @@ export default async function StandingsPage() {
       </header>
 
       <SeasonStats wins={wins} poles={poles} fastestLaps={fastestLaps} />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link
+          href="/compare"
+          className="card flex items-center gap-3 p-4 transition hover:border-white/20"
+        >
+          <Users className="h-5 w-5 shrink-0 text-(--color-f1)" />
+          <span className="min-w-0 flex-1 text-sm font-semibold">
+            เทียบนักขับ
+            <span className="ml-2 font-normal text-white/45">เลือกสองคนมาวัดกัน</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+        </Link>
+        <Link
+          href="/pitstops"
+          className="card flex items-center gap-3 p-4 transition hover:border-white/20"
+        >
+          <Timer className="h-5 w-5 shrink-0 text-(--color-f1)" />
+          <span className="min-w-0 flex-1 text-sm font-semibold">
+            พิทสต็อป
+            <span className="ml-2 font-normal text-white/45">ทีมไหนเข้าพิทเร็วสุด</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+        </Link>
+      </div>
 
       {/* ทางเข้าหน้าชิ้นส่วนเครื่องยนต์ — บนมือถือแถบล่างไม่มีที่ว่างให้ ต้องเห็นตรงนี้
           โดยไม่ต้องเลื่อนลงไปสุดหน้า (จอใหญ่มีลิงก์ใน header อยู่แล้ว) */}

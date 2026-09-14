@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import {
-  getConstructorStandings, getConstructorSeasonResults,
+  getConstructorStandings, getConstructorSeasonResults, isClassifiedFinish,
 } from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
@@ -176,7 +176,7 @@ export default async function ConstructorPage({ params }: Params) {
                 <div className="flex shrink-0 gap-2 text-sm tabular-nums">
                   {r.results.map((res) => {
                     const dnf =
-                      res.status !== "Finished" && !res.status.startsWith("+");
+                      !isClassifiedFinish(res.status);
                     return (
                       <span
                         key={res.Driver.driverId}

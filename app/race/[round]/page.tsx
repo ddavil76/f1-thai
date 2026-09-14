@@ -5,6 +5,8 @@ import { ArrowLeft, CalendarPlus, Flag, PlayCircle, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import CircuitInfo from "@/components/CircuitInfo";
+import CircuitHistory from "@/components/CircuitHistory";
+import RacePitStops from "@/components/RacePitStops";
 import SectionTabs from "@/components/SectionTabs";
 import ReactionPromo from "@/components/ReactionPromo";
 import ResultsPending from "@/components/ResultsPending";
@@ -19,7 +21,9 @@ import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getRaceResults, getQualifying, getSprintResults, findNextRace,
   getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate, resultsGap,
+  getPitStops, getCircuitWinners,
 } from "@/lib/f1";
+import { summarizeRacePits } from "@/lib/pitstops";
 import { getRaceWeather } from "@/lib/weather";
 import { SEASON } from "@/lib/season";
 
@@ -60,14 +64,19 @@ export default async function RacePage({ params }: Params) {
 
   const past = isPastRace(race);
   const raceStart = toDate({ date: race.date, time: race.time });
-  const [results, quali, sprint, circuitImg, weather] = await Promise.all([
-    past ? getRaceResults(SEASON, round) : Promise.resolve(null),
-    past ? getQualifying(SEASON, round) : Promise.resolve([]),
-    past && isSprintWeekend(race) ? getSprintResults(SEASON, round) : Promise.resolve([]),
-    getCircuitImage(race.Circuit),
-    past ? Promise.resolve(null) : getRaceWeather(race),
-  ]);
+  const [results, quali, sprint, circuitImg, weather, pitStops, circuitWinners] =
+    await Promise.all([
+      past ? getRaceResults(SEASON, round) : Promise.resolve(null),
+      past ? getQualifying(SEASON, round) : Promise.resolve([]),
+      past && isSprintWeekend(race) ? getSprintResults(SEASON, round) : Promise.resolve([]),
+      getCircuitImage(race.Circuit),
+      past ? Promise.resolve(null) : getRaceWeather(race),
+      past ? getPitStops(SEASON, round) : Promise.resolve([]),
+      getCircuitWinners(race.Circuit.circuitId),
+    ]);
   const sessions = getSessions(race);
+  const pits =
+    results && pitStops.length > 0 ? summarizeRacePits(pitStops, results.Results) : null;
   const hasResults = Boolean(results && results.Results.length > 0);
   const gap = past && !hasResults ? resultsGap(race) : null;
 
@@ -186,6 +195,7 @@ export default async function RacePage({ params }: Params) {
           <div className="min-w-0 space-y-6">
             {sessionsCard}
             <CircuitInfo circuitId={race.Circuit.circuitId} />
+            <CircuitHistory winners={circuitWinners} />
           </div>
         </div>
       )}
@@ -260,6 +270,15 @@ export default async function RacePage({ params }: Params) {
                   },
                 ]
               : []),
+            ...(pits
+              ? [
+                  {
+                    key: "pits",
+                    label: "พิทสต็อป",
+                    content: <RacePitStops summary={pits} />,
+                  },
+                ]
+              : []),
             {
               key: "circuit",
               label: "สนาม",
@@ -272,6 +291,7 @@ export default async function RacePage({ params }: Params) {
                     compact
                   />
                   <CircuitInfo circuitId={race.Circuit.circuitId} />
+                  <CircuitHistory winners={circuitWinners} />
                 </>
               ),
             },
