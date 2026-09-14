@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useSlidingPill } from "./useSlidingPill";
 
 export type TabItem = { key: string; label: string; content: ReactNode };
@@ -28,6 +28,27 @@ export default function SectionTabs({
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const uid = useId();
 
+  // แถบแท็บเลื่อนแนวนอนได้และซ่อน scrollbar ไว้ ถ้าไม่บอกอะไรเลยผู้ใช้จะไม่รู้ว่า
+  // ยังมีแท็บถัดไปอยู่นอกจอ → จาง (mask) ที่ขอบด้านที่ยังเลื่อนต่อได้
+  const [more, setMore] = useState({ left: false, right: false });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      setMore({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 });
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [ref, tabs.length]);
+
   const tabId = (key: string) => `${uid}-tab-${key}`;
   const panelId = (key: string) => `${uid}-panel-${key}`;
 
@@ -36,7 +57,9 @@ export default function SectionTabs({
 
   const select = (key: string) => {
     setActive(key);
-    tabRefs.current.get(key)?.focus();
+    const el = tabRefs.current.get(key);
+    el?.focus();
+    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -52,6 +75,17 @@ export default function SectionTabs({
     select(items[to].key);
   };
 
+  // จางเฉพาะข้างที่ยังเลื่อนต่อได้ — ใช้ mask เพราะแถบวางบนพื้นหลังไล่สี
+  // จะเอา gradient ทึบไปทับให้กลืนพอดีไม่ได้
+  const edge = (on: boolean) => (on ? "transparent" : "#000");
+  const maskStyle =
+    more.left || more.right
+      ? ({
+          maskImage: `linear-gradient(to right, ${edge(more.left)} 0, #000 28px, #000 calc(100% - 28px), ${edge(more.right)} 100%)`,
+          WebkitMaskImage: `linear-gradient(to right, ${edge(more.left)} 0, #000 28px, #000 calc(100% - 28px), ${edge(more.right)} 100%)`,
+        } as React.CSSProperties)
+      : undefined;
+
   return (
     <div className="space-y-4">
       <div
@@ -59,6 +93,7 @@ export default function SectionTabs({
         role="tablist"
         aria-label={label}
         onKeyDown={onKeyDown}
+        style={maskStyle}
         className="relative flex gap-0.5 overflow-x-auto rounded-full bg-white/5 p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {style && (

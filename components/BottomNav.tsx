@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "@/lib/nav";
+import { BOTTOM_NAV_ITEMS } from "@/lib/nav";
 import { useSlidingPill } from "./useSlidingPill";
 
 export default function BottomNav() {
@@ -21,7 +21,7 @@ export default function BottomNav() {
             style={{ left: style.left, width: style.width }}
           />
         )}
-        {NAV_ITEMS.map((item) => (
+        {BOTTOM_NAV_ITEMS.map((item) => (
           <Link
             key={item.href}
             href={item.href}
