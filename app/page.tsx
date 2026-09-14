@@ -8,6 +8,7 @@ import ReactionPromo from "@/components/ReactionPromo";
 import ResultsPending from "@/components/ResultsPending";
 import ResultsRefresher from "@/components/ResultsRefresher";
 import LocalTime from "@/components/tz/LocalTime";
+import SiteFooter from "@/components/SiteFooter";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getLastResults, findNextRace, getUpcomingRaces, getSessions,
@@ -212,9 +213,7 @@ export default async function Home() {
         </div>
       </div>
 
-      <footer className="mt-8 text-center text-xs text-white/30">
-        ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
-      </footer>
+      <SiteFooter source="jolpica" className="mt-8" />
     </main>
   );
 }

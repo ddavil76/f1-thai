@@ -14,6 +14,7 @@ import QualifyingTable from "@/components/QualifyingTable";
 import PodiumGraphic from "@/components/PodiumGraphic";
 import WeatherBadge from "@/components/WeatherBadge";
 import LocalTime from "@/components/tz/LocalTime";
+import SiteFooter from "@/components/SiteFooter";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getRaceResults, getQualifying, getSprintResults, findNextRace,
@@ -269,9 +270,7 @@ export default async function RacePage({ params }: Params) {
         </>
       )}
 
-      <footer className="pb-8 text-center text-xs text-white/30">
-        ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
-      </footer>
+      <SiteFooter source="jolpica" />
     </main>
   );
 }

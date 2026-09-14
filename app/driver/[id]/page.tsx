@@ -10,6 +10,7 @@ import { flag } from "@/lib/flags";
 import TeammateH2H from "@/components/TeammateH2H";
 import CountUp from "@/components/CountUp";
 import PuCard from "@/components/PuCard";
+import SiteFooter from "@/components/SiteFooter";
 import { getPuUsage, findUsage } from "@/lib/power-units";
 import { SEASON } from "@/lib/season";
 
@@ -199,9 +200,7 @@ export default async function DriverPage({ params }: Params) {
         </ul>
       </section>
 
-      <footer className="pb-8 text-center text-xs text-white/30">
-        ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
-      </footer>
+      <SiteFooter source="jolpica" />
     </main>
   );
 }
