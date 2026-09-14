@@ -27,8 +27,16 @@ npm run dev     # http://localhost:3000
 | `npm run build` | build โปรดักชัน (prerender หน้าส่วนใหญ่) |
 | `npm start` | รันผลลัพธ์จาก `build` |
 | `npm run lint` | ESLint |
+| `npm test` | ยูนิตเทสต์ (Vitest) |
+| `npm run test:watch` | เทสต์แบบ watch |
 
-ยังไม่มีชุดเทสต์ ตรวจงานก่อน commit ด้วย `npx tsc --noEmit && npm run lint && npm run build`
+CI รัน `npm ci` → `tsc --noEmit` → `lint` → `test` → `build` ทุก PR
+(`.github/workflows/ci.yml`) รันชุดเดียวกันในเครื่องได้ก่อน push
+
+เทสต์อยู่ใน `tests/` ครอบเฉพาะตรรกะที่ pure — retry/คิวใน `lib/http.ts`,
+การห่อบรรทัด ICS, ฟังก์ชันเวลาและหน้าต่างรอบการแข่งใน `lib/f1.ts`,
+การคำนวณโควตา/โทษกริดใน `lib/power-units.ts` และตัวแยกตาราง PDF ของ FIA
+ส่วนที่ต้องต่อเน็ตจริงไม่ได้เทสต์ (mock `fetch` เอาเฉพาะพฤติกรรม retry)
 
 ## ตัวแปรสภาพแวดล้อม
 
@@ -88,6 +96,7 @@ app/                  หน้าเว็บ (App Router) — ทุกไฟ�
   reaction/             เกมวัดรีแอคชันตอนไฟดับ
 components/           UI ที่ใช้ซ้ำ (client component ส่วนใหญ่อยู่ที่นี่)
 lib/                  ดึงข้อมูล แปลงข้อมูล และตารางค่าคงที่
+tests/                ยูนิตเทสต์ (Vitest)
 ```
 
 ### ข้อตกลงที่ควรรู้ก่อนแก้โค้ด
@@ -97,9 +106,11 @@ lib/                  ดึงข้อมูล แปลงข้อมูล
   ซึ่ง SSR เป็นเวลาไทยเสมอแล้วค่อยสลับฝั่ง client — กัน hydration mismatch
 - **ค่า ISR** — แต่ละหน้าตั้ง `export const revalidate` ของตัวเอง และแต่ละ fetch
   ตั้ง `revalidate` ของตัวเองอีกชั้น ข้อมูลที่นิ่งแล้ว (แต้มสะสมย้อนหลัง) แคชยาวได้เป็นสัปดาห์
-- **retry** — โค้ดยิง API ทั้งสามที่ (`lib/f1.ts`, `lib/replay.ts`, `lib/pu-parse.ts`)
-  retry เฉพาะ 429/5xx ส่วน 4xx อื่นให้เลิกทันทีด้วย `break` **อย่าใช้ `throw`** ใน loop
-  เพราะจะโดน `catch` ของตัวเองกลืนแล้ววน retry จนครบ
+- **retry** — ทุกการยิง API ผ่าน `fetchRetry()` ใน `lib/http.ts` ที่เดียว
+  retry เฉพาะ 429/5xx ส่วน 4xx อื่นเลิกทันที ผู้เรียกแค่ปรับจำนวนครั้งกับ backoff
+  ของตัวเอง **อย่าเขียน retry loop ใหม่** — เคยมี 3 ก๊อปแล้วสองตัวมีบั๊กเดียวกัน
+- **วันเวลาภาษาไทย** — ชื่อวันมาจากตารางใน `lib/f1.ts` ไม่ใช่ `weekday` ของ `Intl`
+  เพราะ ICU ของ Node กับเบราว์เซอร์ให้คนละคำ (`อาทิตย์` vs `อา.`) แล้ว hydration พัง
 - **แอนิเมชัน** — ทุกอันต้องมีคู่ใน `@media (prefers-reduced-motion: reduce)`
   ที่ท้าย `app/globals.css`
 

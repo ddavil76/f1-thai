@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# ดันคอมมิตใหม่ทับ PR เดิม → ยกเลิกรอบเก่าที่ยังค้าง
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # ci ไม่เขียน lockfile ทับ — กัน npm คนละเวอร์ชันทำ diff ผี
+      - run: npm ci
+
+      - run: npx tsc --noEmit
+        name: Typecheck
+
+      - run: npm run lint
+        name: Lint
+
+      - run: npm test
+        name: Unit tests
+
+      # ต้นทางทุกเจ้าถูกกลืน error อยู่แล้ว build จึงผ่านได้แม้ Jolpica/FIA ล่ม
+      - run: npm run build
+        name: Build
+        env:
+          NEXT_PUBLIC_SITE_URL: https://example.com

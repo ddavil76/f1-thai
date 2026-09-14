@@ -103,8 +103,11 @@ export function findUsage(
   const full = norm(d.givenName + d.familyName);
   const family = norm(d.familyName);
   return (
-    data.drivers.find((r) => norm(r.driver) === full) ??
-    data.drivers.find((r) => norm(r.driver).endsWith(family)) ??
+    (full ? data.drivers.find((r) => norm(r.driver) === full) : undefined) ??
+    // ต้องกัน family ว่างก่อน — norm() ของชื่อที่ไม่ใช่อักษรละตินคืน "" และ
+    // "อะไรก็ตาม".endsWith("") เป็น true เสมอ ถ้าไม่กันจะคว้าคนแรกในตารางมา
+    // แสดงเป็นข้อมูลของคนอื่น แถม fallback เลขรถข้างล่างก็ไม่มีวันได้ทำงาน
+    (family ? data.drivers.find((r) => norm(r.driver).endsWith(family)) : undefined) ??
     (d.permanentNumber
       ? data.drivers.find((r) => Number(r.number) === Number(d.permanentNumber))
       : undefined)
