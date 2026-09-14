@@ -101,7 +101,9 @@ export default async function RacePage({ params }: Params) {
   );
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6">
+    <main
+      className={`mx-auto space-y-6 ${past ? "max-w-3xl" : "max-w-3xl lg:max-w-5xl"}`}
+    >
       <div>
         <Link
           href="/calendar"
@@ -130,51 +132,63 @@ export default async function RacePage({ params }: Params) {
         </p>
       </div>
 
+      {/* สนามที่ยังไม่แข่ง: ผังสนามสูงเกือบเต็มจอแรก ดันนับถอยหลังกับตารางลงไปใต้ fold
+          บนจอกว้างจึงวางเป็น 2 คอลัมน์แบบหน้าแรก · min-w-0 เพราะ grid item ตั้งต้น
+          เป็น min-width:auto แล้วจะไม่ยอมหดจนล้นจอแคบ */}
       {!past && (
-        <CircuitMap
-          src={circuitImg}
-          name={race.Circuit.circuitName}
-          circuitId={race.Circuit.circuitId}
-        />
-      )}
+        <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-start">
+          <div className="min-w-0 space-y-6">
+            <CircuitMap
+              src={circuitImg}
+              name={race.Circuit.circuitName}
+              circuitId={race.Circuit.circuitId}
+            />
 
-      {!past && raceStart && (
-        <section className="card p-5">
-          <SessionCountdown race={race} />
-          <p className="mt-4 flex items-center gap-1.5 text-sm text-white/80">
-            <Flag className="h-4 w-4 shrink-0 text-white/50" />
-            <span>
-              ออกสตาร์ท{" "}
-              <LocalTime
-                iso={raceStart.toISOString()}
-                kind="full"
-                circuitId={race.Circuit.circuitId}
-              />{" "}
-              น.
-            </span>
-          </p>
-          <a
-            href={googleCalendarUrl({
-              title: `F1: ${race.raceName}`,
-              start: raceStart,
-              location: race.Circuit.circuitName,
-            })}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85 active:scale-95"
-          >
-            <CalendarPlus className="h-4 w-4" />
-            เพิ่มลง Google Calendar
-          </a>
-          {weather && (
-            <div>
-              <WeatherBadge weather={weather} />
-            </div>
-          )}
-        </section>
-      )}
+            {raceStart && (
+              <section className="card p-5">
+                <SessionCountdown race={race} />
+                <p className="mt-4 flex items-center gap-1.5 text-sm text-white/80">
+                  <Flag className="h-4 w-4 shrink-0 text-white/50" />
+                  <span>
+                    ออกสตาร์ท{" "}
+                    <LocalTime
+                      iso={raceStart.toISOString()}
+                      kind="full"
+                      circuitId={race.Circuit.circuitId}
+                    />{" "}
+                    น.
+                  </span>
+                </p>
+                <a
+                  href={googleCalendarUrl({
+                    title: `F1: ${race.raceName}`,
+                    start: raceStart,
+                    location: race.Circuit.circuitName,
+                  })}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85 active:scale-95"
+                >
+                  <CalendarPlus className="h-4 w-4" />
+                  เพิ่มลง Google Calendar
+                </a>
+                {weather && (
+                  <div>
+                    <WeatherBadge weather={weather} />
+                  </div>
+                )}
+              </section>
+            )}
 
-      {!past && <ReactionPromo />}
+            <ReactionPromo />
+          </div>
+
+          <div className="min-w-0 space-y-6">
+            {sessionsCard}
+            <CircuitInfo circuitId={race.Circuit.circuitId} />
+          </div>
+        </div>
+      )}
 
       {past && results && results.Results.length >= 3 && (
         <section className="card p-5">
@@ -263,12 +277,7 @@ export default async function RacePage({ params }: Params) {
             },
           ]}
         />
-      ) : (
-        <>
-          {sessionsCard}
-          <CircuitInfo circuitId={race.Circuit.circuitId} />
-        </>
-      )}
+      ) : null}
 
       <SiteFooter source="jolpica" />
     </main>
