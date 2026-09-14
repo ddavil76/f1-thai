@@ -532,7 +532,28 @@ export function getSessions(race: Race) {
     .sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
-/** ระยะเวลาโดยประมาณของแต่ละ session (ms) — ใช้เช็คว่าจบหรือยัง */
+/**
+ * ความยาวตามกำหนดการของแต่ละ session (นาที) — คีย์ต้องตรงกับป้ายที่ getSessions() คืน
+ * ใช้เป็นความยาวอีเวนต์ในไฟล์ปฏิทิน (app/calendar.ics)
+ */
+export const SESSION_MINUTES: Record<string, number> = {
+  "ซ้อม 1": 60,
+  "ซ้อม 2": 60,
+  "ซ้อม 3": 60,
+  "Sprint Quali": 45,
+  Sprint: 60,
+  Qualifying: 60,
+  Race: 120,
+};
+
+/** session แปลกที่ไม่รู้จัก — เดาไว้ 60 นาทีเท่าซ้อม */
+export const DEFAULT_SESSION_MINUTES = 60;
+
+/**
+ * ช่วงที่ยังถือว่า session ไม่จบ (ms) — จงใจกว้างกว่า SESSION_MINUTES ข้างบน
+ * เพราะถ้าตัดตรงตามกำหนดเป๊ะ พอมีธงแดงหรือยืดเยื้อ หน้าเว็บจะเด้งไปนับถอยหลัง
+ * session ถัดไปทั้งที่ยังแข่งกันอยู่ · Race ใช้ RACE_TAIL_MS ให้ตรงกับที่อื่นในเว็บ
+ */
 const SESSION_DUR_MS: Record<string, number> = {
   "Race": RACE_TAIL_MS,
   Sprint: 60 * 60 * 1000,
