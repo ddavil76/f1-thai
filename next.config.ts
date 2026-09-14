@@ -48,6 +48,13 @@ const nextConfig: NextConfig = {
     ],
   },
   headers: async () => [{ source: "/:path*", headers: SECURITY_HEADERS }],
+  experimental: {
+    // Jolpica จำกัด 4 req/วินาทีต่อ IP แต่ build ปกติแตก worker ตามจำนวนคอร์ (เคยเห็น 15)
+    // และแต่ละ worker มีคิวของตัวเอง รวมกันยิงเกินจนโดน 429 → ค่าว่างถูก prerender ติดไป
+    // (หน้าผลการแข่งเคยขึ้น "แข่งไปแล้ว 0 สนาม", ช่อง pole/fastest lap หาย)
+    // worker เดียว = คิว Jolpica อันเดียวทั้ง build (ดู gate ใน lib/f1.ts)
+    cpus: 1,
+  },
 };
 
 export default nextConfig;

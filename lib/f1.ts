@@ -81,21 +81,38 @@ export const isClassifiedFinish = (status: string) =>
 const BASE = "https://api.jolpi.ca/ergast/f1";
 
 /**
- * จำกัดจำนวน request พร้อมกันไป Jolpica — ตอน build มี ~60 หน้า render
- * พร้อมกัน ถ้าปล่อยยิงหมดจะโดน rate-limit ยับ
+ * ตอน build ยิง Jolpica รวดเดียวหลายสิบ request (limit ของเขา 4 req/วินาทีต่อ IP และ
+ * IP ของเครื่อง build บน Vercel ใช้ร่วมกับคนอื่น) ถ้ายอมแพ้เร็ว หน้าที่ prerender จะติดค่าว่าง
+ * ไปจนกว่าจะมีคนเข้ามากระตุ้นให้สร้างใหม่ — เคยเห็นหน้าผลการแข่งขึ้น "แข่งไปแล้ว 0 สนาม"
  */
-const gate = createGate(4);
+const BUILDING = process.env.NEXT_PHASE === "phase-production-build";
+
+/**
+ * จำกัดจำนวน request พร้อมกันไป Jolpica — ช่วยลดการชนเพดานได้บ้าง แต่รับประกันไม่ได้
+ * (แต่ละ route bundle อาจได้ gate ของตัวเอง) ตัวที่กันข้อมูลว่างจริงคือการ retry ด้านล่าง
+ */
+const gate = createGate(BUILDING ? 2 : 4);
 
 /** เรียก Jolpica พร้อม retry + จำกัด concurrency — API ตัวนี้ rate-limit บ่อย */
 async function jolpica<T>(path: string, revalidate = 3600, query = ""): Promise<T> {
-  const res = await fetchRetry(`${BASE}/${path}?format=json${query}`, {
-    source: "Jolpica",
-    init: { next: { revalidate } } as RequestInit,
-    attempts: 4,
-    backoffMs: (n) => 500 * 2 ** (n - 1), // 0.5s, 1s, 2s
-    gate, // ห่อเฉพาะตอนยิง — ระหว่าง backoff ปล่อยสล็อตให้คนอื่นใช้
-  });
-  return (await res.json()) as T;
+  try {
+    const res = await fetchRetry(`${BASE}/${path}?format=json${query}`, {
+      source: "Jolpica",
+      init: { next: { revalidate } } as RequestInit,
+      // ตอน build ยอมรอนาน (~1, 2, 4, 8, 16, 32 วิ) และสุ่มระยะ กันคำขอที่โดน 429 พร้อมกัน
+      // กลับมายิงพร้อมกันอีกรอบ · ตอนรันจริงคงนโยบายเดิม ไม่ให้หน้าเว็บค้างรอ
+      attempts: BUILDING ? 7 : 4,
+      backoffMs: BUILDING
+        ? (n) => 1000 * 2 ** (n - 1) * (0.5 + Math.random())
+        : (n) => 500 * 2 ** (n - 1), // 0.5s, 1s, 2s
+      gate, // ห่อเฉพาะตอนยิง — ระหว่าง backoff ปล่อยสล็อตให้คนอื่นใช้
+    });
+    return (await res.json()) as T;
+  } catch (err) {
+    // ผู้เรียกทุกตัวกลืน error แล้วคืนค่าว่าง — ไม่ log ตรงนี้จะไม่มีร่องรอยเลยว่าข้อมูลหายเพราะอะไร
+    console.warn(`[jolpica] gave up on ${path}${query}:`, err instanceof Error ? err.message : err);
+    throw err;
+  }
 }
 
 type RacesPage<K extends string, Item> = {

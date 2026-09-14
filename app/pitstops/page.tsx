@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { ChevronRight } from "lucide-react";
+import RefreshOnMissing from "@/components/RefreshOnMissing";
 import SectionTabs from "@/components/SectionTabs";
 import SiteFooter from "@/components/SiteFooter";
 import { getPitStops, getSeasonResults } from "@/lib/f1";
@@ -8,14 +10,16 @@ import { fmtSec, seasonPitRanking, summarizeRacePits } from "@/lib/pitstops";
 import { teamColor, teamName } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
 
-export const revalidate = 3600;
-
 export const metadata: Metadata = {
   title: "พิทสต็อป",
   description: `ทีม F1 ไหนเข้าพิทเร็วสุดในฤดูกาล ${SEASON} — อันดับเฉลี่ยรายสนาม และพิทที่เร็วที่สุดของแต่ละสนาม`,
 };
 
 export default async function PitStopsPage() {
+  // ไม่ prerender ตอน build: หน้านี้ยิงพิทสต็อปทีละสนาม (endpoint ที่ Jolpica จำกัดหนักสุด)
+  // ตอน build โดน 429 จนได้ข้อมูลไม่ครบแล้วค้างใน HTML — render ตอนมีคนเข้าแทน
+  // fetch ข้างในยังแคชตาม revalidate ของตัวเอง ไม่ได้ยิง Jolpica ทุกครั้งที่มีคนเปิด
+  await connection();
   const seasonResults = (await getSeasonResults(SEASON)).sort(
     (a, b) => Number(a.round) - Number(b.round),
   );
@@ -25,6 +29,8 @@ export default async function PitStopsPage() {
     const summary = summarizeRacePits(pitStops[i], r.Results);
     return summary ? [{ round: r.round, raceName: r.raceName, summary }] : [];
   });
+  // สนามที่มีผลแล้วแต่ไม่มีพิทเลย = ดึงไม่สำเร็จ (Jolpica จำกัด endpoint นี้หนัก) ไม่ใช่ไม่มีพิท
+  const missing = seasonResults.length - races.length;
   const { teams, fastest } = seasonPitRanking(races);
 
   const header = (
@@ -150,6 +156,16 @@ export default async function PitStopsPage() {
           <p className="text-xs text-white/40">พิทที่นับ</p>
         </div>
       </section>
+
+      {missing > 0 && (
+        <>
+          <RefreshOnMissing />
+          <p className="card px-4 py-3 text-sm text-amber-300/90">
+            ยังโหลดข้อมูลพิทไม่ครบ {missing} สนาม อันดับด้านล่างจึงยังไม่นับสนามเหล่านั้น
+            หน้านี้จะลองโหลดใหม่เอง
+          </p>
+        </>
+      )}
 
       <p className="text-sm text-white/55">
         เวลาคือช่วงที่อยู่ในพิทเลนตั้งแต่เข้าจนออก ไม่ใช่เวลาจอดเปลี่ยนยาง 2 วินาทีที่เห็นในทีวี
