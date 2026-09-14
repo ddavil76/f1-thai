@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { getSchedule, isPastRace } from "@/lib/f1";
 import { circuitTrack } from "@/lib/circuits";
 import ReplayLoader from "@/components/replay/ReplayLoader";
+import SiteFooter from "@/components/SiteFooter";
 import { SEASON } from "@/lib/season";
 
 export const revalidate = 3600;
@@ -67,9 +68,7 @@ export default async function ReplayPage({ params }: Params) {
         <p className="card p-6 text-sm text-white/60">สนามนี้ยังไม่ได้แข่ง</p>
       )}
 
-      <footer className="pb-8 text-center text-xs text-white/30">
-        ข้อมูลจาก openf1.org · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
-      </footer>
+      <SiteFooter source="openf1" />
     </main>
   );
 }

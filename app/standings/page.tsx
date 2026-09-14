@@ -5,6 +5,7 @@ import ChampionshipChart from "@/components/ChampionshipChart";
 import SeasonStats from "@/components/SeasonStats";
 import TitleRace from "@/components/TitleRace";
 import SectionTabs from "@/components/SectionTabs";
+import SiteFooter from "@/components/SiteFooter";
 import {
   getDriverStandings, getConstructorStandings, getChampionshipProgression,
   getPoleLeader, getFastestLapLeader, getSchedule, isPastRace, isSprintWeekend,
@@ -109,9 +110,7 @@ export default async function StandingsPage() {
         <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
       </Link>
 
-      <footer className="pb-8 text-center text-xs text-white/30">
-        ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
-      </footer>
+      <SiteFooter source="jolpica" />
     </main>
   );
 }

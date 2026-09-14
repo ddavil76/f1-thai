@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarArrowDown, ChevronRight } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
+import SiteFooter from "@/components/SiteFooter";
 import { getSchedule, findNextRace, isPastRace, toDate } from "@/lib/f1";
 import { SEASON } from "@/lib/season";
 
@@ -88,9 +89,7 @@ export default async function CalendarPage() {
         </ul>
       </section>
 
-      <footer className="pb-8 text-center text-xs text-white/30">
-        ข้อมูลจาก Jolpica-F1 API · ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
-      </footer>
+      <SiteFooter source="jolpica" />
     </main>
   );
 }

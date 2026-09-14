@@ -4,6 +4,7 @@ import { FileText, TriangleAlert } from "lucide-react";
 import SectionTabs from "@/components/SectionTabs";
 import PuCells from "@/components/PuCells";
 import { PU_STATUS_UI, PuNextChange, PuStatusBadge } from "@/components/PuVerdict";
+import SiteFooter from "@/components/SiteFooter";
 import { getDriverStandings, type DriverStanding } from "@/lib/f1";
 import {
   getPuUsage, findUsage, overBy, minSpare, puStatus, puLabel, teamIdOf, decisionTh, sessionTh,
@@ -354,11 +355,7 @@ export default async function PowerUnitsPage() {
         ]}
       />
 
-      <footer className="space-y-2 pb-8 text-center text-xs text-white/30">
-        <p>
-          ข้อมูลจากรายงาน Technical Delegate และคำตัดสินสจ๊วตของ FIA · ไม่เกี่ยวข้องกับ
-          Formula 1 อย่างเป็นทางการ
-        </p>
+      <SiteFooter source="fia">
         {pu.sources.length > 0 && (
           <details className="mx-auto max-w-md text-left">
             <summary className="cursor-pointer text-center hover:text-white/50">
@@ -381,7 +378,7 @@ export default async function PowerUnitsPage() {
             </ul>
           </details>
         )}
-      </footer>
+      </SiteFooter>
     </main>
   );
 }

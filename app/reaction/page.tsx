@@ -1,4 +1,5 @@
 import ReactionGame from "@/components/ReactionGame";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
   title: "เกมออกตัว",
@@ -20,9 +21,7 @@ export default function ReactionPage() {
 
       <ReactionGame />
 
-      <footer className="pb-8 text-center text-xs text-white/30">
-        ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
-      </footer>
+      <SiteFooter />
     </main>
   );
 }
