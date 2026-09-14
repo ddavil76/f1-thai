@@ -2,38 +2,27 @@
 // รีเพลย์ไทม์มิ่งย้อนหลังแบบรอบต่อรอบ — ปี 2023+ เท่านั้น
 // ดึงจาก "ฝั่ง client" (openf1 บล็อก IP ของ serverless/Vercel แต่รองรับ CORS)
 
-const OF1 = "https://api.openf1.org/v1";
+import { createGate, fetchRetry, sleep } from "./http";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const OF1 = "https://api.openf1.org/v1";
 
 // openf1 (ไม่มี API key) จำกัด ~1 req ต่อ 1-2 วิ → ยิงทีละคำขอ เว้นระยะกว้าง ๆ
 const ATTEMPTS = 5;
-let queue: Promise<unknown> = Promise.resolve();
+const gate = createGate(1);
+
 async function of1<T>(path: string): Promise<T> {
-  const task = queue.then(async () => {
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-      if (attempt > 0) await sleep(Math.min(8000, 1200 * 2 ** (attempt - 1)));
-      try {
-        const res = await fetch(`${OF1}/${path}`, { cache: "force-cache" });
-        if (res.ok) {
-          const json = (await res.json()) as T;
-          await sleep(750); // เว้นก่อนคำขอถัดไป
-          return json;
-        }
-        lastErr = new Error(`openf1 ${res.status} ${path}`);
-        // 429/5xx = ลองใหม่, 4xx อื่น ๆ = เลิก (ยิงอีกก็ได้ผลเดิม)
-        // ต้อง break ไม่ใช่ throw — throw ตรงนี้จะถูก catch ข้างล่างกลืน แล้วหน่วง
-        // คิวทั้งเส้นไว้ ~16 วิ เพราะคำขอทุกตัวต่อแถวกันอยู่
-        if (res.status !== 429 && res.status < 500) break;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-    throw lastErr instanceof Error ? lastErr : new Error(`openf1 failed ${path}`);
+  // กอดคิวไว้ทั้งชุด (รวม backoff) — ยิงแทรกระหว่างที่ openf1 กำลังบ่นมีแต่ทำให้แย่ลง
+  return gate(async () => {
+    const res = await fetchRetry(`${OF1}/${path}`, {
+      source: "openf1",
+      init: { cache: "force-cache" },
+      attempts: ATTEMPTS,
+      backoffMs: (n) => Math.min(8000, 1200 * 2 ** (n - 1)),
+    });
+    const json = (await res.json()) as T;
+    await sleep(750); // เว้นก่อนคำขอถัดไป
+    return json;
   });
-  queue = task.catch(() => {});
-  return task as Promise<T>;
 }
 
 type Session = { session_key: number; date_start: string; year: number };
