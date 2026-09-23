@@ -4,7 +4,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import {
-  getConstructorStandings, getConstructorSeasonResults, isClassifiedFinish,
+  getConstructorStandings, getConstructorStandingsOrThrow,
+  getConstructorSeasonResultsOrThrow, isClassifiedFinish,
 } from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
@@ -40,9 +41,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ConstructorPage({ params }: Params) {
   const { id } = await params;
+  // ดึงไม่ได้ต้อง throw (ขึ้นหน้า error ที่ไม่ถูกแคช) — ถ้าได้ [] จะกลายเป็น 404 ค้าง
   const [standings, results, pu] = await Promise.all([
-    getConstructorStandings(SEASON),
-    getConstructorSeasonResults(SEASON, id),
+    getConstructorStandingsOrThrow(SEASON),
+    getConstructorSeasonResultsOrThrow(SEASON, id),
     getPuUsage(SEASON),
   ]);
 

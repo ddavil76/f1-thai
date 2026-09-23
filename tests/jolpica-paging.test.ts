@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getConstructorSeasonResults } from "@/lib/f1";
+import {
+  getConstructorSeasonResults, getConstructorSeasonResultsOrThrow, getConstructorStandings,
+  getConstructorStandingsOrThrow, getDriverSeasonResults, getDriverSeasonResultsOrThrow,
+  getDriverStandings, getDriverStandingsOrThrow,
+} from "@/lib/f1";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -44,5 +48,23 @@ describe("getConstructorSeasonResults", () => {
     const races = await getConstructorSeasonResults(2026, "mclaren");
     expect(races).toHaveLength(60);
     expect(races[33].results.map((r) => r.position)).toEqual(["1", "2", "3"]);
+  });
+});
+
+describe("…OrThrow — แยก 'ดึงไม่ได้' ออกจาก 'ไม่มีข้อมูล'", () => {
+  // 400 ไม่ retry → เทสต์ไม่ต้องรอ backoff
+  const jolpicaDown = () => {
+    globalThis.fetch = (async () => new Response("bad", { status: 400 })) as typeof fetch;
+  };
+
+  it.each([
+    ["driver standings", () => getDriverStandingsOrThrow(2026), () => getDriverStandings(2026)],
+    ["team standings", () => getConstructorStandingsOrThrow(2026), () => getConstructorStandings(2026)],
+    ["driver results", () => getDriverSeasonResultsOrThrow(2026, "norris"), () => getDriverSeasonResults(2026, "norris")],
+    ["team results", () => getConstructorSeasonResultsOrThrow(2026, "mclaren"), () => getConstructorSeasonResults(2026, "mclaren")],
+  ])("%s: ตัว OrThrow throw ส่วนตัวปกติคืน []", async (_, strict, lenient) => {
+    jolpicaDown();
+    await expect(strict()).rejects.toThrow(/Jolpica/);
+    await expect(lenient()).resolves.toEqual([]);
   });
 });
