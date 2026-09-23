@@ -17,6 +17,7 @@ import PodiumGraphic from "@/components/PodiumGraphic";
 import WeatherBadge from "@/components/WeatherBadge";
 import LocalTime from "@/components/tz/LocalTime";
 import SiteFooter from "@/components/SiteFooter";
+import CheckeredFlag from "@/components/CheckeredFlag";
 import { googleCalendarUrl } from "@/lib/calendar";
 import {
   getSchedule, getRaceResults, getQualifying, getSprintResults, findNextRace,
@@ -26,6 +27,7 @@ import {
 import { summarizeRacePits } from "@/lib/pitstops";
 import { getRaceWeather } from "@/lib/weather";
 import { SEASON } from "@/lib/season";
+import { teamColor, teamName } from "@/lib/teams";
 
 export const revalidate = 600;
 
@@ -79,6 +81,8 @@ export default async function RacePage({ params }: Params) {
     results && pitStops.length > 0 ? summarizeRacePits(pitStops, results.Results) : null;
   const hasResults = Boolean(results && results.Results.length > 0);
   const gap = past && !hasResults ? resultsGap(race) : null;
+  const winner = hasResults ? results!.Results[0] : null;
+  const winnerColor = winner ? teamColor(winner.Constructor.constructorId) : null;
 
   const sessionsCard = sessions.length > 0 && (
     <section className="card p-5">
@@ -113,7 +117,11 @@ export default async function RacePage({ params }: Params) {
     <main
       className={`mx-auto space-y-6 ${past ? "max-w-3xl" : "max-w-3xl lg:max-w-5xl"}`}
     >
-      <div>
+      {/* สนามที่แข่งจบแล้ว: แสงสีทีมผู้ชนะด้านหลังหัวหน้า — แต่ละสนามจึงดูไม่ซ้ำกัน */}
+      <div
+        className={winnerColor ? "winner-hero" : undefined}
+        style={winnerColor ? ({ "--winner": winnerColor } as React.CSSProperties) : undefined}
+      >
         <Link
           href="/calendar"
           className="inline-flex items-center gap-1 text-sm text-white/40 transition hover:text-white/70"
@@ -129,6 +137,19 @@ export default async function RacePage({ params }: Params) {
             <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-300 ring-1 ring-yellow-400/30">
               <Zap className="h-3 w-3" fill="currentColor" />
               Sprint
+            </span>
+          )}
+          {winner && winnerColor && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{
+                color: `color-mix(in srgb, ${winnerColor} 70%, white)`,
+                background: `color-mix(in srgb, ${winnerColor} 16%, transparent)`,
+                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${winnerColor} 40%, transparent)`,
+              }}
+            >
+              <CheckeredFlag />
+              {winner.Driver.familyName} · {teamName(winner.Constructor.constructorId, winner.Constructor.name)}
             </span>
           )}
         </div>

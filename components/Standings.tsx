@@ -126,8 +126,9 @@ export default function Standings({
                       <p className="truncate text-xs text-white/50">{c?.name}</p>
                       <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
                         <div
-                          className="grow-x h-full bg-(--color-f1)"
+                          className="grow-x h-full"
                           style={{
+                            background: teamCol,
                             width: `${Math.min((Number(s.points) / (driverLeader || 1)) * 100, 100)}%`,
                           }}
                         />

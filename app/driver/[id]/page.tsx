@@ -148,6 +148,7 @@ export default async function DriverPage({ params }: Params) {
           mate={mateResults}
           selfPoints={Number(standing?.points ?? 0)}
           matePoints={Number(mateStanding.points)}
+          color={color}
         />
       )}
 

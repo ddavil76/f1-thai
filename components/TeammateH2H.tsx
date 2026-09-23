@@ -12,6 +12,7 @@ export default function TeammateH2H({
   mate,
   selfPoints,
   matePoints,
+  color,
 }: {
   selfId: string;
   teammateId: string;
@@ -20,6 +21,8 @@ export default function TeammateH2H({
   mate: DriverRaceResult[];
   selfPoints: number;
   matePoints: number;
+  /** สีทีม — แถบฝั่งนักขับคนนี้ */
+  color: string;
 }) {
   const { grid, race } = raceHeadToHead(self, mate);
   if (grid[0] + grid[1] + race[0] + race[1] === 0) return null;
@@ -37,9 +40,9 @@ export default function TeammateH2H({
         </Link>
       </p>
       <div className="space-y-3">
-        <H2HBar label="ออกตัวนำ" a={grid[0]} b={grid[1]} />
-        <H2HBar label="จบก่อน" a={race[0]} b={race[1]} />
-        <H2HBar label="แต้มสะสม" a={selfPoints} b={matePoints} />
+        <H2HBar label="ออกตัวนำ" a={grid[0]} b={grid[1]} aColor={color} />
+        <H2HBar label="จบก่อน" a={race[0]} b={race[1]} aColor={color} />
+        <H2HBar label="แต้มสะสม" a={selfPoints} b={matePoints} aColor={color} />
       </div>
       <Link
         href={`/compare?a=${selfId}&b=${teammateId}`}

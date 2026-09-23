@@ -6,9 +6,6 @@ import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
 import PageTransition from "@/components/PageTransition";
 import TzToggle from "@/components/tz/TzToggle";
-import { getLastResults } from "@/lib/f1";
-import { teamAccent } from "@/lib/theme";
-import { SEASON } from "@/lib/season";
 import { SITE_URL } from "@/lib/site";
 
 
@@ -50,23 +47,11 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // ธีมแอคเซนต์ตามทีมของผู้ชนะสนามล่าสุด
-  const lastWinner = (await getLastResults(SEASON))?.Results?.[0]?.Constructor
-    ?.constructorId;
-  const { accent, accentDark } = teamAccent(lastWinner);
-
+// สีหลักของเว็บเป็นแดง F1 คงที่ (ตั้งใน globals.css) — สีทีมผู้ชนะไปอยู่เฉพาะส่วนที่เป็น
+// เรื่องของการแข่งนั้น ๆ (การ์ดผลล่าสุด หัวหน้าสนาม แถบฤดูกาล) ไม่ใช่ทั้งเว็บ
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="th"
-      className={`${notoThai.className} ${chakra.variable}`}
-      style={
-        {
-          "--color-f1": accent,
-          "--color-f1-dark": accentDark,
-        } as React.CSSProperties
-      }
-    >
+    <html lang="th" className={`${notoThai.className} ${chakra.variable}`}>
       <body className="antialiased">
         <div className="scroll-progress" aria-hidden="true" />
         <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-md">
