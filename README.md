@@ -98,6 +98,7 @@ app/                  หน้าเว็บ (App Router) — ทุกไฟ�
   standings/            ตารางคะแนน + กราฟแต้มสะสม + เครื่องคำนวณลุ้นแชมป์
   calendar/             ปฏิทินทั้งฤดูกาล
   calendar.ics/         ฟีด .ics ทุก session (route handler)
+  api/widget/           JSON ก้อนเล็กสำหรับ widget บนมือถือ
   race/[round]/         รายละเอียดสนาม (ตาราง ผัง ผล ควอลิฟาย)
   race/[round]/replay/  รีเพลย์ไทม์มิ่งรอบต่อรอบ
   driver/[id]/          โปรไฟล์นักแข่ง + เทียบเพื่อนร่วมทีม
@@ -108,6 +109,7 @@ app/                  หน้าเว็บ (App Router) — ทุกไฟ�
   reaction/             เกมวัดรีแอคชันตอนไฟดับ
 components/           UI ที่ใช้ซ้ำ (client component ส่วนใหญ่อยู่ที่นี่)
 lib/                  ดึงข้อมูล แปลงข้อมูล และตารางค่าคงที่
+public/               ไฟล์สาธารณะ · scriptable-widget.js = widget สำหรับ iPhone
 tests/                ยูนิตเทสต์ (Vitest)
 ```
 
@@ -125,6 +127,45 @@ tests/                ยูนิตเทสต์ (Vitest)
   เพราะ ICU ของ Node กับเบราว์เซอร์ให้คนละคำ (`อาทิตย์` vs `อา.`) แล้ว hydration พัง
 - **แอนิเมชัน** — ทุกอันต้องมีคู่ใน `@media (prefers-reduced-motion: reduce)`
   ที่ท้าย `app/globals.css`
+
+## Widget บน iPhone
+
+`/api/widget` คืน JSON ก้อนเล็ก (~420 bytes) ที่มีสนามถัดไป session ถัดไป และผู้นำ
+ตารางคะแนน สำหรับเอาไปทำ widget บนหน้าโฮม — เปิด CORS ไว้ (`Access-Control-Allow-Origin: *`)
+เพราะเป็นข้อมูลสาธารณะอ่านอย่างเดียว
+
+```jsonc
+{
+  "season": 2026,
+  "state": "upcoming",        // upcoming · live · season-over · no-calendar
+  "generatedAt": "…",
+  "race":    { "round": "15", "name": "…", "circuit": "…", "startsAt": "…", "isSprint": false },
+  "session": { "label": "ซ้อม 1", "startsAt": "…" },
+  "leader":  { "name": "M. Verstappen", "points": 400, "constructorId": "red_bull" }
+}
+```
+
+เวลาเป็น ISO (UTC) ทั้งหมด ให้ฝั่ง widget ฟอร์แมตตามเครื่องผู้ใช้เอง
+
+### วิธีติดตั้ง (แอป Scriptable — ฟรี ไม่ต้องมี Mac)
+
+1. ติดตั้ง [Scriptable](https://apps.apple.com/app/scriptable/id1405459188) จาก App Store
+2. เปิดแอป → ปุ่ม **+** มุมขวาบน → วางเนื้อหาของ
+   [`public/scriptable-widget.js`](public/scriptable-widget.js) → ตั้งชื่อว่า `F1`
+   (ไฟล์นี้เสิร์ฟจากเว็บด้วย เปิด `https://<โดเมน>/scriptable-widget.js` แล้วก็อปได้เลย)
+3. แก้ค่า `SITE` บรรทัดบน ๆ ให้เป็นโดเมนของคุณ
+4. กดค้างที่หน้าโฮม → **+** → Scriptable → เลือกขนาด **small** หรือ **medium**
+   → แตะที่ widget → Script เลือก `F1`
+
+รองรับทั้งสองขนาด (medium มีแถบผู้นำตารางคะแนนเพิ่ม) แตะแล้วเปิดเว็บ ติดป้าย
+`LIVE` ตอนมี session กำลังดำเนินอยู่ และป้าย `SPRINT` ในสุดสัปดาห์ที่มีสปรินต์
+
+> **นับถอยหลังใช้ `applyTimerStyle()`** ให้ iOS เดินเลขเอง ไม่ใช่วาดตัวเลขค้างไว้ —
+> ระบบคุมรอบรีเฟรชของ widget เอง (ราว 15 นาทีขึ้นไป บังคับไม่ได้) ถ้าวาดเองเลขจะค้าง
+> ส่วน `refreshAfterDate` เป็นแค่คำขอ ไม่ใช่คำสั่ง
+
+เทสต์ของสคริปต์นี้อยู่ใน `tests/scriptable-widget.test.ts` — รันไฟล์จริงด้วย Scriptable API
+จำลอง แล้วตรวจสิ่งที่วาดออกมาในทุกสถานะ รวมถึงตอนต่อเน็ตไม่ได้
 
 ## เครดิต
 
