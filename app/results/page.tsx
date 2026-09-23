@@ -4,6 +4,7 @@ import { ChevronRight, Trophy } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
 import ResultsPending from "@/components/ResultsPending";
 import ResultsRefresher from "@/components/ResultsRefresher";
+import SeasonStrip from "@/components/SeasonStrip";
 import SiteFooter from "@/components/SiteFooter";
 import {
   getSchedule, getSeasonWinners, toDate, resultsGap, firstRaceWithoutResults,
@@ -101,6 +102,8 @@ export default async function ResultsPage() {
         </section>
       )}
 
+      <SeasonStrip schedule={schedule} winners={races} nextRound={pending?.round} />
+
       {pendingStart && <ResultsRefresher startIso={pendingStart.toISOString()} />}
       {pending && pendingGap && (
         <ResultsPending race={pending} status={pendingGap} href={`/race/${pending.round}`} />
@@ -121,6 +124,8 @@ export default async function ResultsPage() {
                   <Link
                     href={`/race/${r.round}`}
                     className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.04] sm:px-5"
+                    // แถบสีทีมผู้ชนะชิดซ้าย — ไล่ลงมาแล้วเห็นสีเปลี่ยนตามผู้ชนะ
+                    style={{ boxShadow: `inset 3px 0 0 ${c}` }}
                   >
                     <span className="w-6 text-right text-sm tabular-nums text-white/40">
                       {r.round}

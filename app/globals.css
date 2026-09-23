@@ -36,7 +36,8 @@
     overflow-x: clip;
   }
 
-  /* ---- Ambient background — ไล่เฉดสีเต็มจอ (ไม่มีจุดดำ) ลอยช้า ๆ ----
+  /* ---- Ambient background — ดำแบบกราฟิกถ่ายทอด F1 มีแสงแดงจาง ๆ ที่มุม
+     กับเส้นเฉียงบาง ๆ แบบเส้นความเร็ว · สีทีมไม่มาอยู่ตรงนี้ (ดูที่ .winner-glow)
      ใช้ transform (GPU) ไม่ใช่ background-position → ไม่ repaint ทั้งจอทุกเฟรม */
   body::before {
     content: "";
@@ -50,23 +51,21 @@
     background-color: var(--color-bg);
     background-image:
       radial-gradient(
-        58% 55% at 15% 12%,
-        color-mix(in srgb, var(--color-f1) 55%, transparent),
+        48% 42% at 18% 14%,
+        color-mix(in srgb, var(--color-f1) 24%, transparent),
         transparent 70%
       ),
-      radial-gradient(54% 54% at 88% 22%, rgba(96, 108, 210, 0.4), transparent 70%),
       radial-gradient(
-        64% 64% at 72% 92%,
-        color-mix(in srgb, var(--color-f1-dark) 70%, transparent),
+        46% 40% at 88% 92%,
+        color-mix(in srgb, var(--color-f1-dark) 20%, transparent),
         transparent 72%
       ),
-      radial-gradient(50% 54% at 25% 82%, rgba(78, 66, 150, 0.32), transparent 70%),
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--color-f1) 16%, var(--color-bg)),
-        color-mix(in srgb, #5c68c8 12%, var(--color-bg)) 50%,
-        color-mix(in srgb, var(--color-f1-dark) 24%, var(--color-bg))
-      );
+      repeating-linear-gradient(
+        115deg,
+        rgba(255, 255, 255, 0.022) 0 1px,
+        transparent 1px 18px
+      ),
+      linear-gradient(160deg, #0e0d10, var(--color-bg) 55%);
     background-repeat: no-repeat;
     animation: bg-drift 40s ease-in-out infinite;
     will-change: transform;
@@ -123,6 +122,46 @@
         0 18px 50px -14px rgba(0, 0, 0, 0.7);
     }
   }
+}
+
+/* ---- สีทีมผู้ชนะ — ใส่ --winner (สีทีม) ที่ element แล้วใช้คลาสพวกนี้
+   ใช้เฉพาะส่วนที่เป็นเรื่องของการแข่งนั้นจริง ๆ สีหลักของเว็บยังเป็นแดง F1 */
+.winner-glow {
+  border-color: color-mix(in srgb, var(--winner, #666) 45%, transparent);
+  background:
+    radial-gradient(
+      90% 70% at 50% 0%,
+      color-mix(in srgb, var(--winner, #666) 20%, transparent),
+      transparent 72%
+    ),
+    var(--color-surface);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 50px -18px color-mix(in srgb, var(--winner, #666) 45%, transparent);
+}
+@media (hover: hover) {
+  .card.winner-glow:hover {
+    border-color: color-mix(in srgb, var(--winner, #666) 70%, transparent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset,
+      0 22px 60px -16px color-mix(in srgb, var(--winner, #666) 55%, transparent);
+  }
+}
+
+/* แสงสีผู้ชนะด้านหลังหัวหน้าสนามที่แข่งจบแล้ว */
+.winner-hero {
+  position: relative;
+  isolation: isolate;
+}
+.winner-hero::before {
+  content: "";
+  position: absolute;
+  inset: -3rem -50vw -2rem;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    45% 90% at 22% 40%,
+    color-mix(in srgb, var(--winner, #666) 26%, transparent),
+    transparent 75%
+  );
 }
 
 /* นับถอยหลัง / ตัวเลขให้ดูนิ่ง */

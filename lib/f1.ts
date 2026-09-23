@@ -208,7 +208,7 @@ export async function getLastResults(
   season: string | number,
 ): Promise<RaceWithResults | null> {
   try {
-    // ใช้ทั้งธีมสี accent (layout) และการ์ดโพเดียมหน้าแรก — ไม่ต้องสดมาก
+    // การ์ดโพเดียมหน้าแรก — ไม่ต้องสดมาก
     const d = await jolpica<ResultsResponse>(`${season}/last/results/`, 900);
     return d.MRData.RaceTable?.Races?.[0] ?? null;
   } catch {

@@ -2,7 +2,9 @@ import Link from "next/link";
 import { CalendarArrowDown, ChevronRight } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
 import SiteFooter from "@/components/SiteFooter";
-import { getSchedule, findNextRace, isPastRace, toDate } from "@/lib/f1";
+import CheckeredFlag from "@/components/CheckeredFlag";
+import { getSchedule, getSeasonWinners, findNextRace, isPastRace, toDate } from "@/lib/f1";
+import { teamColor } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
 
 export const metadata = { title: "ปฏิทินทั้งฤดูกาล" };
@@ -11,8 +13,9 @@ export const revalidate = 600;
 
 
 export default async function CalendarPage() {
-  const races = await getSchedule(SEASON);
+  const [races, winners] = await Promise.all([getSchedule(SEASON), getSeasonWinners(SEASON)]);
   const nextRound = findNextRace(races)?.round;
+  const winnerOf = new Map(winners.map((r) => [r.round, r.Results[0]]));
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 lg:max-w-5xl">
@@ -46,17 +49,21 @@ export default async function CalendarPage() {
             const d = toDate({ date: r.date, time: r.time })!;
             const past = isPastRace(r);
             const isNext = r.round === nextRound;
+            const win = winnerOf.get(r.round);
+            const winColor = win ? teamColor(win.Constructor.constructorId) : null;
             return (
               <li key={r.round} style={{ "--i": i } as React.CSSProperties}>
                 <Link
                   href={`/race/${r.round}`}
                   className={`flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/[0.05] ${
-                    past ? "opacity-40 hover:opacity-100" : ""
+                    past ? "opacity-60 hover:opacity-100" : ""
                   } ${
                     isNext
                       ? "bg-(--color-f1)/8 ring-1 ring-inset ring-(--color-f1)/30"
                       : ""
                   }`}
+                  // สนามที่จบแล้ว: แถบซ้ายเป็นสีทีมผู้ชนะ
+                  style={winColor ? { boxShadow: `inset 3px 0 0 ${winColor}` } : undefined}
                 >
                   <span
                     className={`w-6 text-right text-sm tabular-nums ${
@@ -66,17 +73,29 @@ export default async function CalendarPage() {
                     {r.round}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">
-                      {r.raceName}
+                    {/* ป้ายอยู่นอกส่วนที่ตัด … ไม่งั้นชื่อสนามยาว ๆ จะตัดป้ายเหลือแค่ก้อนสี */}
+                    <p className="flex min-w-0 items-center gap-2 font-medium">
+                      <span className="truncate">{r.raceName}</span>
                       {isNext && (
-                        <span className="ml-2 rounded-full bg-(--color-f1) px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider text-white">
+                        <span className="shrink-0 rounded-full bg-(--color-f1) px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
                           ถัดไป
                         </span>
                       )}
                     </p>
-                    <p className="truncate text-xs text-white/50">
-                      {r.Circuit.Location.locality}, {r.Circuit.Location.country}
-                    </p>
+                    {win && winColor ? (
+                      <p className="flex items-center gap-1.5 truncate text-xs text-white/60">
+                        <CheckeredFlag className="h-2.5 w-2.5 shrink-0" />
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: winColor }}
+                        />
+                        {win.Driver.givenName.charAt(0)}. {win.Driver.familyName}
+                      </p>
+                    ) : (
+                      <p className="truncate text-xs text-white/50">
+                        {r.Circuit.Location.locality}, {r.Circuit.Location.country}
+                      </p>
+                    )}
                   </div>
                   <span className="shrink-0 text-right text-xs tabular-nums text-white/70">
                     <LocalTime
