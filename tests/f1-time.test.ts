@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SESSION_MINUTES, SESSION_MINUTES, findNextRace, firstRaceWithoutResults,
-  formatInTz, getNextSession, getSessions, getUpcomingRaces, isPastRace,
+  formatInTz, getNextSession, getSessionWindows, getSessions, getUpcomingRaces, isPastRace,
   isSprintWeekend, resultsGap, toDate, type Race,
 } from "@/lib/f1";
+import { pickSession } from "@/lib/race-window";
 import { SCHEDULE_FALLBACK } from "@/lib/schedule-fallback";
 import { CIRCUIT_TZ, TH_TZ } from "@/lib/tz";
 
@@ -134,5 +135,24 @@ describe("formatInTz", () => {
 
   it("kind time ไม่มีชื่อวันนำหน้า", () => {
     expect(formatInTz(d, "time")).toMatch(/^\d{2}:\d{2}$/);
+  });
+});
+
+describe("getSessionWindows + pickSession (ฝั่ง client)", () => {
+  const ws = getSessionWindows(race());
+
+  it("เรียงตามเวลาและจบหลังเริ่มเสมอ", () => {
+    expect(ws.map((w) => w.label)).toEqual(getSessions(race()).map((s) => s.label));
+    expect(ws.every((w) => w.end > w.start)).toBe(true);
+  });
+
+  it("ขยับไป session ถัดไปเมื่อ session ที่กำลังแข่งจบ — ไม่ค้าง 'กำลังแข่ง'", () => {
+    const fp1 = ws[0];
+    expect(pickSession(ws, fp1.start + 60_000)?.label).toBe(fp1.label);
+    expect(pickSession(ws, fp1.end + 1)?.label).toBe(ws[1].label);
+  });
+
+  it("หลัง Race จบ คืน null (ไม่ค้าง 'กำลังแข่งอยู่!')", () => {
+    expect(pickSession(ws, ws.at(-1)!.end + 1)).toBeNull();
   });
 });
