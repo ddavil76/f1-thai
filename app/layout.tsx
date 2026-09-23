@@ -5,6 +5,7 @@ import { Noto_Sans_Thai, Chakra_Petch } from "next/font/google";
 import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
 import PageTransition from "@/components/PageTransition";
+import LaunchIntro from "@/components/LaunchIntro";
 import TzToggle from "@/components/tz/TzToggle";
 import { SITE_URL } from "@/lib/site";
 
@@ -51,8 +52,10 @@ export const viewport: Viewport = {
 // เรื่องของการแข่งนั้น ๆ (การ์ดผลล่าสุด หัวหน้าสนาม แถบฤดูกาล) ไม่ใช่ทั้งเว็บ
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th" className={`${notoThai.className} ${chakra.variable}`}>
+    // suppressHydrationWarning: สคริปต์ของ LaunchIntro ติด data-intro ที่ <html> ก่อน hydrate
+    <html lang="th" className={`${notoThai.className} ${chakra.variable}`} suppressHydrationWarning>
       <body className="antialiased">
+        <LaunchIntro />
         <div className="scroll-progress" aria-hidden="true" />
         <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-md">
           <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3.5">
