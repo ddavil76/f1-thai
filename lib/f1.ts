@@ -178,22 +178,27 @@ export async function getSchedule(season: string | number): Promise<Race[]> {
   }
 }
 
+/*
+ * ตัว …OrThrow ไว้ให้หน้าที่ต้องแยก "ไม่มีจริง" กับ "ดึงไม่ได้" — ถ้ากลืน error แล้วได้ []
+ * หน้าจะ notFound() ซึ่ง Next แคชไว้เหมือนหน้าปกติ (และทับหน้าดีที่เคยสร้างไว้ด้วย)
+ * Jolpica สะดุดแวบเดียวเลยกลายเป็น 404 ค้างทั้งที่ข้อมูลกลับมาแล้ว · error ไม่ถูกแคช
+ */
+export async function getDriverStandingsOrThrow(season: string | number): Promise<DriverStanding[]> {
+  const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 120);
+  return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
+}
+
 export async function getDriverStandings(season: string | number): Promise<DriverStanding[]> {
-  try {
-    const d = await jolpica<ErgastResponse>(`${season}/driverstandings/`, 120);
-    return d.MRData.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
-  } catch {
-    return [];
-  }
+  return getDriverStandingsOrThrow(season).catch(() => []);
+}
+
+export async function getConstructorStandingsOrThrow(season: string | number): Promise<ConstructorStanding[]> {
+  const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 120);
+  return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
 }
 
 export async function getConstructorStandings(season: string | number): Promise<ConstructorStanding[]> {
-  try {
-    const d = await jolpica<ErgastResponse>(`${season}/constructorstandings/`, 120);
-    return d.MRData.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
-  } catch {
-    return [];
-  }
+  return getConstructorStandingsOrThrow(season).catch(() => []);
 }
 
 type ResultsResponse = { MRData: { RaceTable?: { Races?: RaceWithResults[] } } };
@@ -426,25 +431,28 @@ export type DriverRaceResult = {
 };
 
 /** ผลรายสนามของนักแข่งคนหนึ่งทั้งฤดูกาล */
+export async function getDriverSeasonResultsOrThrow(
+  season: string | number,
+  driverId: string,
+): Promise<DriverRaceResult[]> {
+  const d = await jolpica<{
+    MRData: { RaceTable?: { Races?: (Race & { Results: RaceResult[] })[] } };
+  }>(`${season}/drivers/${driverId}/results/`, 600);
+  return (d.MRData.RaceTable?.Races ?? [])
+    .filter((r) => r.Results?.[0])
+    .map((r) => ({
+      round: r.round,
+      raceName: r.raceName,
+      Circuit: r.Circuit,
+      result: r.Results[0],
+    }));
+}
+
 export async function getDriverSeasonResults(
   season: string | number,
   driverId: string,
 ): Promise<DriverRaceResult[]> {
-  try {
-    const d = await jolpica<{
-      MRData: { RaceTable?: { Races?: (Race & { Results: RaceResult[] })[] } };
-    }>(`${season}/drivers/${driverId}/results/`, 600);
-    return (d.MRData.RaceTable?.Races ?? [])
-      .filter((r) => r.Results?.[0])
-      .map((r) => ({
-        round: r.round,
-        raceName: r.raceName,
-        Circuit: r.Circuit,
-        result: r.Results[0],
-      }));
-  } catch {
-    return [];
-  }
+  return getDriverSeasonResultsOrThrow(season, driverId).catch(() => []);
 }
 
 export type ConstructorRaceResult = {
@@ -454,29 +462,32 @@ export type ConstructorRaceResult = {
 };
 
 /** ผลรายสนามของทีมหนึ่งทั้งฤดูกาล (นักแข่งทั้ง 2 คน) */
+export async function getConstructorSeasonResultsOrThrow(
+  season: string | number,
+  constructorId: string,
+): Promise<ConstructorRaceResult[]> {
+  // ทีมมีรถ 2 คัน → 30 แถวต่อหน้าของ Jolpica หมดตั้งแต่สนามที่ 15 ต้องไล่เก็บทีละหน้า
+  const races = await jolpicaRaces<"Results", RaceResult>(
+    `${season}/constructors/${constructorId}/results/`,
+    600,
+    "Results",
+  );
+  return races
+    .filter((r) => r.Results?.length)
+    .map((r) => ({
+      round: r.round,
+      raceName: r.raceName,
+      results: [...r.Results].sort(
+        (a, b) => Number(a.position) - Number(b.position),
+      ),
+    }));
+}
+
 export async function getConstructorSeasonResults(
   season: string | number,
   constructorId: string,
 ): Promise<ConstructorRaceResult[]> {
-  try {
-    // ทีมมีรถ 2 คัน → 30 แถวต่อหน้าของ Jolpica หมดตั้งแต่สนามที่ 15 ต้องไล่เก็บทีละหน้า
-    const races = await jolpicaRaces<"Results", RaceResult>(
-      `${season}/constructors/${constructorId}/results/`,
-      600,
-      "Results",
-    );
-    return races
-      .filter((r) => r.Results?.length)
-      .map((r) => ({
-        round: r.round,
-        raceName: r.raceName,
-        results: [...r.Results].sort(
-          (a, b) => Number(a.position) - Number(b.position),
-        ),
-      }));
-  } catch {
-    return [];
-  }
+  return getConstructorSeasonResultsOrThrow(season, constructorId).catch(() => []);
 }
 
 /* ---------- ประวัติสนาม / พิทสต็อป / เทียบนักขับ ---------- */

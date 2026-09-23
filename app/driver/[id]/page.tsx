@@ -3,7 +3,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { getDriverStandings, getDriverSeasonResults, isClassifiedFinish } from "@/lib/f1";
+import {
+  getDriverStandings, getDriverStandingsOrThrow, getDriverSeasonResults,
+  getDriverSeasonResultsOrThrow, isClassifiedFinish,
+} from "@/lib/f1";
 import { getDriverImage } from "@/lib/drivers";
 import { teamColor } from "@/lib/teams";
 import { flag } from "@/lib/flags";
@@ -41,9 +44,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function DriverPage({ params }: Params) {
   const { id } = await params;
+  // ดึงไม่ได้ต้อง throw (ขึ้นหน้า error ที่ไม่ถูกแคช) — ถ้าได้ [] จะกลายเป็น 404 ค้าง
   const [standings, results, pu] = await Promise.all([
-    getDriverStandings(SEASON),
-    getDriverSeasonResults(SEASON, id),
+    getDriverStandingsOrThrow(SEASON),
+    getDriverSeasonResultsOrThrow(SEASON, id),
     getPuUsage(SEASON),
   ]);
 
