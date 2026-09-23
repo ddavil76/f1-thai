@@ -5,3 +5,11 @@ export const RACE_TAIL_MS = 2 * 60 * 60 * 1000;
 
 /** รอผลจาก Jolpica ได้นานสุดเท่านี้หลังสตาร์ท — เกินนี้ถือว่าไม่มีผล (เช่นยกเลิกการแข่ง) */
 export const RESULTS_WAIT_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** ช่วงเวลาของหนึ่ง session เป็น epoch ms — ส่งข้าม server → client ได้ตรง ๆ */
+export type SessionWindow = { label: string; start: number; end: number };
+
+/** session แรกที่ยังไม่จบ ณ เวลา now (null = จบหมดแล้ว) — windows ต้องเรียงตามเวลาเริ่ม */
+export function pickSession<W extends SessionWindow>(windows: W[], now: number): W | null {
+  return windows.find((w) => w.end > now) ?? null;
+}

@@ -1,5 +1,7 @@
 import { SCHEDULE_FALLBACK } from "./schedule-fallback";
-import { RACE_TAIL_MS, RESULTS_WAIT_MS } from "./race-window";
+import {
+  RACE_TAIL_MS, RESULTS_WAIT_MS, pickSession, type SessionWindow,
+} from "./race-window";
 import { createGate, fetchRetry } from "./http";
 
 export type SessionTime = { date: string; time?: string };
@@ -457,10 +459,13 @@ export async function getConstructorSeasonResults(
   constructorId: string,
 ): Promise<ConstructorRaceResult[]> {
   try {
-    const d = await jolpica<{
-      MRData: { RaceTable?: { Races?: (Race & { Results: RaceResult[] })[] } };
-    }>(`${season}/constructors/${constructorId}/results/`, 600);
-    return (d.MRData.RaceTable?.Races ?? [])
+    // ทีมมีรถ 2 คัน → 30 แถวต่อหน้าของ Jolpica หมดตั้งแต่สนามที่ 15 ต้องไล่เก็บทีละหน้า
+    const races = await jolpicaRaces<"Results", RaceResult>(
+      `${season}/constructors/${constructorId}/results/`,
+      600,
+      "Results",
+    );
+    return races
       .filter((r) => r.Results?.length)
       .map((r) => ({
         round: r.round,
@@ -714,15 +719,19 @@ const SESSION_DUR_MS: Record<string, number> = {
 };
 const DEFAULT_SESSION_DUR_MS = 90 * 60 * 1000;
 
+/** ทุก session ของสุดสัปดาห์พร้อมเวลาที่ถือว่าจบ — ให้ client เลือก session ถัดไปเองได้ */
+export function getSessionWindows(race: Race): SessionWindow[] {
+  return getSessions(race).map((s) => ({
+    label: s.label,
+    start: s.at.getTime(),
+    end: s.at.getTime() + (SESSION_DUR_MS[s.label] ?? DEFAULT_SESSION_DUR_MS),
+  }));
+}
+
 /** session ถัดไปของสุดสัปดาห์ที่ยังไม่จบ (null = จบหมดแล้ว) */
 export function getNextSession(race: Race, now = new Date()) {
-  return (
-    getSessions(race).find(
-      (s) =>
-        s.at.getTime() + (SESSION_DUR_MS[s.label] ?? DEFAULT_SESSION_DUR_MS) >
-        now.getTime(),
-    ) ?? null
-  );
+  const w = pickSession(getSessionWindows(race), now.getTime());
+  return w ? { label: w.label, at: new Date(w.start) } : null;
 }
 
 /** หา race ถัดไป (นับ race ที่ยังไม่จบ ~2 ชม.หลังสตาร์ท) */
