@@ -12,7 +12,7 @@ import {
   qualiHeadToHead, raceHeadToHead, roundByRound, summarizeDriver,
 } from "@/lib/compare";
 import { getDriverImages } from "@/lib/drivers";
-import { teamColor } from "@/lib/teams";
+import { teamColor, teamName } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
 
 export const metadata: Metadata = {
@@ -101,6 +101,7 @@ export default async function ComparePage({ searchParams }: Props) {
 
   const side = (s: DriverStanding, color: string) => {
     const photo = photos[s.Driver.driverId];
+    const team = s.Constructors.at(-1);
     return (
       <Link
         href={`/driver/${s.Driver.driverId}`}
@@ -121,7 +122,9 @@ export default async function ComparePage({ searchParams }: Props) {
           <span className="block truncate font-bold leading-tight">
             {s.Driver.givenName} <span className="uppercase">{s.Driver.familyName}</span>
           </span>
-          <span className="block truncate text-xs text-white/50">{s.Constructors.at(-1)?.name}</span>
+          <span className="block truncate text-xs text-white/50">
+            {team && teamName(team.constructorId, team.name)}
+          </span>
         </span>
         <span className="text-sm tabular-nums">
           <b>P{s.position}</b> <span className="text-white/50">· {s.points} แต้ม</span>

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Trophy } from "lucide-react";
 import type { DriverStanding, ConstructorStanding } from "@/lib/f1";
-import { TEAM_COLOR } from "@/lib/teams";
+import { TEAM_COLOR, teamName } from "@/lib/teams";
 import { useSlidingPill } from "./useSlidingPill";
 
 function Tabs({
@@ -123,7 +123,9 @@ export default function Standings({
                         {s.Driver.givenName.charAt(0)}.{" "}
                         <span className="uppercase">{s.Driver.familyName}</span>
                       </p>
-                      <p className="truncate text-xs text-white/50">{c?.name}</p>
+                      <p className="truncate text-xs text-white/50">
+                        {c && teamName(c.constructorId, c.name)}
+                      </p>
                       <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
                         <div
                           className="grow-x h-full"
@@ -156,7 +158,9 @@ export default function Standings({
                     className="h-8 w-1 rounded-full"
                     style={{ background: TEAM_COLOR[s.Constructor.constructorId] ?? "#666666" }}
                   />
-                  <span className="flex-1 truncate font-medium">{s.Constructor.name}</span>
+                  <span className="flex-1 truncate font-medium">
+                    {teamName(s.Constructor.constructorId, s.Constructor.name)}
+                  </span>
                   <PointsCell points={s.points} leader={constructorLeader} />
                 </Link>
               </li>
