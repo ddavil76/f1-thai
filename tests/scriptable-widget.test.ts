@@ -10,6 +10,9 @@ import type { DriverStanding, Race } from "@/lib/f1";
  * ดูว่าประกอบ widget ออกมาถูกต้องไหม — อย่างน้อยพิมพ์ผิดจะไม่หลุดไปถึงเครื่องผู้ใช้
  */
 
+// widget จัดรูปวันเวลาตามเขตเวลาของเครื่อง — ล็อกเป็นเวลาไทยให้ผลคงที่ไม่ว่ารันที่ไหน
+process.env.TZ = "Asia/Bangkok";
+
 const SRC = readFileSync(join(__dirname, "../public/scriptable-widget.js"), "utf8");
 
 type Captured = { texts: string[]; dates: Date[]; url?: string; refreshAfter?: Date };
@@ -19,7 +22,7 @@ async function render(payload: unknown, family: "small" | "medium"): Promise<Cap
   const out: Captured = { texts: [], dates: [] };
 
   class FakeText {
-    font: unknown; textColor: unknown; lineLimit = 0;
+    font: unknown; textColor: unknown; lineLimit = 0; minimumScaleFactor = 1;
     applyTimerStyle() {}
   }
   class FakeStack {
@@ -143,6 +146,21 @@ describe("scriptable-widget.js", () => {
     const r = await render(payloadAt("2026-09-20T00:00:00Z", [race()], []), "medium");
     expect(r.texts).toContain("Azerbaijan Grand Prix");
     expect(r.texts).not.toContain("310 แต้ม");
+  });
+
+  it.each(["small", "medium"] as const)("%s: บอกวันและเวลาของ session ถัดไปตามเวลาเครื่อง", async (size) => {
+    // ซ้อม 1 = 2026-09-24T08:30Z → 15:30 เวลาไทย วันพฤหัสบดี
+    const r = await render(payloadAt("2026-09-20T00:00:00Z"), size);
+    expect(r.texts).toContain("พฤ. 24 ก.ย. · 15:30");
+  });
+
+  it("ข้ามวันตามเขตเวลา และเติมศูนย์หน้าชั่วโมง/นาที", async () => {
+    // Race 2026-09-26T23:05Z → อา. 27 ก.ย. 06:05 เวลาไทย
+    const p = payloadAt("2026-09-20T00:00:00Z", [
+      race({ FirstPractice: undefined, date: "2026-09-26", time: "23:05:00Z" }),
+    ]);
+    const r = await render(p, "small");
+    expect(r.texts).toContain("อา. 27 ก.ย. · 06:05");
   });
 
   it("แตะ widget แล้วเปิดเว็บ", async () => {
