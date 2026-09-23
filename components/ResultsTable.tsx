@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Timer } from "lucide-react";
 import type { RaceResult } from "@/lib/f1";
-import { teamColor } from "@/lib/teams";
+import { teamColor, teamName } from "@/lib/teams";
 
 function gapText(r: RaceResult, i: number) {
   if (r.status !== "Finished" && !r.status.startsWith("+")) return r.status;
@@ -49,7 +49,9 @@ export default function ResultsTable({
                     </span>
                   )}
                 </p>
-                <p className="truncate text-xs text-white/50">{r.Constructor.name}</p>
+                <p className="truncate text-xs text-white/50">
+                  {teamName(r.Constructor.constructorId, r.Constructor.name)}
+                </p>
               </div>
               <span className="shrink-0 text-right text-xs tabular-nums text-white/60">
                 {gapText(r, i)}

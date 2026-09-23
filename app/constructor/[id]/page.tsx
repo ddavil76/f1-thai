@@ -8,7 +8,7 @@ import {
   getConstructorSeasonResultsOrThrow, isClassifiedFinish,
 } from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
-import { teamColor } from "@/lib/teams";
+import { teamColor, teamName } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import CountUp from "@/components/CountUp";
 import PuCard from "@/components/PuCard";
@@ -34,8 +34,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   );
   if (!s) return {};
   return {
-    title: s.Constructor.name,
-    description: `ผลรายสนามและอันดับของ ${s.Constructor.name} — ฤดูกาล ${SEASON}`,
+    title: teamName(id, s.Constructor.name),
+    description: `ผลรายสนามและอันดับของ ${teamName(id, s.Constructor.name)} — ฤดูกาล ${SEASON}`,
   };
 }
 
@@ -92,7 +92,7 @@ export default async function ConstructorPage({ params }: Params) {
           />
           <h1 className="text-2xl font-black tracking-tight md:text-3xl">
             {standing ? `${flag(standing.Constructor.nationality)} ` : ""}
-            {info.name}
+            {teamName(id, info.name)}
           </h1>
         </div>
 

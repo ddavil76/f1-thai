@@ -8,7 +8,7 @@ import {
   getDriverSeasonResultsOrThrow, isClassifiedFinish,
 } from "@/lib/f1";
 import { getDriverImage } from "@/lib/drivers";
-import { teamColor } from "@/lib/teams";
+import { teamColor, teamName } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import TeammateH2H from "@/components/TeammateH2H";
 import CountUp from "@/components/CountUp";
@@ -110,7 +110,7 @@ export default async function DriverPage({ params }: Params) {
             </h1>
             <p className="text-sm text-white/60">
               {driver.permanentNumber ? `#${driver.permanentNumber} · ` : ""}
-              {team?.name}
+              {team && teamName(team.constructorId, team.name)}
             </p>
           </div>
         </div>

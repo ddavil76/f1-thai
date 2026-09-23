@@ -1,5 +1,5 @@
 import type { QualifyingResult } from "@/lib/f1";
-import { teamColor } from "@/lib/teams";
+import { teamColor, teamName } from "@/lib/teams";
 
 /** เวลาที่ดีที่สุด + รอบที่ตกรอบ */
 function best(q: QualifyingResult) {
@@ -44,7 +44,9 @@ export default function QualifyingTable({
                     </span>
                   )}
                 </p>
-                <p className="truncate text-xs text-white/50">{q.Constructor.name}</p>
+                <p className="truncate text-xs text-white/50">
+                  {teamName(q.Constructor.constructorId, q.Constructor.name)}
+                </p>
               </div>
               {b.seg && b.seg !== "Q3" && (
                 <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40">
