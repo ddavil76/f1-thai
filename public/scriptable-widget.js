@@ -25,6 +25,18 @@ const TEAM = {
   audi: "#00e700", sauber: "#00e700", cadillac: "#b6a36d",
 };
 
+// วัน/เดือนแบบย่อภาษาไทย — จัดรูปเองแทน DateFormatter เพื่อไม่ขึ้นกับภาษาเครื่อง
+// (ตั้งเครื่องเป็นอังกฤษก็ยังได้ภาษาไทย) · เวลาเป็นเขตเวลาของเครื่องผู้ใช้
+const TH_DAY = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+const TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+                "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+/** "พฤ. 24 ก.ย. · 15:30" */
+function when(d) {
+  const hm = [d.getHours(), d.getMinutes()].map((n) => String(n).padStart(2, "0")).join(":");
+  return `${TH_DAY[d.getDay()]} ${d.getDate()} ${TH_MON[d.getMonth()]} · ${hm}`;
+}
+
 async function load() {
   const req = new Request(`${SITE}/api/widget`);
   req.timeoutInterval = 15;
@@ -82,15 +94,31 @@ function build(data, medium) {
 
   // นับถอยหลังไป session ถัดไป (ถ้าไม่มีก็ใช้เวลาออกสตาร์ท)
   const target = new Date(session ? session.startsAt : race.startsAt);
-  line(w, state === "live"
-        ? `${session ? session.label : "Race"} · กำลังแข่ง`
-        : `${session ? session.label : "Race"} · เริ่มอีก`,
-       { size: 10, color: DIM });
+  const label = state === "live"
+    ? `${session ? session.label : "Race"} · กำลังแข่ง`
+    : `${session ? session.label : "Race"} · เริ่มอีก`;
+
+  if (medium) {
+    // medium กว้างพอ — วางวันเวลาไว้ขวาแถวเดียวกัน ไม่กินความสูงเพิ่ม
+    const row = w.addStack();
+    row.centerAlignContent();
+    line(row, label, { size: 10, color: DIM });
+    row.addSpacer();
+    line(row, when(target), { size: 11, bold: true });
+  } else {
+    line(w, label, { size: 10, color: DIM });
+  }
 
   const timer = w.addDate(target);
   timer.applyTimerStyle();
   timer.font = Font.boldSystemFont(medium ? 30 : 24);
   timer.textColor = accent;
+
+  // small แคบ ต่อแถวเดียวกันไม่พอ — ขึ้นบรรทัดใต้ตัวนับถอยหลัง
+  if (!medium) {
+    const t = line(w, when(target), { size: 11, bold: true });
+    t.minimumScaleFactor = 0.8;
+  }
 
   // แถวล่าง: ผู้นำตารางคะแนน (เฉพาะขนาด medium ที่มีที่พอ)
   if (medium && leader) {
