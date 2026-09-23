@@ -154,7 +154,9 @@
 .winner-hero::before {
   content: "";
   position: absolute;
-  inset: -3rem -50vw -2rem;
+  /* ด้านข้างยื่นได้แค่เท่าระยะขอบหน้า (px-4) — ถ้าเลยขอบจอ (เคยใช้ -50vw) หน้าบน iPhone
+     จะกว้างเกินจอจนเลื่อนข้างได้ และเมนูล่าง (fixed) เยื้องไปทางขวา */
+  inset: -3rem -1rem -2rem;
   z-index: -1;
   pointer-events: none;
   background: radial-gradient(
