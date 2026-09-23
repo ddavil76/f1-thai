@@ -14,12 +14,28 @@ import type { DriverStanding, Race } from "@/lib/f1";
 process.env.TZ = "Asia/Bangkok";
 
 const SRC = readFileSync(join(__dirname, "../public/scriptable-widget.js"), "utf8");
+const LOADER = readFileSync(join(__dirname, "../public/widget.js"), "utf8");
 
 type Captured = { texts: string[]; dates: Date[]; url?: string; refreshAfter?: Date };
 
-/** รันสคริปต์ด้วย Scriptable API ปลอม แล้วคืนสิ่งที่มันวาด */
-async function render(payload: unknown, family: "small" | "medium"): Promise<Captured> {
+type Env = {
+  /** สิ่งที่ /api/widget ตอบ — null = ต่อเน็ตไม่ได้ */
+  payload: unknown;
+  family: "small" | "medium";
+  /** สิ่งที่ /scriptable-widget.js ตอบ (ใช้ตอนรันผ่านตัวโหลด) — null = ต่อเน็ตไม่ได้ */
+  code?: { status: number; body: string } | null;
+  /** ไฟล์ในเครื่อง (FileManager.local) — ตัวโหลดเก็บโค้ดสำรองไว้ที่นี่ */
+  files?: Map<string, string>;
+};
+
+/**
+ * รันสคริปต์ด้วย Scriptable API ปลอม แล้วคืนสิ่งที่มันวาด
+ * API ต้องอยู่บน globalThis จริง ๆ เพราะตัวโหลดรันโค้ด widget ซ้อนด้วย new Function
+ * ซึ่งมองไม่เห็นตัวแปรนอก global
+ */
+async function run(src: string, env: Env): Promise<Captured> {
   const out: Captured = { texts: [], dates: [] };
+  const files = env.files ?? new Map<string, string>();
 
   class FakeText {
     font: unknown; textColor: unknown; lineLimit = 0; minimumScaleFactor = 1;
@@ -36,9 +52,10 @@ async function render(payload: unknown, family: "small" | "medium"): Promise<Cap
     set url(v: string) { out.url = v; }
     set refreshAfterDate(v: Date) { out.refreshAfter = v; }
     async presentMedium() {}
+    async presentSmall() {}
   }
 
-  const globals = {
+  const globals: Record<string, unknown> = {
     Color: class FakeColor {
       constructor(public hex: string, public alpha?: number) {}
       static white() { return new FakeColor("#ffffff"); }
@@ -48,23 +65,42 @@ async function render(payload: unknown, family: "small" | "medium"): Promise<Cap
     ListWidget: FakeStack,
     Request: class {
       timeoutInterval = 0;
+      response: { statusCode: number } | undefined;
       constructor(public url: string) {}
       async loadJSON() {
-        if (payload === null) throw new Error("offline");
-        return payload;
+        if (env.payload === null) throw new Error("offline");
+        return env.payload;
+      }
+      async loadString() {
+        if (!env.code) throw new Error("offline");
+        this.response = { statusCode: env.code.status };
+        return env.code.body;
       }
     },
-    config: { widgetFamily: family, runsInWidget: true },
+    FileManager: {
+      local: () => ({
+        documentsDirectory: () => "/docs",
+        joinPath: (a: string, b: string) => `${a}/${b}`,
+        fileExists: (f: string) => files.has(f),
+        readString: (f: string) => files.get(f),
+        writeString: (f: string, v: string) => void files.set(f, v),
+      }),
+    },
+    config: { widgetFamily: env.family, runsInWidget: true },
     Script: { setWidget() {}, complete() {} },
   };
 
-  const fn = new Function(
-    ...Object.keys(globals),
-    `return (async () => {\n${SRC}\n})()`,
-  );
-  await fn(...Object.values(globals));
+  const g = globalThis as Record<string, unknown>;
+  Object.assign(g, globals);
+  try {
+    await new Function(`return (async () => {\n${src}\n})()`)();
+  } finally {
+    for (const k of Object.keys(globals)) delete g[k];
+  }
   return out;
 }
+
+const render = (payload: unknown, family: "small" | "medium") => run(SRC, { payload, family });
 
 const race = (over: Partial<Race> = {}): Race => ({
   season: "2026", round: "15", raceName: "Azerbaijan Grand Prix",
@@ -166,5 +202,41 @@ describe("scriptable-widget.js", () => {
   it("แตะ widget แล้วเปิดเว็บ", async () => {
     const r = await render(payloadAt("2026-09-20T00:00:00Z"), "medium");
     expect(r.url).toMatch(/^https:\/\//);
+  });
+});
+
+describe("widget.js (ตัวโหลดที่ดึงโค้ดล่าสุดจากเว็บ)", () => {
+  const payload = () => payloadAt("2026-09-20T00:00:00Z");
+  const CACHE = "/docs/f1-widget-cache.js";
+
+  it("ดึงโค้ดจากเว็บมารัน แล้วเก็บสำรองไว้ในเครื่อง", async () => {
+    const files = new Map<string, string>();
+    const r = await run(LOADER, { payload: payload(), family: "medium", code: { status: 200, body: SRC }, files });
+    expect(r.texts).toContain("Azerbaijan Grand Prix");
+    expect(r.texts).toContain("พฤ. 24 ก.ย. · 15:30");
+    expect(files.get(CACHE)).toBe(SRC);
+  });
+
+  it("ต่อเว็บไม่ได้ → ใช้โค้ดสำรองที่เคยโหลดไว้", async () => {
+    const files = new Map([[CACHE, SRC]]);
+    const r = await run(LOADER, { payload: payload(), family: "small", code: null, files });
+    expect(r.texts).toContain("Azerbaijan Grand Prix");
+  });
+
+  it("เว็บตอบหน้า error → ไม่เอามารัน ไม่ทับโค้ดสำรอง", async () => {
+    const files = new Map([[CACHE, SRC]]);
+    const html = { status: 404, body: "<!DOCTYPE html><html>F1 Week Race 404</html>" };
+    const r = await run(LOADER, { payload: payload(), family: "small", code: html, files });
+    expect(r.texts).toContain("Azerbaijan Grand Prix");
+    expect(files.get(CACHE)).toBe(SRC);
+  });
+
+  it("ครั้งแรกแล้วต่อเน็ตไม่ได้ (ยังไม่มีโค้ดสำรอง) → บอกผู้ใช้แทนที่จะพัง", async () => {
+    const r = await run(LOADER, { payload: null, family: "small", code: null });
+    expect(r.texts.join(" ")).toContain("ต่อเน็ตไม่ได้");
+  });
+
+  it("โค้ดบนเว็บมีสิ่งที่ตัวโหลดใช้เช็กว่าเป็นโค้ดจริง", () => {
+    expect(SRC).toContain("Script.setWidget");
   });
 });
