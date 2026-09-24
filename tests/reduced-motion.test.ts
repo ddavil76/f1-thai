@@ -46,7 +46,7 @@ describe("prefers-reduced-motion", () => {
 
   it("class เคลื่อนไหวที่เขียนเองก็ต้องถูกปิดด้วย", () => {
     // keyframes ที่ประกาศเองใน globals.css แล้วผูกกับ class ที่ไม่ได้ขึ้นต้นด้วย animate-
-    for (const cls of ["champ-reveal", "stagger", "podium-rise", "grow-x", "track-draw", "racing-dot", "go-flash", "launch-intro"]) {
+    for (const cls of ["champ-reveal", "stagger", "podium-rise", "grow-x", "track-draw", "racing-dot", "go-flash", "launch-intro", "tilt"]) {
       expect(reduceBlock, `.${cls} หายไปจากบล็อก reduced-motion`).toContain(`.${cls}`);
     }
   });

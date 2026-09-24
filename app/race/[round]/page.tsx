@@ -14,6 +14,7 @@ import ResultsRefresher from "@/components/ResultsRefresher";
 import ResultsTable from "@/components/ResultsTable";
 import QualifyingTable from "@/components/QualifyingTable";
 import PodiumGraphic from "@/components/PodiumGraphic";
+import TiltCard from "@/components/TiltCard";
 import WeatherBadge from "@/components/WeatherBadge";
 import LocalTime from "@/components/tz/LocalTime";
 import SiteFooter from "@/components/SiteFooter";
@@ -222,9 +223,9 @@ export default async function RacePage({ params }: Params) {
       )}
 
       {past && results && results.Results.length >= 3 && (
-        <section className="card p-5">
+        <TiltCard className="card p-5">
           <PodiumGraphic top3={results.Results.slice(0, 3)} />
-        </section>
+        </TiltCard>
       )}
       {past && SEASON >= 2023 && results && results.Results.length > 0 && (
         <Link
