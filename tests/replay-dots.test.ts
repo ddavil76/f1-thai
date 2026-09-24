@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dotsAt, type ReplayFrame, type ReplayRow } from "@/lib/replay";
+import { dotsAt, matchRaceSession, type ReplayFrame, type ReplayRow } from "@/lib/replay";
 
 const row = (num: number, pos: number, frac: number, out = false) =>
   ({ num, pos, frac, out }) as ReplayRow;
@@ -33,5 +33,30 @@ describe("dotsAt", () => {
   it("เลย frame สุดท้าย → ค้างที่ frame สุดท้าย · ไม่มี frame → ว่าง", () => {
     expect(dotsAt(frames, 999_999).find((x) => x.num === 4)!.frac).toBe(2);
     expect(dotsAt([], 0)).toEqual([]);
+  });
+});
+
+describe("matchRaceSession", () => {
+  const list = [
+    { session_key: 1, date_start: "2026-03-08T04:00:00+00:00" }, // ออสเตรเลีย
+    { session_key: 2, date_start: "2026-03-15T07:00:00+00:00" },
+    // Las Vegas: สตาร์ทคืนวันเสาร์ท้องถิ่น = เช้าวันอาทิตย์ UTC
+    { session_key: 3, date_start: "2026-11-22T04:00:00+00:00" },
+    { session_key: 4, date_start: "not a date" },
+  ];
+
+  it("เลือก session ที่เวลาใกล้สตาร์ทตามปฏิทินที่สุด", () => {
+    expect(matchRaceSession(list, Date.parse("2026-03-08T04:00:00Z"))).toBe(1);
+    expect(matchRaceSession(list, Date.parse("2026-03-15T07:00:00Z"))).toBe(2);
+  });
+
+  it("วันที่ท้องถิ่นกับ UTC ต่างกัน (Las Vegas) ก็ยังจับคู่ได้", () => {
+    // ปฏิทินเขียนเป็นวันเสาร์ แต่เวลาห่างไม่ถึงวัน
+    expect(matchRaceSession(list, Date.parse("2026-11-21T20:00:00Z"))).toBe(3);
+  });
+
+  it("ห่างเกิน 36 ชม. ไม่นับ · รายการว่างหรือวันที่พัง → null", () => {
+    expect(matchRaceSession(list, Date.parse("2026-04-05T05:00:00Z"))).toBeNull();
+    expect(matchRaceSession([], Date.now())).toBeNull();
   });
 });

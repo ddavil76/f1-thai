@@ -104,12 +104,12 @@ async function fetchElevation(
 ): Promise<TrackPoint3[] | null> {
   // ใช้การแข่งของปีก่อน ๆ (openf1 มีตั้งแต่ 2023) — สนามใหม่ที่ไม่เคยจัดก็ไม่มีข้อมูล
   for (const year of [season - 1, season - 2, season - 3].filter((y) => y >= 2023)) {
-    const sessions = await of1<Of1Session[]>(`sessions?year=${year}&session_name=Race`);
+    const sessions = await of1<Of1Session[]>(`sessions?year=${year}&session_name=Race`, "force-cache");
     const s = pickSession(sessions, country, locality);
     if (!s) continue;
 
     // รอบกลางการแข่ง ยางเข้าที่แล้ว — เลือกคันที่เร็วสุดในรอบนั้น (ไม่ใช่รอบออกพิท)
-    const laps = await of1<Of1Lap[]>(`laps?session_key=${s.session_key}&lap_number=15`);
+    const laps = await of1<Of1Lap[]>(`laps?session_key=${s.session_key}&lap_number=15`, "force-cache");
     const best = laps
       .filter((l) => l.lap_duration && l.date_start && !l.is_pit_out_lap)
       .sort((a, b) => a.lap_duration! - b.lap_duration!)[0];
@@ -121,6 +121,7 @@ async function fetchElevation(
     const loc = await of1<Of1Location[]>(
       `location?session_key=${s.session_key}&driver_number=${best.driver_number}` +
         `&date>${iso(from)}&date<${iso(to)}`,
+      "force-cache",
     );
     const track = locationToTrack(loc);
     if (track) return track;

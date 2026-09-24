@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { getSchedule, isPastRace } from "@/lib/f1";
+import { getSchedule, isPastRace, toDate } from "@/lib/f1";
 import { circuitTrack } from "@/lib/circuits";
 import ReplayLoader from "@/components/replay/ReplayLoader";
 import SiteFooter from "@/components/SiteFooter";
@@ -61,7 +61,7 @@ export default async function ReplayPage({ params }: Params) {
       {past ? (
         <ReplayLoader
           season={SEASON}
-          raceDate={race.date}
+          raceStart={toDate({ date: race.date, time: race.time })?.toISOString() ?? null}
           track={circuitTrack(race.Circuit.circuitId)}
         />
       ) : (

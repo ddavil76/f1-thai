@@ -11,12 +11,18 @@ const OF1 = "https://api.openf1.org/v1";
 const ATTEMPTS = 5;
 const gate = createGate(1);
 
-export async function of1<T>(path: string): Promise<T> {
+/**
+ * cache ของเบราว์เซอร์ — ค่าเริ่มต้น "no-cache" (ถามเซิร์ฟเวอร์ทุกครั้ง)
+ * เคยใช้ "force-cache" ซึ่งใช้ของเก่าในเครื่องตลอดไปไม่ว่าจะเก่าแค่ไหน: รายชื่อ session
+ * ที่ดึงไว้ต้นฤดูกาลเลยไม่มีสนามที่แข่งทีหลัง → รีเพลย์สนามหลัง ๆ ขึ้น "ยังไม่มีข้อมูล" ถาวร
+ * ใช้ "force-cache" ได้เฉพาะข้อมูลย้อนหลังที่ไม่เปลี่ยนแล้วจริง ๆ (เช่นการแข่งปีก่อน ๆ)
+ */
+export async function of1<T>(path: string, cache: RequestCache = "no-cache"): Promise<T> {
   // กอดคิวไว้ทั้งชุด (รวม backoff) — ยิงแทรกระหว่างที่ openf1 กำลังบ่นมีแต่ทำให้แย่ลง
   return gate(async () => {
     const res = await fetchRetry(`${OF1}/${path}`, {
       source: "openf1",
-      init: { cache: "force-cache" },
+      init: { cache },
       attempts: ATTEMPTS,
       backoffMs: (n) => Math.min(8000, 1200 * 2 ** (n - 1)),
     });
