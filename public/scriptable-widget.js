@@ -57,6 +57,26 @@ async function load() {
   return await req.loadJSON();
 }
 
+/* ---------- สถานะ ณ ตอนวาด ---------- */
+
+/**
+ * เลือก session ตาม "เวลาเครื่องตอนวาด" ไม่เชื่อ state ในข้อมูลอย่างเดียว
+ * ข้อมูลอาจเก่าได้ราวครึ่งชั่วโมง (iOS คุมรอบรีเฟรช + แคชฝั่งเว็บ) ถ้า session เริ่ม/จบ
+ * ในช่วงนั้น widget จะนับถอยหลังไปเวลาที่ผ่านไปแล้ว — timer ของ iOS เลยนับขึ้นต่อ
+ * มีตารางทั้งสุดสัปดาห์ (sessions) อยู่แล้ว จึงเลื่อนไป session ถัดไปเองได้
+ * · state "live" = อยู่ระหว่างเวลาเริ่มถึงเวลาจบ · "done" = จบทั้งสุดสัปดาห์แล้ว (รอข้อมูลสนามถัดไป)
+ */
+function normalize(data) {
+  if (!data || !data.race) return data;
+  const now = Date.now();
+  const list = data.sessions && data.sessions.length ? data.sessions : data.session ? [data.session] : [];
+  if (list.length === 0) return data;
+  // ข้อมูลรุ่นเก่าไม่มี endsAt — ถือว่าจบตอนเริ่ม (ข้ามไปตัวถัดไปเลย ดีกว่านับขึ้น)
+  const s = list.find((x) => Date.parse(x.endsAt || x.startsAt) > now);
+  if (!s) return Object.assign({}, data, { session: null, state: "done" });
+  return Object.assign({}, data, { session: s, state: Date.parse(s.startsAt) <= now ? "live" : "upcoming" });
+}
+
 /* ---------- ชิ้นส่วน ---------- */
 
 // ตัวเลขกว้างเท่ากันทุกตัว ไม่กระตุกตอนเดิน — Scriptable รุ่นเก่าไม่มี ใช้ตัวหนาธรรมดาแทน
@@ -237,9 +257,13 @@ function sessionBlock(body, data, { timerSize, dateSize = 11 }) {
   const r = row(body);
   r.spacing = 6;
   badge(r, code);
-  text(r, data.state === "live" ? "กำลังแข่ง" : "เริ่มอีก", { size: 10, color: DIM });
+  const label = data.state === "live" ? "กำลังแข่ง" : data.state === "done" ? "จบสุดสัปดาห์" : "เริ่มอีก";
+  text(r, label, { size: 10, color: DIM });
   body.addSpacer(2);
-  countdown(body, target, timerSize);
+  // เลยเวลาเริ่มแล้วห้ามใช้ timer — iOS จะนับขึ้นต่อจาก 0 เหมือนนับไม่หยุด
+  if (data.state === "live") text(body, "● LIVE", { size: Math.round(timerSize * 0.8), color: GREEN, heavy: true });
+  else if (data.state === "done") text(body, "🏁 จบแล้ว", { size: Math.round(timerSize * 0.7), heavy: true });
+  else countdown(body, target, timerSize);
   const d = text(body, when(new Date(target)), { size: dateSize, color: DIM });
   d.minimumScaleFactor = 0.8;
 }
@@ -411,6 +435,7 @@ function lockRect(data) {
   text(w, `${data.race.flag} ${data.race.short.toUpperCase()}`, { size: 13, heavy: true });
   text(w, `${t.code} · ${when(new Date(t.iso))}`, { size: 11 });
   if (data.state === "live") text(w, "● กำลังแข่ง", { size: 13, bold: true });
+  else if (data.state === "done") text(w, "🏁 จบแล้ว", { size: 13, bold: true });
   else countdown(w, t.iso, 16);
   return w;
 }
@@ -426,6 +451,10 @@ function lockCircle(data) {
   c.centerAlignText();
   c.minimumScaleFactor = 0.6;
   const d = new Date(t.iso);
+  if (data.state === "live" || data.state === "done") {
+    text(w, data.state === "live" ? "LIVE" : "🏁", { size: 12, heavy: true }).centerAlignText();
+    return w;
+  }
   // เกิน 1 วันบอกวัน+เวลา ไม่งั้นนับถอยหลัง (วงกลมแคบ ตัวเลขยาวไม่พอดี)
   if (d.getTime() - Date.now() > DAY) {
     text(w, TH_DAY[d.getDay()], { size: 11 }).centerAlignText();
@@ -460,15 +489,16 @@ function build(data, family) {
 /** ขอรีเฟรชตรงจังหวะที่ widget ต้องเปลี่ยนหน้าตา (iOS ถือเป็นคำขอ ไม่ใช่คำสั่ง) */
 function nextRefresh(data) {
   const now = Date.now();
-  if (data && data.state === "live") return new Date(now + 5 * 60 * 1000);
-  const soon = now + 30 * 60 * 1000;
-  const start = data && data.session ? Date.parse(data.session.startsAt) : NaN;
-  // จังหวะที่หน้าตาต้องเปลี่ยน: session เริ่ม (ขึ้น LIVE) และเหลือ 1 วัน (เปลี่ยนเป็น timer)
-  const turns = [start + 30 * 1000, start - DAY].filter((t) => t > now && t < soon);
+  const soon = now + (data && data.state === "live" ? 5 : 30) * 60 * 1000;
+  const s = data && data.session;
+  const start = s ? Date.parse(s.startsAt) : NaN;
+  const end = s && s.endsAt ? Date.parse(s.endsAt) : NaN;
+  // จังหวะที่หน้าตาต้องเปลี่ยน: session เริ่ม (ขึ้น LIVE), จบ (ไปตัวถัดไป), เหลือ 1 วัน (เปลี่ยนเป็น timer)
+  const turns = [start + 5 * 1000, end + 5 * 1000, start - DAY].filter((t) => t > now && t < soon);
   return new Date(turns.length ? Math.min(...turns) : soon);
 }
 
-const data = await load().catch(() => null);
+const data = normalize(await load().catch(() => null));
 const family = config.widgetFamily || "medium";
 const widget = build(data, family);
 widget.refreshAfterDate = nextRefresh(data);
