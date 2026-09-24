@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { whenVisible } from "@/lib/visible";
 import { Mountain, Rotate3d, X } from "lucide-react";
 import { ELEVATION_EXAGGERATION } from "@/lib/elevation";
 
@@ -50,7 +51,12 @@ export default function Track3D({
     let disposed = false;
     let cleanup = () => {};
 
+    // สร้างฉากเมื่อมองเห็นจริงเท่านั้น (แท็บที่ยังไม่เปิด / ยังเลื่อนไม่ถึง → ยังไม่โหลดอะไร)
+    const visible = whenVisible(el);
+
     (async () => {
+      await visible.ready;
+      if (disposed) return;
       const THREE = await import("three");
       const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
       const { buildTrack, buildGrid, fitDistance, glowTexture } = await import("@/lib/three-track");
@@ -164,6 +170,8 @@ export default function Track3D({
         grid.dispose();
         [carGeo, carMat, haloTex, haloMat].forEach((d) => d.dispose());
         renderer.dispose();
+        // คืน WebGL context ทันที ไม่รอ GC — Safari บน iPhone จำกัดจำนวน context ที่เปิดค้างได้เข้มกว่า
+        renderer.forceContextLoss();
         renderer.domElement.remove();
       };
 
@@ -186,6 +194,7 @@ export default function Track3D({
 
     return () => {
       disposed = true;
+      visible.cancel();
       cleanup();
     };
   }, [points, elevKey]);

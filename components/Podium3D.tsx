@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { whenVisible } from "@/lib/visible";
 
 type Slot = { pos: number; color: string };
 
@@ -29,7 +30,12 @@ export default function Podium3D({ slots, children }: { slots: Slot[]; children:
     let disposed = false;
     let cleanup = () => {};
 
+    // สร้างฉากเมื่อมองเห็นจริงเท่านั้น (แท็บที่ยังไม่เปิด / ยังเลื่อนไม่ถึง → ยังไม่โหลดอะไร)
+    const visible = whenVisible(el);
+
     (async () => {
+      await visible.ready;
+      if (disposed) return;
       const THREE = await import("three");
       if (disposed) return;
 
@@ -200,6 +206,8 @@ export default function Podium3D({ slots, children }: { slots: Slot[]; children:
         [confGeo, confMat].forEach((d) => d.dispose());
         confetti.dispose();
         renderer.dispose();
+        // คืน WebGL context ทันที ไม่รอ GC — Safari บน iPhone จำกัดจำนวน context ที่เปิดค้างได้เข้มกว่า
+        renderer.forceContextLoss();
         cv.remove();
       };
       if (disposed) cleanup();
@@ -209,6 +217,7 @@ export default function Podium3D({ slots, children }: { slots: Slot[]; children:
 
     return () => {
       disposed = true;
+      visible.cancel();
       cleanup();
     };
   }, [key]);

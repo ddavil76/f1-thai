@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { whenVisible } from "@/lib/visible";
 import { Rotate3d, X } from "lucide-react";
 import type { TrackPath } from "@/lib/circuits";
 import { dotsAt, type ReplayDriver, type ReplayFrame } from "@/lib/replay";
@@ -47,7 +48,12 @@ export default function Replay3D({
     let disposed = false;
     let cleanup = () => {};
 
+    // สร้างฉากเมื่อมองเห็นจริงเท่านั้น (แท็บที่ยังไม่เปิด / ยังเลื่อนไม่ถึง → ยังไม่โหลดอะไร)
+    const visible = whenVisible(el);
+
     (async () => {
+      await visible.ready;
+      if (disposed) return;
       const THREE = await import("three");
       const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
       const { buildTrack, buildGrid, fitDistance } = await import("@/lib/three-track");
@@ -200,6 +206,8 @@ export default function Replay3D({
         grid.dispose();
         disposables.forEach((d) => d.dispose());
         renderer.dispose();
+        // คืน WebGL context ทันที ไม่รอ GC — Safari บน iPhone จำกัดจำนวน context ที่เปิดค้างได้เข้มกว่า
+        renderer.forceContextLoss();
         renderer.domElement.remove();
       };
       if (disposed) cleanup();
@@ -207,6 +215,7 @@ export default function Replay3D({
 
     return () => {
       disposed = true;
+      visible.cancel();
       cleanup();
     };
   }, [track, frames, drivers, timeRef]);
