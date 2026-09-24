@@ -324,12 +324,60 @@ describe("scriptable-widget.js — ทุกขนาด", () => {
 
   it("ใกล้ session เริ่ม → ขอรีเฟรชตรงเวลาเริ่ม ให้ป้ายเปลี่ยนเป็น LIVE ทัน", async () => {
     const r = await render("small", "2026-09-24T08:20:00Z");
-    expect(r.refreshAfter!.toISOString()).toBe("2026-09-24T08:30:30.000Z");
+    expect(r.refreshAfter!.toISOString()).toBe("2026-09-24T08:30:05.000Z");
   });
 
   it("สุดสัปดาห์ที่มีสปรินต์ติดป้าย SPRINT", async () => {
     const p = payloadAt(CALM, [race({ Sprint: { date: "2026-09-25", time: "10:00:00Z" } })]);
     expect((await render("medium", CALM, p)).texts).toContain("SPRINT");
+  });
+});
+
+describe("scriptable-widget.js — ไม่นับขึ้นหลังถึงเวลา (ข้อมูลในเครื่องเก่ากว่าเวลาจริง)", () => {
+  // ข้อมูลดึงมาตั้งแต่ CALM (ซ้อม 1 ยังไม่เริ่ม) แต่ iOS มาวาดตอนเวลาผ่านไปแล้ว
+  const stale = () => payloadAt(CALM);
+
+  it("ถึงเวลาเริ่มแล้ว → LIVE ไม่ใช่ timer (timer ของ iOS จะนับขึ้นต่อจาก 0)", async () => {
+    for (const f of ["small", "medium", "large"] as const) {
+      const r = await render(f, "2026-09-24T08:40:00Z", stale());
+      expect(r.dates).toHaveLength(0);
+      expect(r.texts).toContain("● LIVE");
+      expect(r.texts).toContain("กำลังแข่ง");
+    }
+  });
+
+  it("ข้อมูลจาก API บอก live ก็ไม่มี timer เหมือนกัน", async () => {
+    const r = await render("small", "2026-09-24T09:00:00Z");
+    expect(r.dates).toHaveLength(0);
+    expect(r.texts).toContain("● LIVE");
+  });
+
+  it("session จบแล้วแต่ข้อมูลยังชี้ตัวเดิม → เลื่อนไปนับถอยหลัง session ถัดไปเอง", async () => {
+    // ซ้อม 1 จบราว 10:00Z → ถัดไปคือควอลิฟาย 2026-09-25T12:00Z (เหลือไม่ถึงวัน → timer)
+    const r = await render("small", "2026-09-24T13:00:00Z", stale());
+    expect(r.texts).toContain("Q");
+    expect(r.dates.map((d) => d.toISOString())).toEqual(["2026-09-25T12:00:00.000Z"]);
+  });
+
+  it("จบทั้งสุดสัปดาห์แล้วแต่ยังไม่ได้ข้อมูลสนามถัดไป → 🏁 จบแล้ว ไม่นับขึ้น", async () => {
+    const r = await render("medium", "2026-09-26T14:00:00Z", stale());
+    expect(r.dates).toHaveLength(0);
+    expect(r.texts).toContain("🏁 จบแล้ว");
+  });
+
+  it("หน้าจอล็อกก็เหมือนกัน", async () => {
+    const circle = await render("accessoryCircular", "2026-09-24T08:40:00Z", stale());
+    expect(circle.texts).toContain("LIVE");
+    expect(circle.dates).toHaveLength(0);
+    const rect = await render("accessoryRectangular", "2026-09-24T08:40:00Z", stale());
+    expect(rect.texts).toContain("● กำลังแข่ง");
+    expect(rect.dates).toHaveLength(0);
+  });
+
+  it("ระหว่างแข่งขอรีเฟรชตอนจบ session ให้ไปตัวถัดไปทัน", async () => {
+    // ซ้อม 1 จบ 10:00Z · อีก 3 นาที → ขอรีเฟรชตอนจบ (ไม่ใช่ครบ 5 นาที)
+    const r = await render("small", "2026-09-24T09:57:00Z", stale());
+    expect(r.refreshAfter!.toISOString()).toBe("2026-09-24T10:00:05.000Z");
   });
 });
 
