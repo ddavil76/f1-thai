@@ -130,18 +130,28 @@ tests/                ยูนิตเทสต์ (Vitest)
 
 ## Widget บน iPhone
 
-`/api/widget` คืน JSON ก้อนเล็ก (~420 bytes) ที่มีสนามถัดไป session ถัดไป และผู้นำ
-ตารางคะแนน สำหรับเอาไปทำ widget บนหน้าโฮม — เปิด CORS ไว้ (`Access-Control-Allow-Origin: *`)
-เพราะเป็นข้อมูลสาธารณะอ่านอย่างเดียว
+`/api/widget` คืน JSON ก้อนเล็ก (~2 KB ส่วนใหญ่เป็นจุดผังสนาม) สำหรับเอาไปทำ widget บนหน้าโฮม —
+เปิด CORS ไว้ (`Access-Control-Allow-Origin: *`) เพราะเป็นข้อมูลสาธารณะอ่านอย่างเดียว
 
 ```jsonc
 {
   "season": 2026,
   "state": "upcoming",        // upcoming · live · season-over · no-calendar
   "generatedAt": "…",
-  "race":    { "round": "15", "name": "…", "circuit": "…", "startsAt": "…", "isSprint": false },
-  "session": { "label": "ซ้อม 1", "startsAt": "…" },
-  "leader":  { "name": "M. Verstappen", "points": 400, "constructorId": "red_bull" }
+  "race": {
+    "round": "15", "name": "Azerbaijan Grand Prix",
+    "short": "Azerbaijan",    // ชื่อประเทศแบบแอป F1 · ประเทศที่มีหลายสนามใช้ชื่อเมือง (Miami, Las Vegas)
+    "flag": "🇦🇿", "circuit": "…", "circuitId": "baku", "locality": "Baku", "country": "Azerbaijan",
+    "startsAt": "…", "isSprint": false,
+    "track": { "w": 100, "h": 57.4, "pts": [12.3, 40.1, …] }  // ผังสนามย่อ ≤ 64 จุด (x,y สลับกัน)
+  },
+  "session":  { "code": "FP1", "label": "ซ้อม 1", "startsAt": "…", "endsAt": "…" },
+  "sessions": [ /* ทุก session ของสุดสัปดาห์ รูปเดียวกับ session */ ],
+  "leader":   { "name": "M. Verstappen", "points": 400, "constructorId": "red_bull" },
+  "top3":     [ { "code": "VER", "name": "M. Verstappen", "points": 400, "constructorId": "red_bull" }, … ],
+  "lastRace": { "round": "14", "short": "Spain", "flag": "🇪🇸", "startsAt": "…",
+                "podium": [ { "code": "HAM", "name": "L. Hamilton", "constructorId": "ferrari" }, … ] },
+  "showPodium": false         // true ช่วง 3.5 วันหลังเรซ → widget โชว์โพเดียมเป็นหลัก
 }
 ```
 
@@ -153,7 +163,7 @@ tests/                ยูนิตเทสต์ (Vitest)
 2. เปิด `https://<โดเมน>/widget.js` ใน Safari แล้วก็อปทั้งหมด
 3. เปิดแอป → ปุ่ม **+** มุมขวาบน → วาง → ตั้งชื่อว่า `F1`
    (ถ้าเป็นโดเมนอื่น แก้ค่า `SITE` บรรทัดบน ๆ ของทั้งสองไฟล์)
-4. กดค้างที่หน้าโฮม → **+** → Scriptable → เลือกขนาด **small** หรือ **medium**
+4. กดค้างที่หน้าโฮม (หรือหน้าจอล็อก) → **+** → Scriptable → เลือกขนาด
    → แตะที่ widget → Script เลือก `F1`
 
 **ก็อปครั้งเดียวจบ** — [`public/widget.js`](public/widget.js) เป็นแค่ตัวโหลด (~40 บรรทัด)
@@ -162,9 +172,12 @@ tests/                ยูนิตเทสต์ (Vitest)
 ชุดล่าสุดที่เก็บไว้ในเครื่อง และถ้าเว็บตอบเป็นหน้า error จะไม่เอามารัน (ตรวจ status 200 และ
 ต้องมี `Script.setWidget` ในโค้ด — อย่าลบบรรทัดนั้นออกจาก `scriptable-widget.js`)
 
-รองรับทั้งสองขนาด (medium มีแถบผู้นำตารางคะแนนเพิ่ม) บอกวันและเวลาของ session ถัดไป
-ตามเขตเวลาของเครื่อง (เช่น `พฤ. 24 ก.ย. · 15:30`) แตะแล้วเปิดเว็บ ติดป้าย
-`LIVE` ตอนมี session กำลังดำเนินอยู่ และป้าย `SPRINT` ในสุดสัปดาห์ที่มีสปรินต์
+รองรับทุกขนาด: **small · medium · large** และบน**หน้าจอล็อก** (แถบ · วงกลม · บรรทัดเดียว)
+- ธง + ชื่อประเทศตัวใหญ่ ป้าย session แบบ F1 (`FP1` `SQ` `SPRINT` `Q` `RACE`) และวันเวลาตามเขตเวลาเครื่อง
+- ตัวนับถอยหลังตัวเลขกว้างเท่ากันสีขาว — เกิน 1 วันบอกเป็น "4 วัน 07 ชม." (timer ของ iOS นับชั่วโมงสะสม)
+- พื้นไล่เฉดดำ-แดง แถบขอบซ้ายเป็นสีทีมผู้ชนะสนามล่าสุด · ผังสนามวาดเองด้วย `DrawContext` (ไม่โหลดรูป)
+- medium มี top 3 ตารางคะแนน · large มีตารางทั้งสุดสัปดาห์ (จบแล้ว ✓) และแตะแต่ละส่วนเปิดหน้าที่ตรงกัน
+- 3.5 วันหลังเรซ small/medium เปลี่ยนเป็นโพเดียมสนามที่เพิ่งจบ + สนามถัดไป · ติดป้าย `LIVE` / `SPRINT`
 
 > **นับถอยหลังใช้ `applyTimerStyle()`** ให้ iOS เดินเลขเอง ไม่ใช่วาดตัวเลขค้างไว้ —
 > ระบบคุมรอบรีเฟรชของ widget เอง (ราว 15 นาทีขึ้นไป บังคับไม่ได้) ถ้าวาดเองเลขจะค้าง
