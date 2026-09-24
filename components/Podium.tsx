@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import type { RaceWithResults } from "@/lib/f1";
 import { teamColor, teamName } from "@/lib/teams";
 import PodiumGraphic from "./PodiumGraphic";
+import TiltCard from "./TiltCard";
 
 export default function Podium({ race }: { race: RaceWithResults }) {
   const top3 = race.Results.slice(0, 3);
@@ -12,7 +13,7 @@ export default function Podium({ race }: { race: RaceWithResults }) {
   const winner = teamColor(team.constructorId);
 
   return (
-    <section
+    <TiltCard
       className="card winner-glow p-5"
       style={{ "--winner": winner } as React.CSSProperties}
     >
@@ -43,6 +44,6 @@ export default function Podium({ race }: { race: RaceWithResults }) {
       >
         ดูผลเต็ม <ArrowRight className="h-3.5 w-3.5" />
       </Link>
-    </section>
+    </TiltCard>
   );
 }

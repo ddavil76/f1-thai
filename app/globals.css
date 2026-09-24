@@ -198,6 +198,34 @@ html[data-intro="seen"] .launch-intro {
   }
 }
 
+/* ---- การ์ดเอียงตามเมาส์/นิ้ว (components/TiltCard.tsx) ----
+   อยู่นอก @layer ให้ transform ชนะ .card:hover (translateY) · แสงสะท้อนวิ่งตามจุดที่ชี้ */
+.tilt {
+  position: relative;
+  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tilt[data-tilting] {
+  transition: transform 0.08s linear;
+}
+.tilt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--glare-x, 50%) var(--glare-y, 50%),
+    rgb(255 255 255 / 0.13),
+    transparent 55%
+  );
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.tilt[data-tilting]::after {
+  opacity: 1;
+}
+
 /* ---- สีทีมผู้ชนะ — ใส่ --winner (สีทีม) ที่ element แล้วใช้คลาสพวกนี้
    ใช้เฉพาะส่วนที่เป็นเรื่องของการแข่งนั้นจริง ๆ สีหลักของเว็บยังเป็นแดง F1 */
 .winner-glow {
@@ -429,6 +457,12 @@ html[data-intro="seen"] .launch-intro {
   }
   /* intro เป็นการเคลื่อนไหวล้วน ไม่มีข้อมูล — ข้ามไปเลย */
   .launch-intro {
+    display: none;
+  }
+  .tilt {
+    transform: none;
+  }
+  .tilt::after {
     display: none;
   }
   .animate-flap,

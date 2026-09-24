@@ -12,6 +12,7 @@ import { teamColor, teamName } from "@/lib/teams";
 import { flag } from "@/lib/flags";
 import TeammateH2H from "@/components/TeammateH2H";
 import CountUp from "@/components/CountUp";
+import TiltCard from "@/components/TiltCard";
 import PuCard from "@/components/PuCard";
 import SiteFooter from "@/components/SiteFooter";
 import { getPuUsage, findUsage } from "@/lib/power-units";
@@ -117,7 +118,7 @@ export default async function DriverPage({ params }: Params) {
       </div>
 
       {standing && (
-        <section className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
+        <TiltCard className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
           <div className="p-4">
             <p className="display text-2xl font-bold tabular-nums">
               <CountUp value={Number(standing.position)} prefix="P" />
@@ -136,7 +137,7 @@ export default async function DriverPage({ params }: Params) {
             </p>
             <p className="text-xs text-white/40">ชนะ</p>
           </div>
-        </section>
+        </TiltCard>
       )}
 
       {mateStanding && mateResults.length > 0 && (

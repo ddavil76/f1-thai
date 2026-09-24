@@ -1,7 +1,9 @@
 import Image from "next/image";
 import { Flag } from "lucide-react";
 import { circuitTrack } from "@/lib/circuits";
+import { trackGroundPoints } from "@/lib/track3d";
 import RacingLine from "./RacingLine";
+import Track3D from "./Track3D";
 
 /** ผังสนามข้างตัวนับถอยหลัง — เวกเตอร์ + จุดแสงวิ่งถ้ามี, ไม่งั้น fallback เป็นรูป */
 export default function CircuitMap({
@@ -16,9 +18,14 @@ export default function CircuitMap({
   /** เตี้ยลง — ใช้ในหน้า race detail ที่ผลการแข่งสำคัญกว่า */
   compact?: boolean;
 }) {
-  // มี path เวกเตอร์ของสนามนี้ → ใช้ racing line แทนรูป
-  if (circuitId && circuitTrack(circuitId)) {
-    return <RacingLine circuitId={circuitId} name={name} compact={compact} />;
+  // มี path เวกเตอร์ของสนามนี้ → racing line 2D แล้วค่อยยกเป็น 3D ฝั่ง client ถ้าเครื่องไหว
+  const track = circuitId ? circuitTrack(circuitId) : null;
+  if (circuitId && track) {
+    return (
+      <Track3D points={trackGroundPoints(track)} name={name}>
+        <RacingLine circuitId={circuitId} name={name} compact={compact} />
+      </Track3D>
+    );
   }
 
   // รูปที่มาจาก SVG (ผังแทร็ก) → ทำเป็นเส้นขาวบนพื้นมืดให้กลืนกับการ์ด
