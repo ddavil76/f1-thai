@@ -14,21 +14,22 @@ type State =
 /** โหลด openf1 ฝั่ง client (Vercel โดนบล็อก) แล้วส่งให้ ReplayPlayer */
 export default function ReplayLoader({
   season,
-  raceDate,
+  raceStart,
   track,
 }: {
   season: number;
-  raceDate: string | null;
+  /** เวลาออกสตาร์ทตามปฏิทิน (ISO) — null = ไม่รู้เวลา */
+  raceStart: string | null;
   track?: TrackPath | null;
 }) {
   const [state, setState] = useState<State>(
-    raceDate ? { s: "loading" } : { s: "err" },
+    raceStart ? { s: "loading" } : { s: "err" },
   );
 
   useEffect(() => {
-    if (!raceDate) return;
+    if (!raceStart) return;
     let alive = true;
-    const key = `replay:v4:${season}:${raceDate}`; // bump เมื่อรูปข้อมูลเปลี่ยน
+    const key = `replay:v5:${season}:${raceStart}`; // bump เมื่อรูปข้อมูลเปลี่ยน
     Promise.resolve()
       .then((): RaceReplay | null | Promise<RaceReplay | null> => {
         try {
@@ -37,7 +38,7 @@ export default function ReplayLoader({
         } catch {
           /* เมิน */
         }
-        return getRaceReplay(season, raceDate);
+        return getRaceReplay(season, raceStart);
       })
       .then((data) => {
         if (!alive) return;
@@ -56,7 +57,7 @@ export default function ReplayLoader({
     return () => {
       alive = false;
     };
-  }, [season, raceDate]);
+  }, [season, raceStart]);
 
   if (state.s === "loading") {
     return (

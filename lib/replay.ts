@@ -133,17 +133,32 @@ const ms = (iso: string) => new Date(iso).getTime();
 // ระยะห่างติดลบ = อันดับ (openf1) กับเวลาข้ามเส้นไม่ตรงกันชั่วคราว (ช่วงเข้าพิท) → ปัดเป็น 0
 const fmtGap = (sec: number) => `+${Math.max(0, sec).toFixed(3)}`;
 
-/** หา session_key ของ race จากวันที่แข่ง (YYYY-MM-DD) */
-async function findRaceSession(
-  season: number,
-  raceDate: string,
-): Promise<number | null> {
+/** ห่างจากเวลาสตาร์ทตามปฏิทินได้ไม่เกินเท่านี้ถึงจะนับว่าเป็นเรซเดียวกัน */
+const MATCH_WINDOW_MS = 36 * 60 * 60 * 1000;
+
+/**
+ * เลือก session ที่เวลาเริ่มใกล้เวลาสตาร์ทตามปฏิทินที่สุด (ภายใน ±36 ชม.)
+ * ไม่เทียบวันที่แบบตรงตัว — เรซกลางคืนฝั่งอเมริกา (Las Vegas) วันที่ท้องถิ่นกับ UTC ต่างกัน
+ * แหล่งข้อมูลสองฝั่งเขียนวันคนละแบบได้ แล้วจะหาไม่เจอทั้งที่ข้อมูลมีอยู่
+ */
+export function matchRaceSession(
+  list: { session_key: number; date_start: string }[],
+  raceStartMs: number,
+): number | null {
+  let best: { key: number; diff: number } | null = null;
+  for (const s of list) {
+    const t = Date.parse(s.date_start);
+    if (Number.isNaN(t)) continue;
+    const diff = Math.abs(t - raceStartMs);
+    if (diff <= MATCH_WINDOW_MS && (!best || diff < best.diff)) best = { key: s.session_key, diff };
+  }
+  return best?.key ?? null;
+}
+
+async function findRaceSession(season: number, raceStart: string): Promise<number | null> {
   try {
-    const list = await of1<Session[]>(
-      `sessions?year=${season}&session_name=Race`,
-    );
-    const hit = list.find((s) => s.date_start?.slice(0, 10) === raceDate);
-    return hit?.session_key ?? null;
+    const list = await of1<Session[]>(`sessions?year=${season}&session_name=Race`);
+    return matchRaceSession(list, Date.parse(raceStart));
   } catch {
     return null;
   }
@@ -153,22 +168,23 @@ async function findRaceSession(
 const pending = new Map<string, Promise<RaceReplay | null>>();
 export function getRaceReplay(
   season: number,
-  raceDate: string,
+  /** เวลาออกสตาร์ทตามปฏิทิน (ISO) */
+  raceStart: string,
 ): Promise<RaceReplay | null> {
-  const key = `${season}:${raceDate}`;
+  const key = `${season}:${raceStart}`;
   const hit = pending.get(key);
   if (hit) return hit;
-  const p = loadReplay(season, raceDate).finally(() => pending.delete(key));
+  const p = loadReplay(season, raceStart).finally(() => pending.delete(key));
   pending.set(key, p);
   return p;
 }
 
 async function loadReplay(
   season: number,
-  raceDate: string,
+  raceStart: string,
 ): Promise<RaceReplay | null> {
   if (season < 2023) return null;
-  const sk = await findRaceSession(season, raceDate);
+  const sk = await findRaceSession(season, raceStart);
   if (!sk) return null;
 
   let drivers: Of1Driver[];
