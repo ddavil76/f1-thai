@@ -33,3 +33,42 @@ export const NATION_FLAG: Record<string, string> = {
 };
 
 export const flag = (nationality?: string) => NATION_FLAG[nationality ?? ""] ?? "🏁";
+
+/** ประเทศของสนาม (Location.country จาก Ergast) → ธงชาติ emoji */
+export const COUNTRY_FLAG: Record<string, string> = {
+  Australia: "🇦🇺",
+  Austria: "🇦🇹",
+  Azerbaijan: "🇦🇿",
+  Bahrain: "🇧🇭",
+  Belgium: "🇧🇪",
+  Brazil: "🇧🇷",
+  Canada: "🇨🇦",
+  China: "🇨🇳",
+  France: "🇫🇷",
+  Germany: "🇩🇪",
+  Hungary: "🇭🇺",
+  Italy: "🇮🇹",
+  Japan: "🇯🇵",
+  Malaysia: "🇲🇾",
+  Mexico: "🇲🇽",
+  Monaco: "🇲🇨",
+  Netherlands: "🇳🇱",
+  Portugal: "🇵🇹",
+  Qatar: "🇶🇦",
+  Russia: "🇷🇺",
+  "Saudi Arabia": "🇸🇦",
+  Singapore: "🇸🇬",
+  "South Africa": "🇿🇦",
+  Spain: "🇪🇸",
+  Thailand: "🇹🇭",
+  Turkey: "🇹🇷",
+  UAE: "🇦🇪",
+  "United Arab Emirates": "🇦🇪",
+  UK: "🇬🇧",
+  "United Kingdom": "🇬🇧",
+  USA: "🇺🇸",
+  "United States": "🇺🇸",
+  Vietnam: "🇻🇳",
+};
+
+export const countryFlag = (country?: string) => COUNTRY_FLAG[country ?? ""] ?? "🏁";
