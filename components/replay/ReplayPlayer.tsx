@@ -1,11 +1,12 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { TrackPath } from "@/lib/circuits";
 import type { Cell, RaceReplay, ReplayDriver, ReplayFrame } from "@/lib/replay";
 import SectionTabs from "../SectionTabs";
 import TrackMap from "./TrackMap";
+import Replay3D from "./Replay3D";
 import TyreStrategy from "./TyreStrategy";
 
 const ROW_H = 34;
@@ -162,7 +163,11 @@ export default function ReplayPlayer({
   track?: TrackPath | null;
 }) {
   const { totalLaps, durationMs, frames } = replay;
-  const meta = Object.fromEntries(replay.drivers.map((d) => [d.num, d]));
+  // memo — ฉาก 3D สร้างใหม่ทุกครั้งที่ object นี้เปลี่ยน (ไม่งั้นสร้างใหม่ทุกรอบที่ frame เลื่อน)
+  const meta = useMemo(
+    () => Object.fromEntries(replay.drivers.map((d) => [d.num, d])),
+    [replay.drivers],
+  );
 
   const timeRef = useRef(0); // เวลาแข่งที่ผ่านไป (ms)
   const [playing, setPlaying] = useState(false);
@@ -213,15 +218,50 @@ export default function ReplayPlayer({
 
   const frame = frames[frameIdx];
 
+  // 3D เป็นค่าเริ่มต้นเมื่อเครื่องไหว — player นี้เรนเดอร์ฝั่ง client หลังโหลดข้อมูลแล้วเสมอ
+  const [view, setView] = useState<"2d" | "3d">(() => {
+    if (typeof window === "undefined") return "2d";
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return "2d";
+    const c = document.createElement("canvas");
+    return c.getContext("webgl2") || c.getContext("webgl") ? "3d" : "2d";
+  });
+
   return (
     <div className="space-y-3">
       {track && (
-        <TrackMap
-          track={track}
-          frames={frames}
-          drivers={meta}
-          timeRef={timeRef}
-        />
+        <div className="space-y-2">
+          <div className="flex justify-end">
+            <div className="inline-flex rounded-full border border-white/10 bg-black/40 p-0.5 text-xs font-semibold" role="group" aria-label="มุมมองผังสนาม">
+              {(["3d", "2d"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  aria-pressed={view === v}
+                  className={`rounded-full px-3 py-1 transition ${view === v ? "bg-(--color-f1) text-white" : "text-white/60 hover:text-white"}`}
+                >
+                  {v.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          {view === "3d" ? (
+            <Replay3D
+              track={track}
+              frames={frames}
+              drivers={meta}
+              timeRef={timeRef}
+              onFail={() => setView("2d")}
+            />
+          ) : (
+            <TrackMap
+              track={track}
+              frames={frames}
+              drivers={meta}
+              timeRef={timeRef}
+            />
+          )}
+        </div>
       )}
 
       {/* แถบควบคุม */}

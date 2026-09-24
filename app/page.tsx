@@ -77,6 +77,11 @@ export default async function Home() {
                 src={circuitImg}
                 name={next.Circuit.circuitName}
                 circuitId={next.Circuit.circuitId}
+                where={{
+                  season: Number(next.season),
+                  country: next.Circuit.Location.country,
+                  locality: next.Circuit.Location.locality,
+                }}
               />
 
               <div className="mt-5">

@@ -226,6 +226,11 @@ html[data-intro="seen"] .launch-intro {
   opacity: 1;
 }
 
+/* โพเดียม 3D พร้อมแล้ว → ซ่อนแท่น 2D (ยังกินที่เท่าเดิม ให้ canvas วัดตำแหน่งได้) */
+.podium3d[data-ready] .podium-block {
+  visibility: hidden;
+}
+
 /* ---- สีทีมผู้ชนะ — ใส่ --winner (สีทีม) ที่ element แล้วใช้คลาสพวกนี้
    ใช้เฉพาะส่วนที่เป็นเรื่องของการแข่งนั้นจริง ๆ สีหลักของเว็บยังเป็นแดง F1 */
 .winner-glow {

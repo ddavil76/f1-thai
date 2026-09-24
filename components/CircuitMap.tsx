@@ -10,11 +10,14 @@ export default function CircuitMap({
   src,
   name,
   circuitId,
+  where,
   compact = false,
 }: {
   src: string | null;
   name: string;
   circuitId?: string;
+  /** ใช้หาเนินสนามจริงจาก openf1 (ไม่ส่ง = 3D แบบแบน) */
+  where?: { season: number; country: string; locality: string };
   /** เตี้ยลง — ใช้ในหน้า race detail ที่ผลการแข่งสำคัญกว่า */
   compact?: boolean;
 }) {
@@ -22,7 +25,11 @@ export default function CircuitMap({
   const track = circuitId ? circuitTrack(circuitId) : null;
   if (circuitId && track) {
     return (
-      <Track3D points={trackGroundPoints(track)} name={name}>
+      <Track3D
+        points={trackGroundPoints(track)}
+        name={name}
+        elevation={where ? { circuitId, ...where } : undefined}
+      >
         <RacingLine circuitId={circuitId} name={name} compact={compact} />
       </Track3D>
     );
