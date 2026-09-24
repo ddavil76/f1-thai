@@ -2,10 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { TrackPath } from "@/lib/circuits";
-import type { ReplayDriver, ReplayFrame } from "@/lib/replay";
+import { dotsAt, type ReplayDot, type ReplayDriver, type ReplayFrame } from "@/lib/replay";
 
 type Pt = { x: number; y: number };
-type Dot = { num: number; frac: number; pos: number; out: boolean };
 
 /** จุดรถวิ่งบนผังสนาม — interpolate ตำแหน่งตามเวลาแข่ง */
 export default function TrackMap({
@@ -21,7 +20,7 @@ export default function TrackMap({
 }) {
   const [pathEl, setPathEl] = useState<SVGPathElement | null>(null);
   const [samples, setSamples] = useState<Pt[]>([]);
-  const [dots, setDots] = useState<Dot[]>([]);
+  const [dots, setDots] = useState<ReplayDot[]>([]);
   const raf = useRef(0);
 
   // สุ่มจุดตามเส้นครั้งเดียว
@@ -41,42 +40,7 @@ export default function TrackMap({
   // rAF: interpolate จาก timeRef → dots
   useEffect(() => {
     const loop = () => {
-      const t = timeRef.current ?? 0;
-      // ก่อนผู้นำจบรอบแรก → ออกตัวจากเส้น
-      if (t < frames[0].atMs) {
-        const k = frames[0].atMs > 0 ? Math.max(0, t / frames[0].atMs) : 1;
-        setDots(
-          frames[0].rows.map((r) => ({
-            num: r.num,
-            frac: r.frac * k,
-            pos: r.pos,
-            out: false,
-          })),
-        );
-        raf.current = requestAnimationFrame(loop);
-        return;
-      }
-      let i = 0;
-      while (i < frames.length - 1 && frames[i + 1].atMs <= t) i++;
-      const a = frames[i];
-      const b = frames[Math.min(i + 1, frames.length - 1)];
-      const span = b.atMs - a.atMs;
-      const k = span > 0 ? Math.max(0, Math.min(1, (t - a.atMs) / span)) : 0;
-      const bByNum: Record<number, (typeof b.rows)[number]> = {};
-      for (const r of b.rows) bByNum[r.num] = r;
-      setDots(
-        a.rows.map((ra) => {
-          const rb = bByNum[ra.num] ?? ra;
-          // จุดวิ่งเดินหน้าเท่านั้น — คันที่ออกแล้ว/ข้อมูลเพี้ยนไม่ถอยหลัง
-          const target = Math.max(ra.frac, rb.frac);
-          return {
-            num: ra.num,
-            frac: ra.frac + (target - ra.frac) * k,
-            pos: k < 0.5 ? ra.pos : rb.pos,
-            out: ra.out && rb.out,
-          };
-        }),
-      );
+      setDots(dotsAt(frames, timeRef.current ?? 0));
       raf.current = requestAnimationFrame(loop);
     };
     raf.current = requestAnimationFrame(loop);

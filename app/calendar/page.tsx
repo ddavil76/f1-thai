@@ -3,7 +3,9 @@ import { CalendarArrowDown, ChevronRight } from "lucide-react";
 import LocalTime from "@/components/tz/LocalTime";
 import SiteFooter from "@/components/SiteFooter";
 import CheckeredFlag from "@/components/CheckeredFlag";
-import { getSchedule, getSeasonWinners, findNextRace, isPastRace, toDate } from "@/lib/f1";
+import { getSchedule, getSeasonWinners, findNextRace, formatInTz, isPastRace, toDate } from "@/lib/f1";
+import { countryFlag } from "@/lib/flags";
+import SeasonGlobe, { type GlobeRace } from "@/components/SeasonGlobe";
 import { teamColor } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
 
@@ -16,6 +18,30 @@ export default async function CalendarPage() {
   const [races, winners] = await Promise.all([getSchedule(SEASON), getSeasonWinners(SEASON)]);
   const nextRound = findNextRace(races)?.round;
   const winnerOf = new Map(winners.map((r) => [r.round, r.Results[0]]));
+
+  // ลูกโลก: เฉพาะสนามที่มีพิกัด
+  const globe: GlobeRace[] = races.flatMap((r) => {
+    const lat = Number(r.Circuit.Location.lat);
+    const lng = Number(r.Circuit.Location.long);
+    const d = toDate({ date: r.date, time: r.time });
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !d) return [];
+    const win = winnerOf.get(r.round);
+    return [{
+      round: r.round,
+      name: r.raceName,
+      flag: countryFlag(r.Circuit.Location.country),
+      dateText: formatInTz(d, "date"),
+      lat,
+      lng,
+      status: win ? "done" : r.round === nextRound ? "next" : isPastRace(r) ? "done" : "future",
+      winner: win
+        ? {
+            name: `${win.Driver.givenName.charAt(0)}. ${win.Driver.familyName}`,
+            color: teamColor(win.Constructor.constructorId),
+          }
+        : undefined,
+    }];
+  });
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 lg:max-w-5xl">
@@ -36,6 +62,8 @@ export default async function CalendarPage() {
           </a>
         )}
       </header>
+
+      {globe.length > 1 && <SeasonGlobe races={globe} />}
 
       {races.length === 0 && (
         <p className="card p-6 text-sm text-white/60">

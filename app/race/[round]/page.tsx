@@ -173,6 +173,11 @@ export default async function RacePage({ params }: Params) {
               src={circuitImg}
               name={race.Circuit.circuitName}
               circuitId={race.Circuit.circuitId}
+              where={{
+                season: Number(race.season),
+                country: race.Circuit.Location.country,
+                locality: race.Circuit.Location.locality,
+              }}
             />
 
             {raceStart && (
@@ -310,6 +315,11 @@ export default async function RacePage({ params }: Params) {
                     src={circuitImg}
                     name={race.Circuit.circuitName}
                     circuitId={race.Circuit.circuitId}
+                    where={{
+                      season: Number(race.season),
+                      country: race.Circuit.Location.country,
+                      locality: race.Circuit.Location.locality,
+                    }}
                     compact
                   />
                   <CircuitInfo circuitId={race.Circuit.circuitId} />

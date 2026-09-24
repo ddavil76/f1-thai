@@ -2,28 +2,7 @@
 // รีเพลย์ไทม์มิ่งย้อนหลังแบบรอบต่อรอบ — ปี 2023+ เท่านั้น
 // ดึงจาก "ฝั่ง client" (openf1 บล็อก IP ของ serverless/Vercel แต่รองรับ CORS)
 
-import { createGate, fetchRetry, sleep } from "./http";
-
-const OF1 = "https://api.openf1.org/v1";
-
-// openf1 (ไม่มี API key) จำกัด ~1 req ต่อ 1-2 วิ → ยิงทีละคำขอ เว้นระยะกว้าง ๆ
-const ATTEMPTS = 5;
-const gate = createGate(1);
-
-async function of1<T>(path: string): Promise<T> {
-  // กอดคิวไว้ทั้งชุด (รวม backoff) — ยิงแทรกระหว่างที่ openf1 กำลังบ่นมีแต่ทำให้แย่ลง
-  return gate(async () => {
-    const res = await fetchRetry(`${OF1}/${path}`, {
-      source: "openf1",
-      init: { cache: "force-cache" },
-      attempts: ATTEMPTS,
-      backoffMs: (n) => Math.min(8000, 1200 * 2 ** (n - 1)),
-    });
-    const json = (await res.json()) as T;
-    await sleep(750); // เว้นก่อนคำขอถัดไป
-    return json;
-  });
-}
+import { of1 } from "./openf1";
 
 type Session = { session_key: number; date_start: string; year: number };
 type Of1Driver = {
@@ -106,6 +85,40 @@ export type RaceReplay = {
   frames: ReplayFrame[];
   stints: ReplayStint[];
 };
+
+/** ตำแหน่งรถหนึ่งคัน ณ เวลาหนึ่ง — frac = ระยะสะสมเป็นรอบ (ส่วนทศนิยมคือจุดบนสนาม) */
+export type ReplayDot = { num: number; frac: number; pos: number; out: boolean };
+
+/**
+ * ตำแหน่งรถทุกคัน ณ เวลาแข่ง t (ms) — interpolate ระหว่าง frame ที่ผู้นำจบรอบ
+ * ใช้ร่วมกันทั้งผัง 2D และ 3D
+ */
+export function dotsAt(frames: ReplayFrame[], t: number): ReplayDot[] {
+  if (frames.length === 0) return [];
+  // ก่อนผู้นำจบรอบแรก → ออกตัวจากเส้น
+  if (t < frames[0].atMs) {
+    const k = frames[0].atMs > 0 ? Math.max(0, t / frames[0].atMs) : 1;
+    return frames[0].rows.map((r) => ({ num: r.num, frac: r.frac * k, pos: r.pos, out: false }));
+  }
+  let i = 0;
+  while (i < frames.length - 1 && frames[i + 1].atMs <= t) i++;
+  const a = frames[i];
+  const b = frames[Math.min(i + 1, frames.length - 1)];
+  const span = b.atMs - a.atMs;
+  const k = span > 0 ? Math.max(0, Math.min(1, (t - a.atMs) / span)) : 0;
+  const bByNum = new Map(b.rows.map((r) => [r.num, r]));
+  return a.rows.map((ra) => {
+    const rb = bByNum.get(ra.num) ?? ra;
+    // จุดวิ่งเดินหน้าเท่านั้น — คันที่ออกแล้ว/ข้อมูลเพี้ยนไม่ถอยหลัง
+    const target = Math.max(ra.frac, rb.frac);
+    return {
+      num: ra.num,
+      frac: ra.frac + (target - ra.frac) * k,
+      pos: k < 0.5 ? ra.pos : rb.pos,
+      out: ra.out && rb.out,
+    };
+  });
+}
 
 const COMPOUND_SHORT: Record<string, string> = {
   SOFT: "S",
