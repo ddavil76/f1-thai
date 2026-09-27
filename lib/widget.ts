@@ -82,6 +82,11 @@ export type WidgetPayload = {
   session: WidgetSession | null;
   /** ทุก session ของสุดสัปดาห์ถัดไป เรียงตามเวลา */
   sessions: WidgetSession[];
+  /**
+   * สนามถัดจาก race อีกที — widget สลับไปเองเมื่อสุดสัปดาห์นี้จบ ไม่ต้องรอดึงข้อมูลใหม่
+   * (iOS คุมรอบรีเฟรช และแคชฝั่งเว็บอาจยังส่งสนามเดิมอยู่ตอนเพิ่งจบ) · null = สนามสุดท้ายของปี
+   */
+  after: { race: WidgetRace; sessions: WidgetSession[] } | null;
   leader: WidgetLeader | null;
   top3: WidgetStanding[];
   /** สนามล่าสุดที่มีผลแล้ว — โพเดียม + สีทีมผู้ชนะ */
@@ -152,6 +157,22 @@ function sessionsOf(race: Race): WidgetSession[] {
   }));
 }
 
+function widgetRace(race: Race, season: Race[], start: Date): WidgetRace {
+  return {
+    round: race.round,
+    name: race.raceName,
+    short: raceShort(race, season),
+    flag: countryFlag(race.Circuit.Location.country),
+    circuit: race.Circuit.circuitName,
+    circuitId: race.Circuit.circuitId,
+    locality: race.Circuit.Location.locality,
+    country: race.Circuit.Location.country,
+    startsAt: start.toISOString(),
+    isSprint: isSprintWeekend(race),
+    track: widgetTrack(race.Circuit.circuitId),
+  };
+}
+
 function lastRaceOf(
   last: RaceWithResults | null | undefined,
   season: Race[],
@@ -209,6 +230,7 @@ export function buildWidgetPayload({
     top3,
     lastRace,
     sessions: [] as WidgetSession[],
+    after: null,
     showPodium: false,
   };
 
@@ -238,24 +260,20 @@ export function buildWidgetPayload({
   const showPodium =
     state === "upcoming" && sinceLast >= 0 && sinceLast < PODIUM_DAYS * 24 * 60 * 60 * 1000;
 
+  // สนามถัดจากนี้ (ข้ามรายการที่ไม่มีวันที่)
+  const afterRace = races.slice(races.indexOf(next) + 1).find((r) => toDate({ date: r.date, time: r.time }));
+  const afterStart = afterRace ? toDate({ date: afterRace.date, time: afterRace.time }) : null;
+  const after = afterRace && afterStart
+    ? { race: widgetRace(afterRace, races, afterStart), sessions: sessionsOf(afterRace) }
+    : null;
+
   return {
     ...base,
     state,
     showPodium,
     sessions,
-    race: {
-      round: next.round,
-      name: next.raceName,
-      short: raceShort(next, races),
-      flag: countryFlag(next.Circuit.Location.country),
-      circuit: next.Circuit.circuitName,
-      circuitId: next.Circuit.circuitId,
-      locality: next.Circuit.Location.locality,
-      country: next.Circuit.Location.country,
-      startsAt: start.toISOString(),
-      isSprint: isSprintWeekend(next),
-      track: widgetTrack(next.Circuit.circuitId),
-    },
+    after,
+    race: widgetRace(next, races, start),
     session,
   };
 }
