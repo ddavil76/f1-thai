@@ -91,7 +91,7 @@ export type WidgetPayload = {
   top3: WidgetStanding[];
   /** สนามล่าสุดที่มีผลแล้ว — โพเดียม + สีทีมผู้ชนะ */
   lastRace: WidgetLastRace | null;
-  /** เพิ่งแข่งจบไม่นาน → widget โชว์โพเดียมเป็นหลัก แทนนับถอยหลังอย่างเดียว */
+  /** เพิ่งแข่งจบไม่นาน → widget ใส่โพเดียมสนามนั้นเสริม (สนามถัดไปยังเป็นหลัก) */
   showPodium: boolean;
 };
 
