@@ -73,7 +73,17 @@ function normalize(data) {
   if (list.length === 0) return data;
   // ข้อมูลรุ่นเก่าไม่มี endsAt — ถือว่าจบตอนเริ่ม (ข้ามไปตัวถัดไปเลย ดีกว่านับขึ้น)
   const s = list.find((x) => Date.parse(x.endsAt || x.startsAt) > now);
-  if (!s) return Object.assign({}, data, { session: null, state: "done" });
+  if (!s) {
+    // จบทั้งสุดสัปดาห์ → ขึ้นสนามถัดไปเลย ไม่ค้างสนามเดิมรอข้อมูลใหม่
+    // (โพเดียมของสนามที่เพิ่งจบยังไม่มีในข้อมูลชุดนี้ ปิดไว้ก่อน รอบรีเฟรชหน้าได้ผลจริงมาเอง)
+    const a = data.after;
+    if (a && a.race && a.sessions && a.sessions.length) {
+      return normalize(Object.assign({}, data, {
+        race: a.race, sessions: a.sessions, session: null, after: null, showPodium: false,
+      }));
+    }
+    return Object.assign({}, data, { session: null, state: "done" });
+  }
   return Object.assign({}, data, { session: s, state: Date.parse(s.startsAt) <= now ? "live" : "upcoming" });
 }
 
@@ -489,7 +499,9 @@ function build(data, family) {
 /** ขอรีเฟรชตรงจังหวะที่ widget ต้องเปลี่ยนหน้าตา (iOS ถือเป็นคำขอ ไม่ใช่คำสั่ง) */
 function nextRefresh(data) {
   const now = Date.now();
-  const soon = now + (data && data.state === "live" ? 5 : 30) * 60 * 1000;
+  // live = ป้าย/ตารางเปลี่ยนบ่อย · done = รอข้อมูลสนามถัดไปจากเว็บ → ถามถี่หน่อย
+  const busy = data && (data.state === "live" || data.state === "done");
+  const soon = now + (busy ? 5 : 30) * 60 * 1000;
   const s = data && data.session;
   const start = s ? Date.parse(s.startsAt) : NaN;
   const end = s && s.endsAt ? Date.parse(s.endsAt) : NaN;

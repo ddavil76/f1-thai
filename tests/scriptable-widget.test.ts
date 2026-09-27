@@ -365,6 +365,11 @@ describe("scriptable-widget.js — ไม่นับขึ้นหลังถ
     expect(r.texts).toContain("🏁 จบแล้ว");
   });
 
+  it("ไม่มีสนามถัดไปในข้อมูล (เว็บรุ่นเก่า) → ถามเว็บถี่ขึ้นเพื่อรับสนามถัดไป", async () => {
+    const r = await render("medium", "2026-09-26T14:00:00Z", stale());
+    expect(r.refreshAfter!.toISOString()).toBe("2026-09-26T14:05:00.000Z");
+  });
+
   it("หน้าจอล็อกก็เหมือนกัน", async () => {
     const circle = await render("accessoryCircular", "2026-09-24T08:40:00Z", stale());
     expect(circle.texts).toContain("LIVE");
@@ -378,6 +383,44 @@ describe("scriptable-widget.js — ไม่นับขึ้นหลังถ
     // ซ้อม 1 จบ 10:00Z · อีก 3 นาที → ขอรีเฟรชตอนจบ (ไม่ใช่ครบ 5 นาที)
     const r = await render("small", "2026-09-24T09:57:00Z", stale());
     expect(r.refreshAfter!.toISOString()).toBe("2026-09-24T10:00:05.000Z");
+  });
+});
+
+describe("scriptable-widget.js — แข่งจบแล้วขึ้นสนามถัดไปเอง", () => {
+  const MALAYSIA = race({
+    round: "16", raceName: "Malaysian Grand Prix", date: "2026-10-04", time: "07:00:00Z",
+    Circuit: { circuitId: "sepang", circuitName: "Sepang", Location: { locality: "Kuala Lumpur", country: "Malaysia" } },
+    FirstPractice: { date: "2026-10-02", time: "03:30:00Z" },
+    Qualifying: { date: "2026-10-03", time: "07:00:00Z" },
+  });
+  // ดึงมาตอนเรซบากูกำลังแข่ง (แคชเว็บ/iOS ยังไม่รีเฟรช) แต่วาดตอนเรซจบไปแล้ว
+  const duringRace = () => payloadAt("2026-09-26T12:00:00Z", [race(), MALAYSIA]);
+  const AFTER_RACE = "2026-09-27T03:00:00Z";
+
+  it("ทุกขนาดขึ้นสนามถัดไป ไม่ค้างสนามเดิม", async () => {
+    for (const f of ["small", "medium", "large"] as const) {
+      const r = await render(f, AFTER_RACE, duringRace());
+      expect(r.texts).toContain("🇲🇾 MALAYSIA");
+      expect(r.texts).not.toContain("🇦🇿 AZERBAIJAN");
+      expect(r.texts).not.toContain("🏁 จบแล้ว");
+      expect(r.texts).toContain("FP1");
+    }
+  });
+
+  it("หน้าจอล็อกและลิงก์ก็ชี้สนามถัดไป", async () => {
+    const rect = await render("accessoryRectangular", AFTER_RACE, duringRace());
+    expect(rect.texts).toContain("🇲🇾 MALAYSIA");
+    const inline = await render("accessoryInline", AFTER_RACE, duringRace());
+    expect(inline.texts.join(" ")).toContain("🇲🇾 FP1");
+    const m = await render("medium", AFTER_RACE, duringRace());
+    expect(m.url).toBe("https://f1-thai.vercel.app/race/16");
+  });
+
+  it("เลยเวลาเริ่มซ้อม 1 ของสนามถัดไปแล้ว → LIVE ของสนามนั้น", async () => {
+    const r = await render("small", "2026-10-02T04:00:00Z", duringRace());
+    expect(r.texts).toContain("🇲🇾 MALAYSIA");
+    expect(r.texts).toContain("● LIVE");
+    expect(r.dates).toHaveLength(0);
   });
 });
 

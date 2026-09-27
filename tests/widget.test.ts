@@ -77,6 +77,20 @@ describe("buildWidgetPayload", () => {
     expect(p.race?.round).toBe("2");
   });
 
+  it("ส่งสนามถัดจากนั้นไปด้วย ให้ widget สลับเองตอนแข่งจบ", () => {
+    const r1 = race({ round: "1" });
+    const r2 = race({ round: "2", date: "2026-03-22",
+      FirstPractice: { date: "2026-03-20", time: "01:30:00Z" },
+      Qualifying: { date: "2026-03-21", time: "05:00:00Z" } });
+    const p = build([r1, r2], [], "2026-03-01T00:00:00Z");
+    expect(p.race!.round).toBe("1");
+    expect(p.after!.race.round).toBe("2");
+    expect(p.after!.race.startsAt).toBe("2026-03-22T06:00:00.000Z");
+    expect(p.after!.sessions.map((s) => s.code)).toEqual(["FP1", "Q", "RACE"]);
+    // สนามสุดท้ายของปี → ไม่มี
+    expect(build([r1], [], "2026-03-01T00:00:00Z").after).toBeNull();
+  });
+
   it("ติดธง sprint เมื่อสุดสัปดาห์นั้นมีสปรินต์", () => {
     const p = build([race({ Sprint: { date: "2026-03-07", time: "03:00:00Z" } })],
                     [standing()], "2026-03-01T00:00:00Z");
