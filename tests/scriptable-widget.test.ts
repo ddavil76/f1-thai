@@ -428,20 +428,36 @@ describe("scriptable-widget.js — โหมดโพเดียมหลัง
   // สองวันหลังเรซสเปน (2026-09-13) — สนามถัดไปยังไม่เริ่ม
   const AFTER = "2026-09-15T00:00:00Z";
 
-  it("small: โพเดียม 3 อันดับ + บอกสนามถัดไป", async () => {
-    const r = await render("small", AFTER);
-    expect(r.texts).toContain("🏁 R14 · 🇪🇸 SPAIN");
-    for (const c of ["HAM", "LEC", "RUS"]) expect(r.texts).toContain(c);
-    expect(r.texts.join(" ")).toContain("ถัดไป 🇦🇿 FP1");
+  it("ทุกขนาด: สนามถัดไปเป็นหลักเสมอ ชื่อสนามที่แข่งจบแล้วไม่ขึ้นตัวใหญ่", async () => {
+    for (const f of ["small", "medium", "large"] as const) {
+      const r = await render(f, AFTER);
+      expect(r.texts).toContain("🇦🇿 AZERBAIJAN");
+      expect(r.texts.join(" ")).not.toContain("SPAIN");
+      expect(r.url).toBe("https://f1-thai.vercel.app/race/15");
+    }
   });
 
-  it("medium: โพเดียมซ้าย สนามถัดไปพร้อมนับถอยหลังขวา", async () => {
-    const r = await render("medium", AFTER);
-    expect(r.texts).toContain("HAM");
-    expect(r.texts).toContain("🇦🇿 AZERBAIJAN");
-    // ซ้อม 1 ยังอีก 9 วัน → นับเป็นวัน
+  it("small: นับถอยหลังสนามถัดไปตามปกติ (ที่แคบ ไม่ใส่โพเดียม)", async () => {
+    const r = await render("small", AFTER);
+    expect(r.texts).toContain("FP1");
     expect(r.texts).toContain("วัน");
+    expect(r.texts).not.toContain("HAM");
+  });
+
+  it("medium: โพเดียมสนามที่เพิ่งจบอยู่ขวาแทนตารางคะแนน แตะแล้วเปิดผลสนามนั้น", async () => {
+    const r = await render("medium", AFTER);
+    expect(r.texts).toContain("ผลล่าสุด 🇪🇸");
+    for (const c of ["HAM", "LEC", "RUS"]) expect(r.texts).toContain(c);
+    expect(r.texts).not.toContain("ตารางคะแนน");
     expect(r.stackUrls).toContain("https://f1-thai.vercel.app/race/14");
+    // ผังสนามยังเป็นสนามถัดไป
+    expect(r.tracks).toHaveLength(1);
+  });
+
+  it("medium: พ้นช่วงโพเดียมกลับเป็นตารางคะแนน", async () => {
+    const r = await render("medium", CALM);
+    expect(r.texts).toContain("ตารางคะแนน");
+    expect(r.texts).not.toContain("ผลล่าสุด 🇪🇸");
   });
 
   it("แถบสีขอบซ้ายเป็นสีทีมผู้ชนะสนามล่าสุด (ไม่มีผลก็เป็นแดง F1)", async () => {

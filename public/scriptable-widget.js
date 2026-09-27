@@ -280,10 +280,11 @@ function sessionBlock(body, data, { timerSize, dateSize = 11 }) {
 
 /* ---------- โพเดียมสนามล่าสุด ---------- */
 
+// หัวเล็ก ๆ ไม่มีชื่อสนามตัวใหญ่ — สนามที่แข่งจบแล้วต้องไม่ดูเป็นสนามหลักของ widget
 function podiumBlock(body, last, { size = 12, title = true } = {}) {
   if (title) {
-    text(body, `🏁 R${last.round} · ${last.flag} ${last.short.toUpperCase()}`, { size: 10, color: DIM, bold: true });
-    body.addSpacer(3);
+    text(body, `ผลล่าสุด ${last.flag}`, { size: 9, color: FAINT, bold: true });
+    body.addSpacer(2);
   }
   last.podium.forEach((d, i) => {
     driverLine(body, i + 1, d, { size });
@@ -322,16 +323,9 @@ function message(data, family) {
 
 /* ---------- small ---------- */
 
+// สนามถัดไปเป็นหลักเสมอ — ผลสนามที่เพิ่งจบบอกผ่านสีแถบขอบซ้าย (ทีมผู้ชนะ) ที่แคบเกินจะใส่โพเดียม
 function small(data) {
   const { w, body } = newWidget(data, "small");
-  if (data.showPodium && data.lastRace) {
-    podiumBlock(body, data.lastRace, { size: 13 });
-    body.addSpacer();
-    const s = data.session;
-    const next = text(body, `ถัดไป ${data.race.flag} ${s ? s.code : "RACE"} ${whenShort(new Date(s ? s.startsAt : data.race.startsAt))}`, { size: 10, color: DIM });
-    next.minimumScaleFactor = 0.8;
-    return w;
-  }
   header(body, data, { nameSize: 15, showCircuit: false });
   body.addSpacer();
   sessionBlock(body, data, { timerSize: 26 });
@@ -348,25 +342,19 @@ function medium(data) {
   r.addSpacer();
   const right = col(r);
 
-  if (data.showPodium && data.lastRace) {
-    // ซ้าย: โพเดียมสนามที่เพิ่งจบ · ขวา: สนามถัดไป
-    left.url = `${SITE}/race/${data.lastRace.round}`;
-    podiumBlock(left, data.lastRace, { size: 14 });
-    right.url = `${SITE}/race/${data.race.round}`;
-    text(right, "ถัดไป", { size: 9, color: FAINT, bold: true });
-    text(right, `${data.race.flag} ${data.race.short.toUpperCase()}`, { size: 13, heavy: true }).minimumScaleFactor = 0.7;
-    right.addSpacer(4);
-    sessionBlock(right, data, { timerSize: 18, dateSize: 10 });
-    return w;
-  }
-
+  // ซ้าย: สนามถัดไปเสมอ · ขวา: ผังสนาม + ตารางคะแนน (หลังเรซไม่กี่วันเป็นโพเดียมสนามที่เพิ่งจบแทน)
   header(left, data, { nameSize: 17, showCircuit: false });
   left.addSpacer();
   sessionBlock(left, data, { timerSize: 30 });
 
   addTrack(right, data.race, 104, 58);
   right.addSpacer();
-  if (data.top3 && data.top3.length) {
+  if (data.showPodium && data.lastRace) {
+    const pd = col(right);
+    pd.url = `${SITE}/race/${data.lastRace.round}`;
+    pd.size = new Size(100, 0);
+    podiumBlock(pd, data.lastRace, { size: 10 });
+  } else if (data.top3 && data.top3.length) {
     const st = col(right);
     st.url = `${SITE}/standings`;
     st.size = new Size(100, 0);
