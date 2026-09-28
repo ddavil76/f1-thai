@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- แถบความเร็วสีแดงสามเส้น + เส้นขาว — พื้นที่ปลอดภัยของไอคอนอยู่กลาง 66dp จาก 108dp -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#e10600" android:pathData="M38,40h40l-6,8H32z" />
+    <path android:fillColor="#e10600" android:pathData="M34,52h32l-6,8H28z" />
+    <path android:fillColor="#ffffff" android:pathData="M70,52h10l-6,8H64z" />
+    <path android:fillColor="#e10600" android:pathData="M30,64h24l-6,8H24z" />
+</vector>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="horizontal"
+    android:paddingTop="13dp"
+    android:paddingEnd="13dp"
+    android:paddingBottom="13dp">
+
+    <!-- กลาง: ซ้าย = สนามถัดไป + นับถอยหลัง · ขวา = ผังสนาม + ตารางคะแนน/โพเดียม -->
+    <ImageView
+        android:id="@+id/stripe"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="9dp"
+        android:scaleType="fitXY"
+        android:src="@drawable/stripe" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <include layout="@layout/part_header" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <include layout="@layout/part_session" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="100dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="10dp"
+        android:orientation="vertical">
+
+        <ImageView
+            android:id="@+id/track"
+            android:layout_width="100dp"
+            android:layout_height="56dp"
+            android:scaleType="fitCenter" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <include layout="@layout/part_list" />
+    </LinearLayout>
+</LinearLayout>

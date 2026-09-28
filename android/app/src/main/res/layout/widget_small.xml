@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="horizontal"
+    android:paddingTop="13dp"
+    android:paddingEnd="13dp"
+    android:paddingBottom="13dp">
+
+    <!-- เล็ก: หัว + ผู้ชนะสนามที่แล้ว (ช่วงหลังเรซ) + นับถอยหลัง -->
+    <ImageView
+        android:id="@+id/stripe"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="9dp"
+        android:scaleType="fitXY"
+        android:src="@drawable/stripe" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <include layout="@layout/part_header" />
+
+        <LinearLayout
+            android:id="@+id/winner_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🏆"
+                android:textSize="10sp" />
+
+            <ImageView
+                android:id="@+id/winner_tick"
+                android:layout_width="3dp"
+                android:layout_height="10dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:scaleType="fitXY"
+                android:src="@drawable/stripe" />
+
+            <TextView
+                android:id="@+id/winner"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="sans-serif-medium"
+                android:singleLine="true"
+                android:textColor="@color/dim"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <include layout="@layout/part_session" />
+    </LinearLayout>
+</LinearLayout>

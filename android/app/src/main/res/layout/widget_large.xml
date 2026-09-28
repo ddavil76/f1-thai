@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="horizontal"
+    android:paddingTop="16dp"
+    android:paddingEnd="16dp"
+    android:paddingBottom="16dp">
+
+    <!-- ใหญ่: หัว + ผัง / นับถอยหลัง / ตารางทั้งสุดสัปดาห์ / ตารางคะแนน + โพเดียมสนามล่าสุด -->
+    <ImageView
+        android:id="@+id/stripe"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="9dp"
+        android:scaleType="fitXY"
+        android:src="@drawable/stripe" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <include layout="@layout/part_header" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/track"
+                android:layout_width="110dp"
+                android:layout_height="62dp"
+                android:layout_marginStart="8dp"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="8dp" />
+
+        <include layout="@layout/part_session" />
+
+        <LinearLayout
+            android:id="@+id/sessions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <include layout="@layout/part_list" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/podium_box"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/podium_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:singleLine="true"
+                    android:textColor="@color/faint"
+                    android:textSize="9sp" />
+
+                <LinearLayout
+                    android:id="@+id/podium_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

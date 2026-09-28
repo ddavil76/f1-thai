@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#08080a</color>
+    <color name="f1">#e10600</color>
+    <color name="white">#ffffff</color>
+    <!-- ขาวโปร่ง 55% / 32% ให้ตรงกับ widget iPhone -->
+    <color name="dim">#8cffffff</color>
+    <color name="faint">#52ffffff</color>
+    <color name="green">#4ade80</color>
+    <color name="yellow">#ffd230</color>
+</resources>
