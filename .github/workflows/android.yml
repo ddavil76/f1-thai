@@ -8,6 +8,10 @@ on:
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
+# สร้าง/แทน release ทดลอง (android-preview) ให้โหลด APK ตรงจากมือถือได้
+permissions:
+  contents: write
+
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -38,3 +42,15 @@ jobs:
           name: f1-week-race-apk
           path: android/f1-week-race.apk
           if-no-files-found: error
+
+      # ลิงก์ถาวร: https://github.com/<owner>/<repo>/releases/download/android-preview/f1-week-race.apk
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-preview --yes --cleanup-tag || true
+          gh release create android-preview f1-week-race.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Android widget (ทดลอง)" \
+            --notes "APK ทดลองของ widget Android — สร้างจาก ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
