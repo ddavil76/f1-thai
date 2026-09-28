@@ -35,7 +35,11 @@ type Captured = {
   fills: string[];
   background?: unknown;
   refreshAfter?: Date;
+  /** แจ้งเตือนที่ค้างรออยู่ในเครื่องหลังรันจบ */
+  alerts: Alert[];
 };
+
+type Alert = { identifier: string; title?: string; body?: string; openURL?: string; at?: Date };
 
 type Env = {
   /** สิ่งที่ /api/widget ตอบ — null = ต่อเน็ตไม่ได้ */
@@ -47,6 +51,12 @@ type Env = {
   code?: { status: number; body: string } | null;
   /** ไฟล์ในเครื่อง (FileManager.local) — ตัวโหลดเก็บโค้ดสำรองไว้ที่นี่ */
   files?: Map<string, string>;
+  /** ช่อง Parameter ของ widget */
+  param?: string;
+  /** แจ้งเตือนที่ค้างอยู่ก่อนรัน (ของแอปอื่นหรือรอบก่อน) — ไม่ส่ง = ว่าง */
+  alerts?: Alert[];
+  /** จำลอง Scriptable รุ่นที่ไม่มี Notification / iOS ไม่ให้สิทธิ์ */
+  notification?: "none" | "throws";
 };
 
 afterEach(() => {
@@ -59,7 +69,8 @@ afterEach(() => {
  * ซึ่งมองไม่เห็นตัวแปรนอก global
  */
 async function run(src: string, env: Env): Promise<Captured> {
-  const out: Captured = { texts: [], dates: [], timers: [], stackUrls: [], tracks: [], fills: [] };
+  const out: Captured = { texts: [], dates: [], timers: [], stackUrls: [], tracks: [], fills: [], alerts: [] };
+  let pending: Alert[] = [...(env.alerts ?? [])];
   const files = env.files ?? new Map<string, string>();
   if (env.now) {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -140,6 +151,21 @@ async function run(src: string, env: Env): Promise<Captured> {
         return env.code.body;
       }
     },
+    args: { widgetParameter: env.param ?? null },
+    Notification: env.notification === "none" ? undefined : class FakeNotification {
+      identifier = ""; title?: string; body?: string; openURL?: string; threadIdentifier?: string;
+      private at?: Date;
+      static async allPending() {
+        if (env.notification === "throws") throw new Error("not authorised");
+        return pending.map((a) => Object.assign(new FakeNotification(), a));
+      }
+      static async removePending(ids: string[]) { pending = pending.filter((a) => !ids.includes(a.identifier)); }
+      setTriggerDate(d: Date) { this.at = d; }
+      async schedule() {
+        const { identifier, title, body, openURL, at } = this;
+        pending = [...pending.filter((a) => a.identifier !== identifier), { identifier, title, body, openURL, at }];
+      }
+    },
     FileManager: {
       local: () => ({
         documentsDirectory: () => "/docs",
@@ -161,6 +187,7 @@ async function run(src: string, env: Env): Promise<Captured> {
     for (const k of Object.keys(globals)) delete g[k];
   }
   out.timers = timerTexts.map((t) => ({ font: t.font, color: t.textColor }));
+  out.alerts = pending;
   return out;
 }
 
@@ -223,7 +250,9 @@ describe("scriptable-widget.js — ทุกขนาด", () => {
 
   it("หัว: ธง + ชื่อสนามสั้นตัวใหญ่ + รอบ", async () => {
     const r = await render("small");
-    expect(r.texts).toContain("ROUND 15");
+    // small แถวบนแคบ ย่อเป็น R15 · medium/large เต็ม
+    expect(r.texts).toContain("R15");
+    expect((await render("medium")).texts).toContain("ROUND 15");
     expect(r.texts).toContain("🇦🇿 AZERBAIJAN");
     // small ตัดชื่อเมือง/สนามออกให้ตัวเลขเด่น
     expect(r.texts.join(" ")).not.toContain("Baku City Circuit");
@@ -386,13 +415,15 @@ describe("scriptable-widget.js — ไม่นับขึ้นหลังถ
   });
 });
 
+/** สนามถัดจากบากู — ใช้ทดสอบการสลับสนามและแจ้งเตือนสองสุดสัปดาห์ */
+const MALAYSIA = race({
+  round: "16", raceName: "Malaysian Grand Prix", date: "2026-10-04", time: "07:00:00Z",
+  Circuit: { circuitId: "sepang", circuitName: "Sepang", Location: { locality: "Kuala Lumpur", country: "Malaysia" } },
+  FirstPractice: { date: "2026-10-02", time: "03:30:00Z" },
+  Qualifying: { date: "2026-10-03", time: "07:00:00Z" },
+});
+
 describe("scriptable-widget.js — แข่งจบแล้วขึ้นสนามถัดไปเอง", () => {
-  const MALAYSIA = race({
-    round: "16", raceName: "Malaysian Grand Prix", date: "2026-10-04", time: "07:00:00Z",
-    Circuit: { circuitId: "sepang", circuitName: "Sepang", Location: { locality: "Kuala Lumpur", country: "Malaysia" } },
-    FirstPractice: { date: "2026-10-02", time: "03:30:00Z" },
-    Qualifying: { date: "2026-10-03", time: "07:00:00Z" },
-  });
   // ดึงมาตอนเรซบากูกำลังแข่ง (แคชเว็บ/iOS ยังไม่รีเฟรช) แต่วาดตอนเรซจบไปแล้ว
   const duringRace = () => payloadAt("2026-09-26T12:00:00Z", [race(), MALAYSIA]);
   const AFTER_RACE = "2026-09-27T03:00:00Z";
@@ -424,6 +455,102 @@ describe("scriptable-widget.js — แข่งจบแล้วขึ้นส
   });
 });
 
+describe("scriptable-widget.js — ตั้งค่าผ่าน Parameter", () => {
+  it("race: นับถอยหลังเฉพาะเรซ ข้ามซ้อม/ควอลิฟาย", async () => {
+    const r = await run(SRC, { payload: payloadAt(NEAR), family: "small", now: NEAR, param: "race" });
+    expect(r.texts).toContain("RACE");
+    expect(r.texts).not.toContain("FP1");
+    // เรซอีกกว่า 2 วัน → นับเป็นวัน ไม่ใช่ timer ของซ้อม 1
+    expect(r.dates).toHaveLength(0);
+    expect(r.texts).toContain("วัน");
+  });
+
+  it("race: large ยังโชว์ตารางทั้งสุดสัปดาห์ครบ", async () => {
+    const r = await run(SRC, { payload: payloadAt(NEAR), family: "large", now: NEAR, param: "race" });
+    for (const c of ["FP1", "Q", "RACE"]) expect(r.texts).toContain(c);
+  });
+
+  it("race: ระหว่างซ้อมไม่ขึ้น LIVE (ไม่ใช่เรซ)", async () => {
+    const r = await run(SRC, { payload: payloadAt(CALM), family: "small", now: "2026-09-24T09:00:00Z", param: "race" });
+    expect(r.texts).not.toContain("● LIVE");
+    expect(r.texts).toContain("RACE");
+  });
+
+  it("พิมพ์ตัวใหญ่หรือหลายคำก็ได้", async () => {
+    const r = await run(SRC, { payload: payloadAt(CALM, [race(), MALAYSIA]), family: "small", now: CALM, param: " Race, NOALERT " });
+    expect(r.texts).toContain("RACE");
+    expect(r.alerts).toHaveLength(0);
+  });
+});
+
+describe("scriptable-widget.js — แจ้งเตือนก่อนแข่ง", () => {
+  const two = () => payloadAt(CALM, [race(), MALAYSIA]);
+  const ids = (r: Captured) => r.alerts.map((a) => a.identifier).sort();
+
+  it("ตั้งแจ้งเตือน 30 นาทีก่อน Q / สปรินต์ / เรซ ของสนามนี้และสนามถัดไป (ซ้อมไม่แจ้ง)", async () => {
+    const r = await run(SRC, { payload: two(), family: "medium", now: CALM });
+    expect(ids(r)).toEqual(["f1wr-15-Q", "f1wr-15-RACE", "f1wr-16-Q", "f1wr-16-RACE"]);
+    const q = r.alerts.find((a) => a.identifier === "f1wr-15-Q")!;
+    expect(q.at!.toISOString()).toBe("2026-09-25T11:30:00.000Z");
+    expect(q.title).toBe("🇦🇿 AZERBAIJAN · Q");
+    expect(q.body).toBe("เริ่มอีก 30 นาที (19:00)");
+    expect(q.openURL).toBe("https://f1-thai.vercel.app/race/15");
+  });
+
+  it("ตั้งใหม่ทุกรอบ: ของเก่าที่เราตั้งถูกแทน ของแอปอื่นไม่แตะ", async () => {
+    const alerts = [{ identifier: "f1wr-15-FP1" }, { identifier: "f1wr-15-RACE", title: "old" }, { identifier: "other-app" }];
+    const r = await run(SRC, { payload: two(), family: "small", now: CALM, alerts });
+    expect(ids(r)).toEqual(["f1wr-15-Q", "f1wr-15-RACE", "f1wr-16-Q", "f1wr-16-RACE", "other-app"]);
+    expect(r.alerts.find((a) => a.identifier === "f1wr-15-RACE")!.title).toBe("🇦🇿 AZERBAIJAN · RACE");
+  });
+
+  it("เลยเวลาแจ้งไปแล้วไม่ตั้ง", async () => {
+    // Q บากู 12:00Z → แจ้ง 11:30Z ผ่านไปแล้ว
+    const r = await run(SRC, { payload: two(), family: "small", now: "2026-09-25T11:45:00Z" });
+    expect(ids(r)).toEqual(["f1wr-15-RACE", "f1wr-16-Q", "f1wr-16-RACE"]);
+  });
+
+  it("noalert: ลบของเราทิ้ง ไม่ตั้งใหม่", async () => {
+    const alerts = [{ identifier: "f1wr-15-RACE" }, { identifier: "other-app" }];
+    const r = await run(SRC, { payload: two(), family: "small", now: CALM, param: "noalert", alerts });
+    expect(ids(r)).toEqual(["other-app"]);
+  });
+
+  it("race: แจ้งเฉพาะเรซ", async () => {
+    const r = await run(SRC, { payload: two(), family: "small", now: CALM, param: "race" });
+    expect(ids(r)).toEqual(["f1wr-15-RACE", "f1wr-16-RACE"]);
+  });
+
+  it("ต่อเน็ตไม่ได้ → ไม่แตะแจ้งเตือนเดิม", async () => {
+    const alerts = [{ identifier: "f1wr-15-RACE" }];
+    const r = await run(SRC, { payload: null, family: "small", now: CALM, alerts });
+    expect(ids(r)).toEqual(["f1wr-15-RACE"]);
+  });
+
+  it("ไม่มี Notification / iOS ไม่ให้สิทธิ์ → widget ยังวาดได้", async () => {
+    for (const notification of ["none", "throws"] as const) {
+      const r = await run(SRC, { payload: two(), family: "small", now: CALM, notification });
+      expect(r.texts).toContain("🇦🇿 AZERBAIJAN");
+    }
+  });
+});
+
+describe("scriptable-widget.js — เวลาอัปเดตล่าสุด", () => {
+  it("ทุกขนาดบอกเวลาที่เว็บสร้างข้อมูล (เวลาเครื่อง)", async () => {
+    // CALM = 00:00Z → 07:00 เวลาไทย
+    for (const f of ["small", "medium", "large"] as const) {
+      expect((await render(f)).texts).toContain("↻07:00");
+    }
+  });
+
+  it("ข้อมูลรุ่นเก่าไม่มี generatedAt → ไม่ขึ้น ไม่พัง", async () => {
+    const p = { ...payloadAt(CALM), generatedAt: undefined };
+    const r = await render("small", CALM, p);
+    expect(r.texts.some((t) => t.startsWith("↻"))).toBe(false);
+    expect(r.texts).toContain("🇦🇿 AZERBAIJAN");
+  });
+});
+
 describe("scriptable-widget.js — โหมดโพเดียมหลังเรซ", () => {
   // สองวันหลังเรซสเปน (2026-09-13) — สนามถัดไปยังไม่เริ่ม
   const AFTER = "2026-09-15T00:00:00Z";
@@ -437,11 +564,15 @@ describe("scriptable-widget.js — โหมดโพเดียมหลัง
     }
   });
 
-  it("small: นับถอยหลังสนามถัดไปตามปกติ (ที่แคบ ไม่ใส่โพเดียม)", async () => {
+  it("small: นับถอยหลังสนามถัดไปตามปกติ + ผู้ชนะสนามที่แล้วบรรทัดเดียว (ที่แคบ ไม่ใส่โพเดียม)", async () => {
     const r = await render("small", AFTER);
     expect(r.texts).toContain("FP1");
     expect(r.texts).toContain("วัน");
-    expect(r.texts).not.toContain("HAM");
+    expect(r.texts).toContain("HAM ชนะ 🇪🇸");
+    expect(r.texts).not.toContain("LEC");
+    expect(r.stackUrls).toContain("https://f1-thai.vercel.app/race/14");
+    // พ้นช่วงโพเดียมแล้วไม่ขึ้น
+    expect((await render("small", CALM)).texts.join(" ")).not.toContain("ชนะ");
   });
 
   it("medium: โพเดียมสนามที่เพิ่งจบอยู่ขวาแทนตารางคะแนน แตะแล้วเปิดผลสนามนั้น", async () => {

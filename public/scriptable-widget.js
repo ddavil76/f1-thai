@@ -10,6 +10,14 @@
 
 const SITE = "https://f1-thai.vercel.app"; // ← แก้เป็นโดเมนของคุณ
 
+// ตั้งค่าผ่านช่อง Parameter ของ widget (กดค้างที่ widget → แก้ไขวิดเจ็ต) — พิมพ์ได้หลายคำ คั่นด้วยเว้นวรรค
+// · race    = นับถอยหลังเฉพาะเรซ ข้ามซ้อมและควอลิฟาย
+// · noalert = ไม่ต้องแจ้งเตือนก่อนแข่ง
+const PARAM = String((typeof args !== "undefined" && args && args.widgetParameter) || "")
+  .toLowerCase().split(/[\s,]+/).filter(Boolean);
+const RACE_ONLY = PARAM.includes("race");
+const NO_ALERT = PARAM.includes("noalert");
+
 const RED = new Color("#e10600");
 const WHITE = Color.white();
 const DIM = new Color("#ffffff", 0.55);
@@ -69,7 +77,10 @@ async function load() {
 function normalize(data) {
   if (!data || !data.race) return data;
   const now = Date.now();
-  const list = data.sessions && data.sessions.length ? data.sessions : data.session ? [data.session] : [];
+  const all = data.sessions && data.sessions.length ? data.sessions : data.session ? [data.session] : [];
+  // โหมด race: เป้าหมายเหลือแค่เรซ (ตารางทั้งสุดสัปดาห์ใน large ยังโชว์ครบ)
+  const races = RACE_ONLY ? all.filter((x) => x.code === "RACE") : [];
+  const list = races.length ? races : all;
   if (list.length === 0) return data;
   // ข้อมูลรุ่นเก่าไม่มี endsAt — ถือว่าจบตอนเริ่ม (ข้ามไปตัวถัดไปเลย ดีกว่านับขึ้น)
   const s = list.find((x) => Date.parse(x.endsAt || x.startsAt) > now);
@@ -244,13 +255,20 @@ function newWidget(data, family) {
 
 /* ---------- หัว: รอบ ป้าย ชื่อสนาม ---------- */
 
-function header(body, data, { nameSize, showCircuit }) {
+// compact (small): แถวบนแคบ ย่อรอบเป็น R16 และไม่ซ้ำ LIVE (ตัวใหญ่ข้างล่างบอกอยู่แล้ว) ให้เวลาอัปเดตพอดีแถว
+function header(body, data, { nameSize, showCircuit, compact = false }) {
   const { race, state } = data;
   const top = row(body);
   top.spacing = 5;
-  text(top, `ROUND ${race.round}`, { size: 10, color: RED, heavy: true });
+  text(top, compact ? `R${race.round}` : `ROUND ${race.round}`, { size: 10, color: RED, heavy: true });
   if (race.isSprint) text(top, "SPRINT", { size: 9, color: YELLOW, heavy: true });
-  if (state === "live") text(top, "● LIVE", { size: 9, color: GREEN, heavy: true });
+  if (state === "live" && !compact) text(top, "● LIVE", { size: 9, color: GREEN, heavy: true });
+  // เวลาที่เว็บสร้างข้อมูลชุดนี้ — widget ดูค้างเมื่อไหร่จะรู้ทันทีว่าข้อมูลเก่าหรือยังไม่รีเฟรช
+  const at = data.generatedAt ? new Date(data.generatedAt) : null;
+  if (at && !isNaN(at)) {
+    top.addSpacer();
+    text(top, `↻${hm(at)}`, { size: 8, color: FAINT });
+  }
 
   body.addSpacer(2);
   const name = text(body, `${race.flag} ${race.short.toUpperCase()}`, { size: nameSize, heavy: true });
@@ -323,10 +341,20 @@ function message(data, family) {
 
 /* ---------- small ---------- */
 
-// สนามถัดไปเป็นหลักเสมอ — ผลสนามที่เพิ่งจบบอกผ่านสีแถบขอบซ้าย (ทีมผู้ชนะ) ที่แคบเกินจะใส่โพเดียม
+// สนามถัดไปเป็นหลักเสมอ — ที่แคบเกินจะใส่โพเดียม ผลสนามที่แล้วเหลือแค่ชื่อผู้ชนะ
 function small(data) {
   const { w, body } = newWidget(data, "small");
-  header(body, data, { nameSize: 15, showCircuit: false });
+  header(body, data, { nameSize: 15, showCircuit: false, compact: true });
+  // หลังเรซไม่กี่วัน บอกผู้ชนะสนามที่แล้วบรรทัดเดียว (สีแถบซ้ายอย่างเดียวคนอาจไม่รู้ว่าหมายถึงอะไร)
+  if (data.showPodium && data.lastRace) {
+    const win = data.lastRace.podium[0];
+    const r = row(body);
+    r.spacing = 4;
+    r.url = `${SITE}/race/${data.lastRace.round}`;
+    text(r, "🏆", { size: 10 });
+    teamTick(r, win.constructorId, 10);
+    text(r, `${win.code} ชนะ ${data.lastRace.flag}`, { size: 10, color: DIM, bold: true });
+  }
   body.addSpacer();
   sessionBlock(body, data, { timerSize: 26 });
   return w;
@@ -472,6 +500,50 @@ function lockInline(data) {
   return w;
 }
 
+/* ---------- แจ้งเตือนก่อนแข่ง ---------- */
+
+// แจ้งก่อนเริ่มกี่นาที และแจ้ง session ไหนบ้าง (ซ้อมไม่แจ้ง — ถี่เกินจะกลายเป็นรำคาญ)
+const ALERT_MIN = 30;
+const ALERT_CODES = ["Q", "SPRINT", "RACE"];
+const ALERT_PREFIX = "f1wr-";
+
+/**
+ * ตั้งแจ้งเตือนในเครื่องล่วงหน้า (ไม่ต้องมีเซิร์ฟเวอร์ ไม่ต้องให้ widget ตื่นตรงเวลา)
+ * ทุกรอบรีเฟรชลบของเดิมที่เราตั้งไว้แล้วตั้งใหม่ตามตารางล่าสุด — ตารางเลื่อน/เปลี่ยนโหมดก็ไม่ค้างของเก่า
+ * ยังไม่เคยกดอนุญาตแจ้งเตือน (ต้องกดรันในแอปครั้งแรก) → iOS ไม่แสดงเอง ไม่พัง
+ */
+async function scheduleAlerts(data) {
+  if (typeof Notification === "undefined") return;
+  try {
+    const pending = await Notification.allPending();
+    const ours = pending.map((n) => n.identifier).filter((id) => id && id.startsWith(ALERT_PREFIX));
+    if (ours.length) await Notification.removePending(ours);
+    if (NO_ALERT || !data || !data.race) return;
+
+    const weekends = [{ race: data.race, sessions: data.sessions || [] }];
+    if (data.after && data.after.race) weekends.push({ race: data.after.race, sessions: data.after.sessions || [] });
+    const codes = RACE_ONLY ? ["RACE"] : ALERT_CODES;
+    const now = Date.now();
+    for (const { race, sessions } of weekends) {
+      for (const s of sessions) {
+        const start = Date.parse(s.startsAt);
+        const fire = start - ALERT_MIN * 60 * 1000;
+        if (!codes.includes(s.code) || !(fire > now)) continue;
+        const n = new Notification();
+        n.identifier = `${ALERT_PREFIX}${race.round}-${s.code}`;
+        n.threadIdentifier = "f1-week-race";
+        n.title = `${race.flag} ${race.short.toUpperCase()} · ${s.code}`;
+        n.body = `เริ่มอีก ${ALERT_MIN} นาที (${hm(new Date(start))})`;
+        n.openURL = `${SITE}/race/${race.round}`;
+        n.setTriggerDate(new Date(fire));
+        await n.schedule();
+      }
+    }
+  } catch {
+    // แจ้งเตือนเป็นของเสริม — พังก็ยังต้องวาด widget ได้
+  }
+}
+
 /* ---------- ประกอบ ---------- */
 
 function build(data, family) {
@@ -498,7 +570,10 @@ function nextRefresh(data) {
   return new Date(turns.length ? Math.min(...turns) : soon);
 }
 
-const data = normalize(await load().catch(() => null));
+const raw = await load().catch(() => null);
+const data = normalize(raw);
+// ต่อเน็ตไม่ได้ (raw = null) ไม่แตะแจ้งเตือนเดิม — ของที่ตั้งไว้รอบก่อนยังถูกอยู่
+if (raw) await scheduleAlerts(data);
 const family = config.widgetFamily || "medium";
 const widget = build(data, family);
 widget.refreshAfterDate = nextRefresh(data);
