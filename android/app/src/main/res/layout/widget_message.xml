@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="horizontal"
+    android:paddingTop="13dp"
+    android:paddingEnd="13dp"
+    android:paddingBottom="13dp">
+
+    <!-- ยังไม่มีข้อมูล / ต่อเน็ตไม่ได้ / จบฤดูกาล / ปฏิทินยังไม่ประกาศ -->
+    <ImageView
+        android:id="@+id/stripe"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="9dp"
+        android:scaleType="fitXY"
+        android:src="@drawable/stripe" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-black"
+            android:text="F1 WEEK RACE"
+            android:textColor="@color/f1"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/msg"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="กำลังโหลด…"
+            android:textColor="@color/dim"
+            android:textSize="14sp" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="8dp" />
+
+        <include layout="@layout/part_list" />
+    </LinearLayout>
+</LinearLayout>
