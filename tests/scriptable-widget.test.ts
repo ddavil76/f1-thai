@@ -283,6 +283,13 @@ describe("scriptable-widget.js — ทุกขนาด", () => {
     expect(r.texts).toEqual(expect.arrayContaining(["4", "วัน", "08", "ชม."]));
   });
 
+  it("เกินวัน: ขอรีเฟรชตอนเลขชั่วโมงเปลี่ยน \"4 วัน 08 ชม.\" จะได้ไม่ช้าไปเกือบชั่วโมง", async () => {
+    // ซ้อม 1 2026-09-24T08:30Z · ตอน 00:10Z เหลือ 4 วัน 8 ชม. 20 นาที → เลขชั่วโมงเปลี่ยนตอน 00:30Z
+    const now = "2026-09-20T00:10:00Z";
+    const r = await render("small", now, payloadAt(now));
+    expect(r.refreshAfter!.toISOString()).toBe("2026-09-20T00:30:01.000Z");
+  });
+
   it("ขอรีเฟรชตอนเหลือ 1 วันพอดี ให้เปลี่ยนเป็น timer ทัน", async () => {
     const r = await render("small", "2026-09-23T08:20:00Z");
     expect(r.refreshAfter!.toISOString()).toBe("2026-09-23T08:30:00.000Z");
