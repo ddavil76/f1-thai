@@ -8,7 +8,7 @@ on:
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
-# สร้าง/แทน release ทดลอง (android-preview) ให้โหลด APK ตรงจากมือถือได้
+# สร้าง/แทน release ที่มี APK ให้โหลดตรงจากมือถือได้
 permissions:
   contents: write
 
@@ -43,14 +43,19 @@ jobs:
           path: android/f1-week-race.apk
           if-no-files-found: error
 
-      # ลิงก์ถาวร: https://github.com/<owner>/<repo>/releases/download/android-preview/f1-week-race.apk
-      - name: Publish preview release
+      # main → release "android" (หน้า /widget ลิงก์มาที่นี่) · branch อื่น → "android-preview" ไว้ลองก่อน
+      # ลิงก์ถาวร: https://github.com/<owner>/<repo>/releases/download/<tag>/f1-week-race.apk
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete android-preview --yes --cleanup-tag || true
-          gh release create android-preview f1-week-race.apk \
-            --prerelease \
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            TAG=android; TITLE="Android widget"; FLAGS="--latest"
+          else
+            TAG=android-preview; TITLE="Android widget (ทดลอง)"; FLAGS="--prerelease"
+          fi
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" f1-week-race.apk $FLAGS \
             --target "$GITHUB_SHA" \
-            --title "Android widget (ทดลอง)" \
-            --notes "APK ทดลองของ widget Android — สร้างจาก ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
+            --title "$TITLE" \
+            --notes "APK ของ widget Android — สร้างจาก ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
