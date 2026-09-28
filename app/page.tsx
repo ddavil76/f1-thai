@@ -5,6 +5,7 @@ import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
 import WeatherBadge from "@/components/WeatherBadge";
 import ReactionPromo from "@/components/ReactionPromo";
+import WidgetPromo from "@/components/WidgetPromo";
 import ResultsPending from "@/components/ResultsPending";
 import ResultsRefresher from "@/components/ResultsRefresher";
 import LocalTime from "@/components/tz/LocalTime";
@@ -131,6 +132,7 @@ export default async function Home() {
           )}
 
           <ReactionPromo />
+          <WidgetPromo />
         </div>
 
         {/* ---- คอลัมน์ขวา: ตารางสุดสัปดาห์ / ผลล่าสุด / ถัดไป ---- */}
