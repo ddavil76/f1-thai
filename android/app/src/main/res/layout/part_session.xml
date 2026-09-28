@@ -44,11 +44,13 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
+    <!-- ข้อความนิ่ง ("3 วัน 15 ชม." / LIVE / จบแล้ว) ใช้ฟอนต์ปกติ — monospace ทำให้ตัวไทยและช่องว่างห่างเกิน
+         (ตัวเลขกว้างเท่ากันจำเป็นแค่ตัวนับที่เดินทุกวินาทีข้างบน) -->
     <TextView
         android:id="@+id/big"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:fontFamily="monospace"
+        android:fontFamily="sans-serif"
         android:singleLine="true"
         android:textColor="@color/white"
         android:textSize="26sp"
