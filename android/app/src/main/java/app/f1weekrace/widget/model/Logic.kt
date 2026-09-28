@@ -9,7 +9,8 @@ import java.time.ZoneId
 
 const val SITE = "https://f1-thai.vercel.app"
 const val MINUTE = 60_000L
-const val DAY = 24 * 60 * MINUTE
+const val HOUR = 60 * MINUTE
+const val DAY = 24 * HOUR
 
 /**
  * เลือก session ตาม "เวลาเครื่องตอนวาด" ไม่เชื่อ state ในข้อมูลอย่างเดียว — ข้อมูลอาจเก่าได้
@@ -42,8 +43,11 @@ fun nextRefresh(p: Payload?, now: Long): Long {
     val busy = p != null && (p.state == State.LIVE || p.state == State.DONE)
     val soon = now + (if (busy) 5 else 30) * MINUTE
     val s = p?.session ?: return soon
-    val turns = listOf(s.startsAt + 5_000, s.endsAt + 5_000, s.startsAt - DAY).filter { it in (now + 1)..<soon }
-    return turns.minOrNull() ?: soon
+    val turns = mutableListOf(s.startsAt + 5_000, s.endsAt + 5_000, s.startsAt - DAY)
+    // เกินวันขึ้นเป็น "N วัน HH ชม." ที่ไม่เดินเอง — รีเฟรชตอนเลขชั่วโมงเปลี่ยน ไม่งั้นช้าไปได้เกือบชั่วโมง
+    val left = s.startsAt - now
+    if (left > DAY) turns += s.startsAt - (left - 1) / HOUR * HOUR + 1_000
+    return turns.filter { it in (now + 1)..<soon }.minOrNull() ?: soon
 }
 
 /* ---------- แจ้งเตือนก่อนแข่ง ---------- */
@@ -95,5 +99,5 @@ fun whenShort(ms: Long, zone: ZoneId): String = at(ms, zone).let { "${TH_DAY[it.
 fun daysLeft(target: Long, now: Long): Pair<Long, Long>? {
     val left = target - now
     if (left <= DAY) return null
-    return left / DAY to (left / (60 * MINUTE)) % 24
+    return left / DAY to (left / HOUR) % 24
 }

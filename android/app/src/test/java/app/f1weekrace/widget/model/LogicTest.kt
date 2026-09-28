@@ -131,6 +131,16 @@ class LogicTest {
         assertEquals(t("2026-09-23T08:30:00Z"), nextRefresh(normalize(payload(), now, false), now))
     }
 
+    @Test fun refreshesWhenTheHourDigitChangesSoDaysHoursNeverLag() {
+        // ซ้อม 1 08:30Z วันที่ 24 · ตอน 00:10Z วันที่ 20 เหลือ 4 วัน 08 ชม. 20 นาที → กลายเป็น 08 → 07 ตอน 00:30Z
+        val now = t("2026-09-20T00:10:00Z")
+        assertEquals(t("2026-09-20T00:30:01Z"), nextRefresh(normalize(payload(), now, false), now))
+        // หลังรีเฟรช ชั่วโมงถัดไปเกินรอบปกติ 30 นาที → ใช้รอบปกติ
+        val after = t("2026-09-20T00:30:01Z")
+        assertEquals(after + 30 * MINUTE, nextRefresh(normalize(payload(), after, false), after))
+        assertEquals(4L to 7L, daysLeft(t("2026-09-24T08:30:00Z"), after))
+    }
+
     @Test fun refreshesOftenWhileLiveOrWaitingForNextRace() {
         val live = t("2026-09-24T08:40:00Z")
         assertEquals(live + 5 * MINUTE, nextRefresh(normalize(payload(), live, false), live))

@@ -128,7 +128,8 @@ function badge(stack, code, size = 10) {
   return b;
 }
 
-const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 
 /**
  * นับถอยหลัง — ไม่ถึงวันใช้ timer ของ iOS (เดินทุกวินาที) · เกินวันเป็น "4 วัน 07 ชม."
@@ -566,8 +567,12 @@ function nextRefresh(data) {
   const start = s ? Date.parse(s.startsAt) : NaN;
   const end = s && s.endsAt ? Date.parse(s.endsAt) : NaN;
   // จังหวะที่หน้าตาต้องเปลี่ยน: session เริ่ม (ขึ้น LIVE), จบ (ไปตัวถัดไป), เหลือ 1 วัน (เปลี่ยนเป็น timer)
-  const turns = [start + 5 * 1000, end + 5 * 1000, start - DAY].filter((t) => t > now && t < soon);
-  return new Date(turns.length ? Math.min(...turns) : soon);
+  const turns = [start + 5 * 1000, end + 5 * 1000, start - DAY];
+  // เกินวันขึ้นเป็น "N วัน HH ชม." ที่ไม่เดินเอง — รีเฟรชตอนเลขชั่วโมงเปลี่ยน ไม่งั้นช้าไปได้เกือบชั่วโมง
+  const left = start - now;
+  if (left > DAY) turns.push(start - Math.floor((left - 1) / HOUR) * HOUR + 1000);
+  const next = turns.filter((t) => t > now && t < soon);
+  return new Date(next.length ? Math.min(...next) : soon);
 }
 
 const raw = await load().catch(() => null);

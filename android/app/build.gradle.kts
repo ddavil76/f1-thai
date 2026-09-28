@@ -13,8 +13,8 @@ android {
         applicationId = "app.f1weekrace.widget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3"
     }
 
     // กุญแจเซ็นอยู่ในรีโป — APK ทุกรอบจาก CI เซ็นด้วยกุญแจเดียวกัน ติดตั้งทับของเดิมได้
