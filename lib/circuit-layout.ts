@@ -145,7 +145,47 @@ export function clearance(pts: XZ[], cell = 0.5) {
     return ok;
   };
 
-  return { nearest, free, normals: nrm, spacing: ds };
+  /**
+   * ระยะจากจุด i ถึง "ช่วงอื่น" ของสนามที่ใกล้สุด (ไม่เกิน cap) — ช่วงที่วิ่งผ่านมาใกล้ ๆ
+   * แต่ห่างกันตามแนววิ่ง (เช่นถนนสองเส้นขนานในสนามถนน) · สองขาของโค้งหักศอกไม่นับ
+   * เพราะเชื่อมกันด้วยโค้งอยู่แล้ว (ระยะตามแนววิ่งไม่ถึงสองเท่าของระยะตรง)
+   */
+  const gap = (i: number, cap = 1) => {
+    const [px, pz] = pts[i];
+    let best = cap;
+    for (const j of around(px, pz, cap)) {
+      const d = Math.hypot(pts[j][0] - px, pts[j][1] - pz);
+      if (d >= best) continue;
+      const along = Math.min(Math.abs(i - j), n - Math.abs(i - j)) * ds;
+      if (along > d * 2 + 0.3) best = d;
+    }
+    return best;
+  };
+
+  return { nearest, free, gap, normals: nrm, spacing: ds };
+}
+
+/**
+ * ความกว้างครึ่งหนึ่งของถนนแต่ละจุด — ปกติ = base แต่ช่วงที่มีถนนอีกเส้นผ่านมาใกล้
+ * (สนามถนนอย่างบากู/โมนาโก) แคบลงจนไม่ทับกัน · ค่อย ๆ แคบ/กว้าง ไม่หักเป็นขั้น
+ */
+export function roadWidth(pts: XZ[], { base = 0.15, min = 0.05, share = 0.4 } = {}): number[] {
+  const n = pts.length;
+  const { gap } = clearance(pts);
+  const raw = pts.map((_, i) => Math.max(min, Math.min(base, gap(i, base / share + 0.1) * share)));
+  // ขยายช่วงแคบออกไปก่อน/หลัง แล้วเฉลี่ยให้เนียน
+  const W = 18;
+  const low = raw.map((_, i) => {
+    let m = Infinity;
+    for (let j = -W; j <= W; j++) m = Math.min(m, raw[wrap(i + j, n)]);
+    return m;
+  });
+  const B = 10;
+  return low.map((_, i) => {
+    let s = 0;
+    for (let j = -B; j <= B; j++) s += low[wrap(i + j, n)];
+    return s / (2 * B + 1);
+  });
 }
 
 /** ตัวสุ่มที่ให้ผลเดิมทุกครั้ง (ต้นไม้อยู่ที่เดิมทุกครั้งที่เปิด) */

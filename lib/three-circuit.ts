@@ -4,7 +4,7 @@
 // ไม่มีโลโก้/ป้ายโฆษณาจริง — เป็นสนามทั่วไปที่แต่งตามผังจริง
 
 import type * as THREE_NS from "three";
-import { clearance, cornerMask, seeded, type XZ } from "./circuit-layout";
+import { clearance, cornerMask, roadWidth, seeded, type XZ } from "./circuit-layout";
 import type { TrackMeshes, Vec3 } from "./three-track";
 
 type Three = typeof THREE_NS;
@@ -16,8 +16,10 @@ export type CircuitMeshes = TrackMeshes & {
   cornerAt(u: number): number;
   /** ด้านข้างบนพื้นราบ (ยาว 1) ที่ตำแหน่ง u — ใช้วางรถเยื้องเลน */
   sideAt(u: number): THREE_NS.Vector3;
-  /** ความกว้างครึ่งหนึ่งของผิวแทร็ก */
+  /** ความกว้างครึ่งหนึ่งของผิวแทร็กปกติ */
   half: number;
+  /** ความกว้างครึ่งหนึ่ง ณ ตำแหน่ง u — ช่วงที่ถนนสองเส้นผ่านใกล้กันจะแคบกว่า half */
+  halfAt(u: number): number;
 };
 
 /** สีหลัก — กลางวัน/กลางคืนใช้ชุดเดียวกัน แสงเป็นตัวต่าง */
@@ -60,7 +62,7 @@ export function buildCircuit(
   THREE: Three,
   merge: Merge,
   pts: Vec3[],
-  { night = false, samples = 800, half = 0.2, seed = 7 }: { night?: boolean; samples?: number; half?: number; seed?: number } = {},
+  { night = false, samples = 800, half = 0.15, seed = 7 }: { night?: boolean; samples?: number; half?: number; seed?: number } = {},
 ): CircuitMeshes {
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
@@ -91,17 +93,20 @@ export function buildCircuit(
   const room = clearance(xz);
   const ds = room.spacing;
   const at = (i: number) => ((i % S) + S) % S;
+  // ความกว้างถนนต่อจุด: สนามถนนที่สองช่วงวิ่งผ่านใกล้กัน (บากู โมนาโก เจดดาห์) แคบลงไม่ให้ทับกัน
+  const hw = roadWidth(xz, { base: half });
+  const H = (i: number) => hw[at(i)];
 
   // ระยะถึงแบริเออร์แต่ละด้าน: เผื่อที่บ่อกรวดด้านนอกโค้ง แต่ไม่ล้ำไปหาอีกช่วงของสนาม
-  const GRAVEL = 0.42;
-  const wantOff = (i: number, side: number) => half + 0.1 + (inside[i] === side ? 0.04 : GRAVEL * mask[i]);
-  const roomOf = [1, -1].map((side) => Array.from({ length: S }, (_, i) => room.free(i, side, half + 0.1 + GRAVEL, half) - 0.02));
+  const GRAVEL = 0.38;
+  const wantOff = (i: number, side: number) => H(i) + 0.09 + (inside[i] === side ? 0.03 : GRAVEL * mask[i]);
+  const roomOf = [1, -1].map((side) => Array.from({ length: S }, (_, i) => room.free(i, side, H(i) + 0.09 + GRAVEL, H(i)) - 0.02));
   const rawWall = [1, -1].map((side, s) =>
-    Array.from({ length: S }, (_, i) => Math.max(half + 0.035, Math.min(wantOff(i, side), roomOf[s][i]))),
+    Array.from({ length: S }, (_, i) => Math.max(H(i) + 0.035, Math.min(wantOff(i, side), roomOf[s][i]))),
   );
   // สองช่วงของสนามชิดกันจนไม่มีที่ → ไม่มีแบริเออร์ตรงนั้น (ไม่งั้นกำแพงพาดทับอีกช่วง)
   const cramped = roomOf.map((arr) => arr.map((v, i) => {
-    for (let j = -3; j <= 3; j++) if (arr[at(i + j)] < half + 0.035) return true;
+    for (let j = -3; j <= 3; j++) if (arr[at(i + j)] < H(i + j) + 0.035) return true;
     return false;
   }));
   // ทำให้เรียบ (แบริเออร์ไม่หยักตามจุด)
@@ -187,7 +192,7 @@ export function buildCircuit(
   vergeTex.repeat.set(1, 1);
   const vergeMat = keep(new THREE.MeshLambertMaterial({ map: vergeTex, side: THREE.DoubleSide }));
   for (const side of [1, -1]) {
-    add(strip(() => side * (half - 0.01), (i) => side * (wallOf(i, side) + 0.02), y(0.001), y(0.001), { vLen: 0.6 }), vergeMat);
+    add(strip((i) => side * (H(i) - 0.01), (i) => side * (wallOf(i, side) + 0.02), y(0.001), y(0.001), { vLen: 0.6 }), vergeMat);
     if (height > 0.03) {
       add(
         strip(
@@ -206,11 +211,11 @@ export function buildCircuit(
   const gravelTex = keep(canvasTex(THREE, 64, 64, (g) => speckle(g, 64, 64, C.gravel, ["#b9a47c", "#ddcba6", "#a8936c"], 900, rnd)));
   const gravelMat = keep(new THREE.MeshLambertMaterial({ map: gravelTex, side: THREE.DoubleSide }));
   for (const side of [1, -1]) {
-    const inner = () => side * (half + 0.05);
+    const inner = (i: number) => side * (H(i) + 0.05);
     const outer = (i: number) => {
       const k = at(i);
-      if (inside[k] === side || mask[k] < 0.15) return inner();
-      return side * Math.max(half + 0.05, wallOf(k, side) - 0.03);
+      if (inside[k] === side || mask[k] < 0.15) return inner(i);
+      return side * Math.max(H(k) + 0.05, wallOf(k, side) - 0.03);
     };
     add(strip(inner, outer, y(0.003), y(0.003), { vLen: 0.3 }), gravelMat);
   }
@@ -229,7 +234,7 @@ export function buildCircuit(
     // กลางคืน: สนามสว่างกว่ารอบข้างเหมือนมีไฟส่อง
     emissive: new THREE.Color(night ? 0x2a2c33 : 0x000000),
   }));
-  add(strip(() => -half, () => half, y(0.006), y(0.006), { vLen: half * 2 }), asphaltMat);
+  add(strip((i) => -H(i), (i) => H(i), y(0.006), y(0.006), { vLen: half * 2 }), asphaltMat);
 
   /* ---- kerb แดง-ขาว ช่วงโค้ง (ด้านในเต็ม ด้านนอกบางกว่า) ---- */
   const kerbTex = keep(canvasTex(THREE, 2, 8, (g) => {
@@ -246,7 +251,7 @@ export function buildCircuit(
       const m = Math.max(0, (mask[k] - 0.2) / 0.5);
       return Math.min(1, m) * (inside[k] === side ? 0.055 : 0.035);
     };
-    add(strip(() => side * (half - 0.012), (i) => side * (half - 0.012 + w(i)), y(0.009), y(0.009), { vLen: 0.09 }), kerbMat);
+    add(strip((i) => side * (H(i) - 0.012), (i) => side * (H(i) - 0.012 + w(i)), y(0.009), y(0.009), { vLen: 0.09 }), kerbMat);
   }
 
   /* ---- แบริเออร์: ยางแดง/ขาว/น้ำเงินด้านนอกโค้ง · ราวเหล็กที่เหลือ ---- */
@@ -282,15 +287,15 @@ export function buildCircuit(
     group.add(obj);
     return obj;
   };
-  const lineGeo = keep(new THREE.PlaneGeometry(half * 2, 0.05));
+  const lineGeo = keep(new THREE.PlaneGeometry(H(0) * 2, 0.05));
   lineGeo.rotateX(-Math.PI / 2);
   place(new THREE.Mesh(lineGeo, keep(new THREE.MeshLambertMaterial({ map: checkerTex }))), 0, 0, 0.012);
   // ช่องกริด: เส้นขาวสั้นขวางครึ่งสนาม สลับซ้าย/ขวา ถอยหลังจากเส้นสตาร์ท
   const slots: Geo[] = [];
   for (let k = 0; k < 10; k++) {
     const i = at(-Math.round((0.12 + k * 0.17) / ds));
-    const off = (k % 2 ? -1 : 1) * half * 0.45;
-    const g = new THREE.PlaneGeometry(half * 0.75, 0.012);
+    const off = (k % 2 ? -1 : 1) * H(i) * 0.45;
+    const g = new THREE.PlaneGeometry(H(i) * 0.75, 0.012);
     g.rotateX(-Math.PI / 2);
     g.rotateY(Math.atan2(-N[i][1], N[i][0]));
     g.translate(P[i].x + N[i][0] * off, P[i].y + 0.011, P[i].z + N[i][1] * off);
@@ -522,6 +527,7 @@ export function buildCircuit(
     radius,
     height,
     half,
+    halfAt: (u: number) => H(Math.round(u * S)),
     cornerAt,
     sideAt,
     dispose: () => disposables.forEach((d) => d.dispose()),
@@ -533,7 +539,7 @@ export function buildCircuit(
  * หันหน้าตามทิศวิ่ง เอียงตามเนิน (lookAt ไปจุดข้างหน้า)
  */
 export function placeCar(
-  circuit: Pick<CircuitMeshes, "curve" | "sideAt">,
+  circuit: Pick<CircuitMeshes, "curve" | "sideAt" | "half" | "halfAt">,
   obj: THREE_NS.Object3D,
   u: number,
   lateral = 0,
@@ -543,6 +549,8 @@ export function placeCar(
   const p = circuit.curve.getPointAt(w);
   const t = circuit.curve.getTangentAt(w);
   const n = circuit.sideAt(w);
-  obj.position.set(p.x + n.x * lateral, p.y + lift, p.z + n.z * lateral);
+  // เลนเยื้องตามสัดส่วนความกว้างถนนตรงนั้น — ช่วงแคบรถไม่ล้ำขอบ
+  const off = (lateral * circuit.halfAt(w)) / circuit.half;
+  obj.position.set(p.x + n.x * off, p.y + lift, p.z + n.z * off);
   obj.lookAt(obj.position.x + t.x, obj.position.y + t.y, obj.position.z + t.z);
 }

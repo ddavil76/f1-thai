@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearance, cornerMask, curvature, seeded, type XZ } from "@/lib/circuit-layout";
+import { clearance, cornerMask, curvature, roadWidth, seeded, type XZ } from "@/lib/circuit-layout";
 
 /** วงกลมรัศมี r ทวนเข็ม (มุมเพิ่ม) n จุด */
 function circle(r: number, n = 200): XZ[] {
@@ -82,5 +82,23 @@ describe("พื้นที่ว่างข้างสนาม", () => {
     const xs = Array.from({ length: 50 }, a);
     expect(Array.from({ length: 50 }, b)).toEqual(xs);
     expect(xs.every((x) => x >= 0 && x < 1)).toBe(true);
+  });
+});
+
+describe("ความกว้างถนน", () => {
+  it("สนามโล่ง → กว้างเท่าปกติทั้งรอบ", () => {
+    const w = roadWidth(stadium(1.2), { base: 0.15 });
+    expect(Math.min(...w)).toBeCloseTo(0.15, 5);
+  });
+
+  it("ถนนสองเส้นผ่านใกล้กัน → แคบลงจนไม่ทับกัน แต่ไม่แคบกว่าขั้นต่ำ", () => {
+    // ทางตรงห่างกัน 0.3 — ถ้ากว้างเต็ม 0.15 สองข้างจะชนกันพอดี
+    const pts = stadium(0.15);
+    const w = roadWidth(pts, { base: 0.15, min: 0.05 });
+    const mid = 80; // กลางทางตรง
+    expect(w[mid] * 2).toBeLessThan(0.3);
+    expect(w[mid]).toBeGreaterThanOrEqual(0.05);
+    // ในโค้งหักศอกเอง (สองขาเชื่อมกันด้วยโค้ง) ไม่นับเป็นถนนอีกเส้น → ไม่บีบเกินจำเป็น
+    expect(Math.max(...w)).toBeLessThanOrEqual(0.15);
   });
 });
