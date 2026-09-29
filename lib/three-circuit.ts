@@ -396,7 +396,8 @@ export function buildCircuit(
     };
     let n = 0;
     for (const b of osm.data.buildings) {
-      const h = b[0];
+      // ไฟล์เก็บความสูงขยาย ×3 — ในฉากจริงยังดูเป็นตึกระฟ้าไปหน่อย ย่อลงเหลือราว ×2
+      const h = b[0] * 0.7;
       const ring: XZ[] = [];
       for (let k = 1; k + 1 < b.length; k += 2) ring.push([b[k], b[k + 1]]);
       if (ring.length < 3) continue;
