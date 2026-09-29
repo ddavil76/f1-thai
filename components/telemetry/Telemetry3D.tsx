@@ -8,6 +8,7 @@ import type { Trace } from "@/lib/telemetry";
 import { fogColor, isNightCircuit, REAL_EXAGGERATION, skyBackground, useSceneStyle } from "@/lib/three-style";
 import type { CircuitMeshes } from "@/lib/three-circuit";
 import SceneStyleToggle from "../SceneStyleToggle";
+import OsmCredit from "../OsmCredit";
 
 /** ค่าบนหน้าปัดของรถ ณ เวลาที่ชี้/ที่เล่นอยู่ */
 export type CarHud = { speed: number; gear: number; throttle: number; brake: number };
@@ -28,14 +29,17 @@ export default function Telemetry3D({
   colors,
   cars,
   circuitId,
+  ground,
   onFail,
 }: {
   trace: Trace;
   /** สีของแต่ละจุดในรอบ (ยาวเท่า trace.t) */
   colors: string[];
   cars: Car3D[];
-  /** สนามไนต์เรซ → ฉากกลางคืน */
+  /** สนามไนต์เรซ → ฉากกลางคืน · ใช้โหลดฉากรอบสนามจริง (OSM) */
   circuitId?: string;
+  /** ผังสนามที่ผูกกับแผนที่ (trackGroundPoints) — ใช้วางเส้นจากพิกัดรถให้ตรงกับฉาก OSM */
+  ground?: [number, number][];
   onFail: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -53,6 +57,7 @@ export default function Telemetry3D({
   const style = useSceneStyle();
   const real = style === "real";
   const night = isNightCircuit(circuitId);
+  const [osmOn, setOsmOn] = useState(false);
 
   useEffect(() => {
     colorsRef.current = colors;
@@ -103,9 +108,23 @@ export default function Telemetry3D({
             ...(await import("three/addons/utils/BufferGeometryUtils.js")),
             ...(await import("@/lib/three-circuit")),
             ...(await import("@/lib/three-car")),
+            ...(await import("@/lib/osm-scene")),
+            ...(await import("@/lib/circuit-layout")),
           }
         : null;
+      // ฉากรอบสนามจริง (OSM): ต้องมีผังที่ผูกกับแผนที่ไว้หมุนเส้นจากพิกัดรถให้ตรง
+      const osm = kit && ground && ground.length > 2 ? await kit.loadOsmScene(circuitId) : null;
       if (disposed) return;
+      setOsmOn(!!osm);
+      if (osm && kit && ground) {
+        // แกนของ openf1 ไม่ได้ชี้ทิศเหนือเสมอ → หมุน/ย่อ/เลื่อนให้ทับผังที่ผูกกับแผนที่
+        const fitXZ = kit.alignTo(ground, pts.map(([x, , z]) => [x, z]));
+        for (const p of pts) {
+          const [x, z] = fitXZ([p[0], p[2]]);
+          p[0] = x;
+          p[2] = z;
+        }
+      }
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -121,7 +140,7 @@ export default function Telemetry3D({
       const grid = real ? null : buildGrid(THREE);
       if (grid) scene.add(grid.grid);
       const track = kit
-        ? kit.buildCircuit(THREE, kit.mergeGeometries, pts, { night })
+        ? kit.buildCircuit(THREE, kit.mergeGeometries, pts, { night, osm })
         : buildTrack(THREE, pts, { centerLine: false });
       scene.add(track.group);
       setHilly(track.height > 0.05);
@@ -383,7 +402,7 @@ export default function Telemetry3D({
       visible.cancel();
       cleanup();
     };
-  }, [trace, real, night]);
+  }, [trace, real, night, circuitId, ground]);
 
   const followed = follow === null ? null : cars[follow];
 
@@ -428,6 +447,7 @@ export default function Telemetry3D({
       )}
 
       {ready && followed && <Hud car={followed} />}
+      {real && osmOn && <OsmCredit className={follow === null ? "bottom-11 right-3" : "bottom-2 right-2 sm:bottom-3 sm:right-3"} />}
 
       {ready &&
         follow === null &&

@@ -198,3 +198,79 @@ export function seeded(seed: number) {
     return ((s >>> 0) % 100000) / 100000;
   };
 }
+
+/** จุดห่างเท่า ๆ กันตามแนววิ่ง n จุด (วงปิด) */
+export function resample(pts: XZ[], n: number): XZ[] {
+  const L = [0];
+  for (let i = 1; i <= pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i % pts.length];
+    L.push(L[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+  }
+  const total = L[pts.length] || 1;
+  const out: XZ[] = [];
+  let j = 1;
+  for (let k = 0; k < n; k++) {
+    const t = (k / n) * total;
+    while (L[j] < t) j++;
+    const a = pts[j - 1];
+    const b = pts[j % pts.length];
+    const f = (t - L[j - 1]) / (L[j] - L[j - 1] || 1);
+    out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+  }
+  return out;
+}
+
+/**
+ * หาการหมุน/ย่อขยาย/เลื่อน (และกลับด้านถ้าจำเป็น) ที่ทำให้เส้นสนาม pts ทับ ref ได้ดีที่สุด
+ * ใช้วางเส้นสนามจากพิกัดรถ (openf1 — แกนของ F1 เอง ไม่ได้ชี้ทิศเหนือเสมอ) ให้ตรงกับผังสนาม
+ * ที่ผูกกับแผนที่จริง · ไม่ต้องรู้ว่าจุดไหนคู่กับจุดไหน (ลองทุกมุม เทียบระยะใกล้สุด)
+ */
+export function alignTo(ref: XZ[], pts: XZ[]): (p: XZ) => XZ {
+  const R = resample(ref, 240);
+  const Q = resample(pts, 240);
+  const mean = (a: XZ[]): XZ => [a.reduce((s, p) => s + p[0], 0) / a.length, a.reduce((s, p) => s + p[1], 0) / a.length];
+  const rms = (a: XZ[], c: XZ) => Math.sqrt(a.reduce((s, p) => s + (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2, 0) / a.length);
+  const cr = mean(R);
+  const cq = mean(Q);
+  const scale = rms(R, cr) / (rms(Q, cq) || 1);
+  const ref0 = R.map(([x, z]) => [x - cr[0], z - cr[1]] as XZ);
+  const probe = Q.filter((_, i) => i % 4 === 0).map(([x, z]) => [(x - cq[0]) * scale, (z - cq[1]) * scale] as XZ);
+  const cost = (ang: number, flip: number) => {
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    let sum = 0;
+    for (const [x0, z0] of probe) {
+      const x = x0 * flip;
+      const px = x * c - z0 * s;
+      const pz = x * s + z0 * c;
+      let best = Infinity;
+      for (const [rx, rz] of ref0) best = Math.min(best, (rx - px) ** 2 + (rz - pz) ** 2);
+      sum += best;
+    }
+    return sum;
+  };
+  let bestAng = 0;
+  let bestFlip = 1;
+  let bestCost = Infinity;
+  for (const flip of [1, -1])
+    for (let d = 0; d < 360; d += 3) {
+      const v = cost((d * Math.PI) / 180, flip);
+      if (v < bestCost) [bestCost, bestAng, bestFlip] = [v, (d * Math.PI) / 180, flip];
+    }
+  // ละเอียดขึ้นรอบมุมที่ดีที่สุด
+  for (let step = 1; step >= 0.125; step /= 2) {
+    for (const d of [-step, step]) {
+      const a = bestAng + (d * Math.PI) / 180;
+      const v = cost(a, bestFlip);
+      if (v < bestCost) [bestCost, bestAng] = [v, a];
+    }
+  }
+  const c = Math.cos(bestAng);
+  const s = Math.sin(bestAng);
+  return ([x, z]) => {
+    const px = (x - cq[0]) * scale * bestFlip;
+    const pz = (z - cq[1]) * scale;
+    return [px * c - pz * s + cr[0], px * s + pz * c + cr[1]];
+  };
+}

@@ -7,6 +7,9 @@ import TelemetryCompare from "@/components/telemetry/TelemetryCompare";
 import SiteFooter from "@/components/SiteFooter";
 import { SEASON } from "@/lib/season";
 import { telemetrySessions } from "@/lib/telemetry-sessions";
+import { circuitTrack } from "@/lib/circuits";
+import { trackGroundPoints } from "@/lib/track3d";
+import { hasOsmScene } from "@/lib/osm-scene";
 
 export const revalidate = 3600;
 
@@ -37,6 +40,11 @@ export default async function TelemetryPage({ params }: Params) {
 
   const sessions = telemetrySessions(race);
 
+  // สนามที่มีฉากรอบสนามจริง (OSM) → ส่งผังที่ผูกกับแผนที่ไปวางเส้นจากพิกัดรถให้ตรง
+  const circuitId = race.Circuit.circuitId;
+  const path = hasOsmScene(circuitId) ? circuitTrack(circuitId) : null;
+  const ground = path ? trackGroundPoints(path) : undefined;
+
   return (
     <main className="mx-auto max-w-5xl space-y-4">
       <div>
@@ -56,7 +64,7 @@ export default async function TelemetryPage({ params }: Params) {
       {SEASON < 2023 ? (
         <p className="card p-6 text-sm text-white/60">เทเลเมทรีมีตั้งแต่ฤดูกาล 2023</p>
       ) : sessions.length > 0 ? (
-        <TelemetryCompare season={SEASON} sessions={sessions} circuitId={race.Circuit.circuitId} />
+        <TelemetryCompare season={SEASON} sessions={sessions} circuitId={race.Circuit.circuitId} ground={ground} />
       ) : (
         <p className="card p-6 text-sm text-white/60">ยังไม่มีควอลิฟายหรือเรซของสนามนี้ — กลับมาดูหลังแข่ง</p>
       )}
