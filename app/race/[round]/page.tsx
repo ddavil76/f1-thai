@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CalendarPlus, Flag, PlayCircle, Zap } from "lucide-react";
+import { Activity, ArrowLeft, CalendarPlus, Flag, PlayCircle, Zap } from "lucide-react";
 import SessionCountdown from "@/components/SessionCountdown";
 import CircuitMap from "@/components/CircuitMap";
 import CircuitInfo from "@/components/CircuitInfo";
@@ -13,6 +13,7 @@ import ResultsPending from "@/components/ResultsPending";
 import ResultsRefresher from "@/components/ResultsRefresher";
 import ResultsTable from "@/components/ResultsTable";
 import QualifyingTable from "@/components/QualifyingTable";
+import { telemetrySessions } from "@/lib/telemetry-sessions";
 import PodiumGraphic from "@/components/PodiumGraphic";
 import TiltCard from "@/components/TiltCard";
 import WeatherBadge from "@/components/WeatherBadge";
@@ -78,6 +79,8 @@ export default async function RacePage({ params }: Params) {
       getCircuitWinners(race.Circuit.circuitId),
     ]);
   const sessions = getSessions(race);
+  // เทเลเมทรีเทียบได้ตั้งแต่เริ่ม (สปรินต์)ควอลิฟาย — ก่อนเรซก็ดูได้
+  const telemetryOpen = SEASON >= 2023 && telemetrySessions(race).length > 0;
   const pits =
     results && pitStops.length > 0 ? summarizeRacePits(pitStops, results.Results) : null;
   const hasResults = Boolean(results && results.Results.length > 0);
@@ -243,6 +246,19 @@ export default async function RacePage({ params }: Params) {
             <span className="ml-2 font-normal text-white/45">
               ตำแหน่ง · ยาง · เวลาต่อรอบ แบบเล่นย้อนหลัง
             </span>
+          </span>
+          <ArrowLeft className="h-4 w-4 rotate-180 text-white/30" />
+        </Link>
+      )}
+      {telemetryOpen && (
+        <Link
+          href={`/race/${round}/telemetry`}
+          className="card flex items-center gap-3 p-4 transition hover:border-white/20"
+        >
+          <Activity className="h-5 w-5 shrink-0 text-(--color-f1)" />
+          <span className="flex-1 text-sm font-semibold">
+            เทียบเทเลเมทรี
+            <span className="ml-2 font-normal text-white/45">ความเร็ว · คันเร่ง · เบรก · เกียร์ ของสองคน</span>
           </span>
           <ArrowLeft className="h-4 w-4 rotate-180 text-white/30" />
         </Link>
