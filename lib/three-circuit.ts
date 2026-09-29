@@ -205,6 +205,38 @@ export function buildCircuit(
   );
   add(ground, grassMat);
 
+  /*
+   * ภูมิประเทศ (เฉพาะฉาก OSM ที่สนามมีเนิน): พื้น ตึก ต้นไม้ ยกตามความสูงของสนามช่วงที่ใกล้ที่สุด
+   * ไม่งั้นแผนที่แบนราบอยู่ที่ระดับ 0 ส่วนสนามลอยสูง → ต้องมีคันดินกว้าง ๆ รองรับ ดูเหมือนรถจมในภูเขา
+   * ติดถนน = ต่ำกว่าผิวแทร็กเล็กน้อย (ไม่ทะลุถนน) · ห่างออกไปเฉลี่ยจากหลายช่วง · ขอบแผนที่ลดลงหาระดับ 0
+   */
+  const terrainOn = !!osm && height > 0.03;
+  const refs = P.filter((_, i) => i % 3 === 0);
+  const [tx0, tz0, tx1, tz1] = osm?.data.bounds ?? [0, 0, 0, 0];
+  const heightAt = (x: number, z: number) => {
+    if (!terrainOn) return 0;
+    let sw = 0;
+    let sh = 0;
+    let dn = Infinity;
+    let hn = 0;
+    for (const p of refs) {
+      const d2 = (p.x - x) ** 2 + (p.z - z) ** 2;
+      if (d2 < dn) {
+        dn = d2;
+        hn = p.y;
+      }
+      const w = 1 / (d2 * d2 + 1e-5);
+      sw += w;
+      sh += w * p.y;
+    }
+    const far = Math.max(0, Math.min(1, (Math.sqrt(dn) - (half + 0.5)) / 0.5));
+    let hgt = (hn - 0.02) * (1 - far) + (sh / sw) * far;
+    const edge = Math.min(x - tx0, tx1 - x, z - tz0, tz1 - z);
+    const fade = Math.max(0, Math.min(1, edge / 1.5));
+    hgt *= fade * fade * (3 - 2 * fade);
+    return Math.max(0, hgt);
+  };
+
   // พื้นจริงรอบสนาม (ภาพมองจากบนที่วาดจาก OSM) — ทับพื้นทั่วไปในกรอบของมัน
   if (osm) {
     const [bx0, bz0, bx1, bz1] = osm.data.bounds;
@@ -212,9 +244,17 @@ export function buildCircuit(
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;
     tex.needsUpdate = true;
-    const plane = keep(new THREE.PlaneGeometry(bx1 - bx0, bz1 - bz0));
+    const bw = bx1 - bx0;
+    const bd = bz1 - bz0;
+    const seg = terrainOn ? 140 : 1;
+    const plane = keep(new THREE.PlaneGeometry(bw, bd, seg, Math.max(1, Math.round((seg * bd) / bw))));
     plane.rotateX(-Math.PI / 2); // ขอบบนของภาพ (เหนือ) → z น้อย ตรงกับผังสนาม
     plane.translate((bx0 + bx1) / 2, -0.004, (bz0 + bz1) / 2);
+    if (terrainOn) {
+      const pa = plane.attributes.position;
+      for (let i = 0; i < pa.count; i++) pa.setY(i, heightAt(pa.getX(i), pa.getZ(i)) - 0.004);
+      plane.computeVertexNormals();
+    }
     add(plane, keep(new THREE.MeshLambertMaterial({ map: tex })));
   }
 
@@ -228,11 +268,16 @@ export function buildCircuit(
   );
   for (const side of [1, -1]) {
     add(strip((i) => side * (H(i) - 0.01), (i) => side * (wallOf(i, side) + 0.02), y(0.001), y(0.001), { vLen: 0.6 }), vergeMat);
-    if (height > 0.03) {
+    if (height > 0.03 && !terrainOn) {
+      // ลาดดินกว้างตามความสูง แต่ไม่ลามไปทับสนามช่วงอื่น (ช่วงที่ชิดกันกลายเป็นกำแพงชัน ๆ แทน)
+      const reach = Array.from({ length: S }, (_, i) => {
+        const want = wallOf(i, side) + 0.02 + P[i].y * 1.6;
+        return Math.min(want, Math.max(wallOf(i, side) + 0.03, room.free(i, side, want, H(i), 0.04, 0.04) - 0.02));
+      });
       add(
         strip(
           (i) => side * (wallOf(i, side) + 0.02),
-          (i) => side * (wallOf(i, side) + 0.02 + P[at(i)].y * 1.6),
+          (i) => side * reach[at(i)],
           y(0.001),
           () => -0.003,
           { vLen: 0.6 },
@@ -405,17 +450,18 @@ export function buildCircuit(
       const cx = ring.reduce((a, p) => a + p[0], 0) / ring.length;
       const cz = ring.reduce((a, p) => a + p[1], 0) / ring.length;
       if (room.nearest(cx, cz) < half + 0.08 || ring.some(([x, z]) => room.nearest(x, z) < half + 0.03)) continue;
+      const base = heightAt(cx, cz);
       cRoof.setHex(roofs[(n * 7919 + 13) % roofs.length]);
       cWall.copy(cRoof).multiplyScalar(0.78);
       n++;
       for (let k = 0; k < ring.length; k++) {
         const [ax, az] = ring[k];
         const [bx, bz] = ring[(k + 1) % ring.length];
-        push(ax, 0, az, cWall); push(bx, 0, bz, cWall); push(bx, h, bz, cWall);
-        push(ax, 0, az, cWall); push(bx, h, bz, cWall); push(ax, h, az, cWall);
+        push(ax, base - 0.03, az, cWall); push(bx, base - 0.03, bz, cWall); push(bx, base + h, bz, cWall);
+        push(ax, base - 0.03, az, cWall); push(bx, base + h, bz, cWall); push(ax, base + h, az, cWall);
       }
       const tri = THREE.ShapeUtils.triangulateShape(ring.map(([x, z]) => new THREE.Vector2(x, z)), []);
-      for (const t of tri) for (const k of t) push(ring[k][0], h, ring[k][1], cRoof);
+      for (const t of tri) for (const k of t) push(ring[k][0], base + h, ring[k][1], cRoof);
       const r = Math.max(...ring.map(([x, z]) => Math.hypot(x - cx, z - cz)));
       taken.push({ x: cx, z: cz, r });
     }
@@ -563,7 +609,7 @@ export function buildCircuit(
     const k = 0.7 + rnd() * 0.7;
     sc.set(k, k * (0.8 + rnd() * 0.5), k);
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI);
-    pos.set(x, -0.004, z);
+    pos.set(x, heightAt(x, z) - 0.004, z);
     spots.push(m4.clone().compose(pos, q, sc));
   }
   if (spots.length) {
