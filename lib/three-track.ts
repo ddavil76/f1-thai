@@ -37,7 +37,16 @@ export function glowTexture(THREE: Three, inner = "rgba(255,80,60,0.8)") {
  * สนามจากจุด 3D (ปิดวง): พื้นแอสฟัลต์เป็นริบบิ้น, เส้นกลางแดงเรืองแสง, เส้นสตาร์ทตาหมากรุก
  * ถ้ามีความสูง เพิ่มม่านจาง ๆ จากเส้นสนามลงพื้น ให้มองออกว่าช่วงไหนสูง/ต่ำ
  */
-export function buildTrack(THREE: Three, pts: Vec3[], { samples = 700, half = 0.24 } = {}): TrackMeshes {
+export function buildTrack(
+  THREE: Three,
+  pts: Vec3[],
+  {
+    samples = 700,
+    half = 0.24,
+    /** เส้นกลางแดงเรืองแสง — ปิดได้เมื่อผู้เรียกวาดเส้นสีเอง (เทเลเมทรีระบายตามใครเร็วกว่า) */
+    centerLine = true,
+  } = {},
+): TrackMeshes {
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
   const keep = <T extends { dispose(): void }>(x: T) => (disposables.push(x), x);
@@ -87,16 +96,18 @@ export function buildTrack(THREE: Three, pts: Vec3[], { samples = 700, half = 0.
     );
   }
 
-  const red = new THREE.Color(F1_RED);
-  group.add(new THREE.Mesh(keep(new THREE.TubeGeometry(curve, samples, 0.045, 6, true)), keep(new THREE.MeshBasicMaterial({ color: red }))));
-  group.add(
-    new THREE.Mesh(
-      keep(new THREE.TubeGeometry(curve, samples, 0.15, 8, true)),
-      keep(new THREE.MeshBasicMaterial({
-        color: red, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false,
-      })),
-    ),
-  );
+  if (centerLine) {
+    const red = new THREE.Color(F1_RED);
+    group.add(new THREE.Mesh(keep(new THREE.TubeGeometry(curve, samples, 0.045, 6, true)), keep(new THREE.MeshBasicMaterial({ color: red }))));
+    group.add(
+      new THREE.Mesh(
+        keep(new THREE.TubeGeometry(curve, samples, 0.15, 8, true)),
+        keep(new THREE.MeshBasicMaterial({
+          color: red, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false,
+        })),
+      ),
+    );
+  }
 
   // เส้นสตาร์ท: แผ่นตาหมากรุกขวางสนาม
   const checker = document.createElement("canvas");

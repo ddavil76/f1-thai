@@ -165,7 +165,7 @@ export type Of1Car = {
   rpm: number;
   drs?: number | null;
 };
-export type Of1Loc = { date: string; x: number; y: number };
+export type Of1Loc = { date: string; x: number; y: number; z?: number | null };
 
 /** จุดข้อมูลหลังเทียบระยะแล้ว — ทุก array ยาวเท่ากัน index i = ระยะ frac[i] ของรอบ */
 export type Trace = {
@@ -179,9 +179,11 @@ export type Trace = {
   /** เบรก 0/1 (openf1 ให้แค่เหยียบ/ไม่เหยียบ) */
   brake: number[];
   gear: number[];
-  /** ตำแหน่งบนสนาม — null ถ้าไม่มีข้อมูล location */
+  /** ตำแหน่งบนสนาม (หน่วยของ openf1, y ชี้ขึ้นบนแผนที่) — null ถ้าไม่มีข้อมูล location */
   x: number[] | null;
   y: number[] | null;
+  /** ความสูง — 0 ทั้งหมดถ้า openf1 ไม่มีค่า */
+  z: number[] | null;
 };
 
 /** จำนวนจุดหลัง resample — พอสำหรับกราฟกว้างเต็มจอโดยไม่หนัก */
@@ -258,19 +260,21 @@ export function buildTrace(
 
   // ตำแหน่ง ณ เวลาของ car_data (location เป็นอีกชุดเวลา)
   const locs = loc
-    .map((l) => ({ t: (Date.parse(l.date) - start) / 1000, x: l.x, y: l.y }))
+    .map((l) => ({ t: (Date.parse(l.date) - start) / 1000, x: l.x, y: l.y, z: l.z ?? 0 }))
     .filter((l) => Number.isFinite(l.t) && l.t >= -2 && l.t <= lapTime + 2)
     .sort((a, b) => a.t - b.t);
   const hasPos = locs.length >= 10;
   const lt = locs.map((l) => l.t);
   const px = hasPos ? ts.map((t) => interp(lt, locs.map((l) => l.x), t)) : null;
   const py = hasPos ? ts.map((t) => interp(lt, locs.map((l) => l.y), t)) : null;
+  const pz = hasPos ? ts.map((t) => interp(lt, locs.map((l) => l.z), t)) : null;
 
   const out: Trace = {
     length,
     frac: [], t: [], speed: [], throttle: [], brake: [], gear: [],
     x: px ? [] : null,
     y: py ? [] : null,
+    z: pz ? [] : null,
   };
   for (let i = 0; i < points; i++) {
     const at = i / (points - 1);
@@ -280,12 +284,27 @@ export function buildTrace(
     out.throttle.push(interp(f, throttle, at));
     out.brake.push(step(f, brake, at));
     out.gear.push(step(f, gear, at));
-    if (px && py) {
+    if (px && py && pz) {
       out.x!.push(interp(f, px, at));
       out.y!.push(interp(f, py, at));
+      out.z!.push(interp(f, pz, at));
     }
   }
   return out;
+}
+
+/** ตำแหน่งในรอบ (0..1) ณ เวลา t วินาทีหลังเริ่มรอบ — ก่อนเริ่ม = 0 · จบรอบแล้ว = 1 */
+export function fracAtTime(tr: Trace, t: number): number {
+  return interp(tr.t, tr.frac, t);
+}
+
+/** index ของจุดที่ใกล้ตำแหน่ง frac ที่สุด */
+export const indexOfFrac = (tr: Trace, f: number) => Math.round(Math.max(0, Math.min(1, f)) * (tr.t.length - 1));
+
+/** พิกัดบนสนาม ณ ตำแหน่ง frac (null = ไม่มีข้อมูลตำแหน่ง) */
+export function posAtFrac(tr: Trace, f: number): { x: number; y: number; z: number } | null {
+  if (!tr.x || !tr.y || !tr.z) return null;
+  return { x: interp(tr.frac, tr.x, f), y: interp(tr.frac, tr.y, f), z: interp(tr.frac, tr.z, f) };
 }
 
 /**

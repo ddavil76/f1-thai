@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildTrace, fastestLaps, fmtLap, matchSession, miniSectors, timeDelta, toLaps,
+  buildTrace, fastestLaps, fmtLap, fracAtTime, indexOfFrac, matchSession, miniSectors, posAtFrac, timeDelta, toLaps,
   type Of1Car, type Of1Loc,
 } from "@/lib/telemetry";
 
@@ -138,5 +138,32 @@ describe("รอบและ session", () => {
     expect(fmtLap(89.456)).toBe("1:29.456");
     expect(fmtLap(61.05)).toBe("1:01.050");
     expect(fmtLap(59.9)).toBe("59.900");
+  });
+});
+
+describe("ตำแหน่ง ณ เวลาเดียวกัน (จุดสองคนบนผัง / เล่นแข่งกัน)", () => {
+  const a = buildTrace(lap(180, 80), circle(80), START, 80, 201)!;
+  const b = buildTrace(lap(180, 82), circle(82), START, 82, 201)!;
+
+  it("ครึ่งเวลา = ครึ่งรอบ · ก่อนเริ่ม/หลังจบยึดขอบ", () => {
+    expect(fracAtTime(a, 40)).toBeCloseTo(0.5, 2);
+    expect(fracAtTime(a, -5)).toBe(0);
+    expect(fracAtTime(a, 999)).toBe(1);
+  });
+
+  it("คนที่ช้ากว่าอยู่ข้างหลัง ณ เวลาเดียวกัน", () => {
+    const t = 40;
+    expect(fracAtTime(b, t)).toBeLessThan(fracAtTime(a, t));
+    // B ใช้ 82 วิ → ที่ 40 วิ อยู่ ~48.8% ของรอบ
+    expect(fracAtTime(b, t)).toBeCloseTo(40 / 82, 2);
+  });
+
+  it("พิกัดตามตำแหน่งในรอบ + index ที่ใกล้สุด", () => {
+    const p = posAtFrac(a, 0.5)!;
+    expect(p.x).toBeCloseTo(-1000, -1);
+    expect(p.z).toBe(0);
+    expect(indexOfFrac(a, 0.5)).toBe(100);
+    expect(indexOfFrac(a, 2)).toBe(200);
+    expect(posAtFrac(buildTrace(lap(180, 80), [], START, 80)!, 0.5)).toBeNull();
   });
 });

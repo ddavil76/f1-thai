@@ -6,6 +6,11 @@ import { timeDelta, type Trace } from "@/lib/telemetry";
 type Side = { code: string; colour: string; trace: Trace };
 
 const VW = 1000;
+const H_DELTA = 90;
+const H_SPEED = 150;
+const H_THR = 70;
+const H_BRK = 34;
+const H_GEAR = 70;
 const B_DASH = "7 5"; // คนที่สองเส้นประ — แยกได้แม้สีทีมใกล้กัน/ตาบอดสี
 
 /** จุดของเส้น (x = ระยะ 0..VW) */
@@ -110,16 +115,24 @@ export default function TraceCharts({
     onHover(Math.round(k * (n - 1)));
   };
 
-  const H_DELTA = 90;
-  const H_SPEED = 150;
-  const H_THR = 70;
-  const H_BRK = 34;
-  const H_GEAR = 70;
   const yOf = (v: number, min: number, max: number, h: number, pad = 4) =>
     pad + (1 - (v - min) / (max - min || 1)) * (h - pad * 2);
 
   // ส่วนต่างเวลา: เหนือเส้นศูนย์ = A นำ (สี A) · ใต้เส้น = B นำ (สี B)
-  const deltaLine = linePoints(delta, -dMax, dMax, H_DELTA);
+  // เส้นกราฟคิดครั้งเดียวต่อคู่รอบ — ตอนเล่น/ลากนิ้ว วาดใหม่แค่เส้นเล็ง (มือถือไม่กระตุก)
+  const lines = useMemo(
+    () => ({
+      delta: linePoints(delta, -dMax, dMax, H_DELTA),
+      speedA: linePoints(a.trace.speed, vMin, vMax, H_SPEED),
+      speedB: linePoints(b.trace.speed, vMin, vMax, H_SPEED),
+      thrA: linePoints(a.trace.throttle, 0, 100, H_THR),
+      thrB: linePoints(b.trace.throttle, 0, 100, H_THR),
+      gearA: stepPoints(a.trace.gear, 1, 8, H_GEAR),
+      gearB: stepPoints(b.trace.gear, 1, 8, H_GEAR),
+    }),
+    [a.trace, b.trace, delta, dMax, vMin, vMax],
+  );
+  const deltaLine = lines.delta;
   const zeroY = yOf(0, -dMax, dMax, H_DELTA);
   const deltaArea = `0,${zeroY} ${deltaLine} ${VW},${zeroY}`;
 
@@ -187,14 +200,14 @@ export default function TraceCharts({
 
         <Panel title="ความเร็ว" unit="km/h" height={H_SPEED} hoverX={hoverX}
           ticks={[vMax, (vMin + vMax) / 2, vMin].map((v) => [yOf(v, vMin, vMax, H_SPEED), String(Math.round(v))] as [number, string])}>
-          <polyline points={linePoints(a.trace.speed, vMin, vMax, H_SPEED)} fill="none" stroke={a.colour} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-          <polyline points={linePoints(b.trace.speed, vMin, vMax, H_SPEED)} fill="none" stroke={b.colour} strokeWidth={2} strokeDasharray={B_DASH} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+          <polyline points={lines.speedA} fill="none" stroke={a.colour} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+          <polyline points={lines.speedB} fill="none" stroke={b.colour} strokeWidth={2} strokeDasharray={B_DASH} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
         </Panel>
 
         <Panel title="คันเร่ง" unit="%" height={H_THR} hoverX={hoverX}
           ticks={[[yOf(100, 0, 100, H_THR), "100"], [yOf(0, 0, 100, H_THR), "0"]]}>
-          <polyline points={linePoints(a.trace.throttle, 0, 100, H_THR)} fill="none" stroke={a.colour} strokeWidth={2} vectorEffect="non-scaling-stroke" />
-          <polyline points={linePoints(b.trace.throttle, 0, 100, H_THR)} fill="none" stroke={b.colour} strokeWidth={2} strokeDasharray={B_DASH} vectorEffect="non-scaling-stroke" />
+          <polyline points={lines.thrA} fill="none" stroke={a.colour} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+          <polyline points={lines.thrB} fill="none" stroke={b.colour} strokeWidth={2} strokeDasharray={B_DASH} vectorEffect="non-scaling-stroke" />
         </Panel>
 
         <Panel title="เบรก" unit="แถวบน = คนแรก · แถวล่าง = คนที่สอง" height={H_BRK} hoverX={hoverX}>
@@ -218,8 +231,8 @@ export default function TraceCharts({
 
         <Panel title="เกียร์" height={H_GEAR} hoverX={hoverX}
           ticks={[[yOf(8, 1, 8, H_GEAR), "8"], [yOf(1, 1, 8, H_GEAR), "1"]]}>
-          <polyline points={stepPoints(a.trace.gear, 1, 8, H_GEAR)} fill="none" stroke={a.colour} strokeWidth={2} vectorEffect="non-scaling-stroke" />
-          <polyline points={stepPoints(b.trace.gear, 1, 8, H_GEAR)} fill="none" stroke={b.colour} strokeWidth={2} strokeDasharray={B_DASH} vectorEffect="non-scaling-stroke" />
+          <polyline points={lines.gearA} fill="none" stroke={a.colour} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+          <polyline points={lines.gearB} fill="none" stroke={b.colour} strokeWidth={2} strokeDasharray={B_DASH} vectorEffect="non-scaling-stroke" />
         </Panel>
 
         <div className="flex justify-between font-mono text-[10px] text-white/30">

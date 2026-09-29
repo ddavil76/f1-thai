@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Loader2, Pause, Play } from "lucide-react";
 import {
-  fastestLaps, findSessionKey, fmtLap, getLapTrace, getSessionLaps,
+  fastestLaps, findSessionKey, fmtLap, fracAtTime, getLapTrace, getSessionLaps, indexOfFrac,
   type SessionLaps, type TelemetryDriver, type TelemetryLap, type TelemetrySessionCode, type Trace,
 } from "@/lib/telemetry";
 import type { TelemetrySession } from "@/lib/telemetry-sessions";
@@ -82,7 +82,6 @@ export default function TelemetryCompare({
   const [userCode, setUserCode] = useState<TelemetrySessionCode | null>(null);
   const [userA, setUserA] = useState<Pick | null>(null);
   const [userB, setUserB] = useState<Pick | null>(null);
-  const [hover, setHover] = useState<number | null>(null);
   const [now] = useState(() => Date.now());
 
   const code =
@@ -149,10 +148,7 @@ export default function TelemetryCompare({
             type="button"
             role="tab"
             aria-selected={s.code === code}
-            onClick={() => {
-              setUserCode(s.code);
-              setHover(null);
-            }}
+            onClick={() => setUserCode(s.code)}
             className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
               s.code === code ? "bg-(--color-f1) text-white" : "bg-white/5 text-white/60 hover:text-white"
             }`}
@@ -233,19 +229,12 @@ export default function TelemetryCompare({
           )}
 
           {ta.s === "ok" && tb.s === "ok" && dA && dB ? (
-            <>
-              <TrackDominance
-                a={{ code: dA.code, colour: colourA, trace: ta.v }}
-                b={{ code: dB.code, colour: colourB, trace: tb.v }}
-                hover={hover}
-              />
-              <TraceCharts
-                a={{ code: dA.code, colour: colourA, trace: ta.v }}
-                b={{ code: dB.code, colour: colourB, trace: tb.v }}
-                hover={hover}
-                onHover={setHover}
-              />
-            </>
+            <LapBattle
+              // เปลี่ยนรอบ/คน → เริ่มนับใหม่ (ตัวชี้และการเล่นไม่ค้างจากคู่เก่า)
+              key={`${lapA?.num}:${lapA?.lap}|${lapB?.num}:${lapB?.lap}`}
+              a={{ code: dA.code, colour: colourA, trace: ta.v }}
+              b={{ code: dB.code, colour: colourB, trace: tb.v }}
+            />
           ) : ta.s === "loading" || tb.s === "loading" ? (
             <Loading text="กำลังโหลดเทเลเมทรีของรอบที่เลือก…" />
           ) : (
@@ -259,6 +248,124 @@ export default function TelemetryCompare({
         <p className="card p-6 text-sm text-white/60">session นี้มีเวลาต่อรอบไม่พอให้เทียบ</p>
       )}
     </div>
+  );
+}
+
+type Side = { code: string; colour: string; trace: Trace };
+
+/** "0:34.2" */
+const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+
+/**
+ * ผังสนาม + กราฟ ใช้ "เวลาในรอบ" เป็นตัวชี้ร่วมกัน:
+ * แตะกราฟ = เวลาที่คนแรกถึงจุดนั้น · เล่น = เวลาเดินไปเรื่อย ๆ
+ * จุดของแต่ละคนบนผัง = ตำแหน่งของคนนั้น ณ เวลาเดียวกัน → เห็นว่าอีกคนห่างอยู่เท่าไหร่
+ */
+function LapBattle({ a, b }: { a: Side; b: Side }) {
+  const [cursor, setCursor] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const cursorRef = useRef<number | null>(null);
+  const end = Math.max(a.trace.t[a.trace.t.length - 1], b.trace.t[b.trace.t.length - 1]);
+
+  const setCur = (v: number | null) => {
+    cursorRef.current = v;
+    setCursor(v);
+  };
+
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    let last: number | null = null;
+    const step = (now: number) => {
+      const dt = last == null ? 0 : Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const next = Math.min(end, (cursorRef.current ?? 0) + dt * speed);
+      cursorRef.current = next;
+      setCursor(next);
+      if (next >= end) setPlaying(false);
+      else raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, speed, end]);
+
+  const aFrac = cursor == null ? null : fracAtTime(a.trace, cursor);
+  const bFrac = cursor == null ? null : fracAtTime(b.trace, cursor);
+  const hover = aFrac == null ? null : indexOfFrac(a.trace, aFrac);
+
+  let status: string | null = null;
+  if (aFrac != null && bFrac != null && cursor != null) {
+    const gap = (aFrac - bFrac) * a.trace.length;
+    status =
+      Math.abs(gap) < 1
+        ? `${clock(cursor)} · ตีคู่กัน`
+        : `${clock(cursor)} · ${gap > 0 ? b.code : a.code} ตามหลัง ${Math.round(Math.abs(gap))} ม.`;
+  }
+
+  const toggle = () => {
+    if (playing) return setPlaying(false);
+    if (cursorRef.current == null || cursorRef.current >= end) setCur(0);
+    setPlaying(true);
+  };
+
+  const controls = (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={toggle}
+          className="inline-flex h-9 items-center gap-1.5 rounded-full bg-(--color-f1) px-4 text-sm font-bold text-white transition hover:brightness-110 active:scale-[0.97]"
+        >
+          {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          {playing ? "หยุด" : "เล่นแข่งกัน"}
+        </button>
+        <div className="flex rounded-full bg-white/5 p-0.5 text-xs" role="group" aria-label="ความเร็วการเล่น">
+          {[1, 2, 4].map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={speed === s}
+              onClick={() => setSpeed(s)}
+              className={`rounded-full px-2.5 py-1 font-bold transition ${speed === s ? "bg-white text-black" : "text-white/60 hover:text-white"}`}
+            >
+              {s}×
+            </button>
+          ))}
+        </div>
+        <span className="ml-auto font-mono text-xs text-white/55">
+          {clock(cursor ?? 0)} / {fmtLap(end)}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={end}
+        step={0.05}
+        value={cursor ?? 0}
+        onChange={(e) => {
+          setPlaying(false);
+          setCur(Number(e.target.value));
+        }}
+        aria-label="เวลาในรอบ"
+        className="w-full accent-(--color-f1)"
+      />
+    </div>
+  );
+
+  return (
+    <>
+      <TrackDominance a={a} b={b} aFrac={aFrac} bFrac={bFrac} status={status} controls={controls} />
+      <TraceCharts
+        a={a}
+        b={b}
+        hover={hover}
+        onHover={(i) => {
+          setPlaying(false);
+          setCur(i == null ? null : a.trace.t[i]);
+        }}
+      />
+    </>
   );
 }
 
