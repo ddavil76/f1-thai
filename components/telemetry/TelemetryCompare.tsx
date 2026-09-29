@@ -69,10 +69,13 @@ function useLoad<T>(key: string | null, load: () => Promise<T | null>): Load<T> 
 export default function TelemetryCompare({
   season,
   sessions,
+  circuitId,
 }: {
   season: number;
   /** session ที่แข่งไปแล้ว เรียงตามเวลา */
   sessions: TelemetrySession[];
+  /** สนามไนต์เรซ → ฉาก 3D กลางคืน */
+  circuitId?: string;
 }) {
   // ค่าจาก URL — ฝั่งเซิร์ฟเวอร์/ตอน hydrate เป็นค่าว่าง แล้วค่อยอ่านจริงหลังขึ้นจอ (ไม่ให้ HTML ไม่ตรงกัน)
   const search = useSyncExternalStore(noSubscribe, () => window.location.search, () => "");
@@ -234,6 +237,7 @@ export default function TelemetryCompare({
               key={`${lapA?.num}:${lapA?.lap}|${lapB?.num}:${lapB?.lap}`}
               a={{ code: dA.code, colour: colourA, trace: ta.v }}
               b={{ code: dB.code, colour: colourB, trace: tb.v }}
+              circuitId={circuitId}
             />
           ) : ta.s === "loading" || tb.s === "loading" ? (
             <Loading text="กำลังโหลดเทเลเมทรีของรอบที่เลือก…" />
@@ -261,7 +265,7 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padSta
  * แตะกราฟ = เวลาที่คนแรกถึงจุดนั้น · เล่น = เวลาเดินไปเรื่อย ๆ
  * จุดของแต่ละคนบนผัง = ตำแหน่งของคนนั้น ณ เวลาเดียวกัน → เห็นว่าอีกคนห่างอยู่เท่าไหร่
  */
-function LapBattle({ a, b }: { a: Side; b: Side }) {
+function LapBattle({ a, b, circuitId }: { a: Side; b: Side; circuitId?: string }) {
   const [cursor, setCursor] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -355,7 +359,7 @@ function LapBattle({ a, b }: { a: Side; b: Side }) {
 
   return (
     <>
-      <TrackDominance a={a} b={b} aFrac={aFrac} bFrac={bFrac} status={status} controls={controls} />
+      <TrackDominance a={a} b={b} aFrac={aFrac} bFrac={bFrac} status={status} controls={controls} circuitId={circuitId} />
       <TraceCharts
         a={a}
         b={b}

@@ -28,6 +28,7 @@ export default function CircuitMap({
       <Track3D
         points={trackGroundPoints(track)}
         name={name}
+        circuitId={circuitId}
         elevation={where ? { circuitId, ...where } : undefined}
       >
         <RacingLine circuitId={circuitId} name={name} compact={compact} />

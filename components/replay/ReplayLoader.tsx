@@ -16,11 +16,14 @@ export default function ReplayLoader({
   season,
   raceStart,
   track,
+  circuitId,
 }: {
   season: number;
   /** เวลาออกสตาร์ทตามปฏิทิน (ISO) — null = ไม่รู้เวลา */
   raceStart: string | null;
   track?: TrackPath | null;
+  /** สนามไนต์เรซ → ฉาก 3D กลางคืน */
+  circuitId?: string;
 }) {
   const [state, setState] = useState<State>(
     raceStart ? { s: "loading" } : { s: "err" },
@@ -80,5 +83,5 @@ export default function ReplayLoader({
       </p>
     );
   }
-  return <ReplayPlayer replay={state.data} track={track} />;
+  return <ReplayPlayer replay={state.data} track={track} circuitId={circuitId} />;
 }

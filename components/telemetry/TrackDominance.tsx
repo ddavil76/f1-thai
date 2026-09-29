@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { indexOfFrac, miniSectors, type Trace } from "@/lib/telemetry";
-import Telemetry3D from "./Telemetry3D";
+import Telemetry3D, { type CarHud } from "./Telemetry3D";
 
 type Side = { code: string; colour: string; trace: Trace };
 
@@ -38,6 +38,7 @@ export default function TrackDominance({
   bFrac,
   status,
   controls,
+  circuitId,
 }: {
   a: Side;
   b: Side;
@@ -48,6 +49,8 @@ export default function TrackDominance({
   status?: string | null;
   /** ปุ่มเล่น/หยุด */
   controls?: React.ReactNode;
+  /** สนามไนต์เรซ → ฉาก 3D กลางคืน */
+  circuitId?: string;
 }) {
   const [mode, setMode] = useState<Mode>("dom");
   const [view, setView] = useState<"3d" | "2d">("3d");
@@ -99,6 +102,12 @@ export default function TrackDominance({
   const STEP = 4; // 2D: ระบายทีละ 4 จุด (ราว 1/125 ของรอบ)
   const ia = aFrac == null ? null : indexOfFrac(a.trace, aFrac);
   const ib = bFrac == null ? null : indexOfFrac(a.trace, bFrac);
+  // หน้าปัดกล้องตามรถ: ค่าของแต่ละคนจาก trace ของตัวเอง ณ ตำแหน่งในรอบตอนนี้
+  const hud = (t: Trace, frac: number | null): CarHud | null => {
+    if (frac == null) return null;
+    const i = indexOfFrac(t, frac);
+    return { speed: t.speed[i], gear: t.gear[i], throttle: t.throttle[i], brake: t.brake[i] };
+  };
 
   const tabs: [Mode, string][] = [
     ["dom", "ใครเร็วกว่า"],
@@ -133,9 +142,10 @@ export default function TrackDominance({
           trace={a.trace}
           colors={colors}
           cars={[
-            { code: a.code, colour: a.colour, frac: aFrac },
-            { code: b.code, colour: b.colour, frac: bFrac },
+            { code: a.code, colour: a.colour, frac: aFrac, hud: hud(a.trace, aFrac) },
+            { code: b.code, colour: b.colour, frac: bFrac, hud: hud(b.trace, bFrac) },
           ]}
+          circuitId={circuitId}
           onFail={() => setView("2d")}
         />
       ) : (
