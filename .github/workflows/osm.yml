@@ -1,10 +1,10 @@
 name: OSM scenes
 
-# สร้างฉากรอบสนามจาก OpenStreetMap (public/osm/*) — รันเมื่อแก้รายชื่อสนามใน scripts/osm-circuits.txt
+# สร้างฉากรอบสนามจาก OpenStreetMap (public/osm/*) — รันเมื่อแก้รายชื่อสนาม (scripts/osm-circuits.txt) หรือตัวสร้าง
 # ดึงครั้งเดียวต่อสนามแล้วเก็บเป็นไฟล์ในรีโป (ผู้ชมเว็บไม่ได้ยิง Overpass เอง)
 on:
   push:
-    paths: [scripts/osm-circuits.txt]
+    paths: [scripts/osm-circuits.txt, scripts/osm-scene.mjs]
   workflow_dispatch:
 
 concurrency:
