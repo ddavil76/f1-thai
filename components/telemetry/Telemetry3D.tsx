@@ -136,13 +136,14 @@ export default function Telemetry3D({
       const colourAt = (j: number, list: string[]) => c.set(list[Math.round((j / SEG) * (n - 1))] ?? "#888888");
       if (kit) {
         // สมจริง: แถบสีบาง ๆ ทาบบนผิวแทร็ก (เหมือนเส้นกราฟิกในการถ่ายทอดสด)
-        const W = 0.035;
         const pos: number[] = [];
         const idx: number[] = [];
         for (let j = 0; j <= SEG; j++) {
           const u = (j / SEG) % 1;
           const p = track.curve.getPointAt(u);
           const s = (track as CircuitMeshes).sideAt(u);
+          // ช่วงถนนแคบ (สนามถนน) แถบสีบางลงตาม ไม่ให้ท่วมทั้งผิวแทร็ก
+          const W = Math.min(0.035, (track as CircuitMeshes).halfAt(u) * 0.35);
           pos.push(p.x + s.x * W, p.y + 0.012, p.z + s.z * W, p.x - s.x * W, p.y + 0.012, p.z - s.z * W);
           if (j < SEG) idx.push(j * 2, j * 2 + 1, j * 2 + 2, j * 2 + 1, j * 2 + 3, j * 2 + 2);
         }
