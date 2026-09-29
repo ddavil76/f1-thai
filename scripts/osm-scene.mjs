@@ -312,36 +312,58 @@ out geom;`;
           mark(x, y); mark(x + 1, y); mark(x, y + 1);
         }
       }
-    const sea = new Uint8Array(W * H);
+    // แบ่งภาพเป็นพื้นที่ที่ถูกเส้นชายฝั่งกั้น แล้วให้แต่ละช่วงของชายฝั่ง "โหวต":
+    // ฝั่งขวา = น้ำ ฝั่งซ้าย = บก → พื้นที่ไหนน้ำชนะคือทะเล (ทนต่อจุดผิดพลาดเล็ก ๆ ในข้อมูล)
+    const comp = new Int32Array(W * H).fill(-1);
+    let nComp = 0;
     const stack = [];
+    for (let s0 = 0; s0 < W * H; s0++) {
+      if (wall[s0] || comp[s0] >= 0) continue;
+      stack.push(s0);
+      comp[s0] = nComp;
+      while (stack.length) {
+        const i = stack.pop();
+        const x = i % W;
+        for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) {
+          if (j < 0 || j >= W * H || wall[j] || comp[j] >= 0) continue;
+          comp[j] = nComp;
+          stack.push(j);
+        }
+      }
+      nComp++;
+    }
+    const wetV = new Float64Array(nComp);
+    const dryV = new Float64Array(nComp);
     for (const pts of coast)
       for (let i = 0; i + 1 < pts.length; i++) {
         const [xa, ya] = pts[i];
         const [xb, yb] = pts[i + 1];
         const l = Math.hypot(xb - xa, yb - ya) || 1;
-        // ขวามือของทิศเดิน (y ชี้ลงในภาพ) = (-dy, dx) · ถอยออกจากเส้น 4 px
-        const sx = Math.round((xa + xb) / 2 - ((yb - ya) / l) * 4);
-        const sy = Math.round((ya + yb) / 2 + ((xb - xa) / l) * 4);
-        if (sx >= 0 && sy >= 0 && sx < W && sy < H) stack.push(sy * W + sx);
+        // ขวามือของทิศเดิน (y ชี้ลงในภาพ) = (-dy, dx)
+        const nx = -(yb - ya) / l;
+        const ny = (xb - xa) / l;
+        for (const side of [1, -1]) {
+          const sx = Math.round((xa + xb) / 2 + nx * 3 * side);
+          const sy = Math.round((ya + yb) / 2 + ny * 3 * side);
+          if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
+          const c = comp[sy * W + sx];
+          if (c >= 0) (side > 0 ? wetV : dryV)[c] += l;
+        }
       }
+    // น้ำต้องชนะขาด — ถ้าสูสี แปลว่าชายฝั่งไม่ปิดในกรอบ บกกับทะเลต่อกันเป็นพื้นที่เดียว → ไม่ระบาย
+    const votes = Array.from({ length: nComp }, (_, c) => (wetV[c] > dryV[c] * 3 ? 1 : 0));
+    const water = R.hex(COL.water);
     let filled = 0;
-    while (stack.length) {
-      const i = stack.pop();
-      if (sea[i] || wall[i]) continue;
-      sea[i] = 1;
-      filled++;
-      const x = i % W;
-      if (x > 0) stack.push(i - 1);
-      if (x < W - 1) stack.push(i + 1);
-      if (i >= W) stack.push(i - W);
-      if (i < W * (H - 1)) stack.push(i + W);
+    for (let i = 0; i < W * H; i++) {
+      const c = comp[i] >= 0 ? comp[i] : -1;
+      // เส้นกั้นเองให้สีเดียวกับเพื่อนบ้านที่เป็นน้ำ
+      const wet = c >= 0 ? votes[c] > 0 : (i % W > 0 && comp[i - 1] >= 0 && votes[comp[i - 1]] > 0);
+      if (wet) {
+        R.set(i, water, CLS.water);
+        filled++;
+      }
     }
-    // ชายฝั่งขาดตอนในกรอบ → น้ำรั่วท่วมทั้งภาพ → ไม่ใช้ทะเล (ดีกว่าผิดทั้งฉาก)
-    if (filled < W * H * 0.75) {
-      const water = R.hex(COL.water);
-      for (let i = 0; i < W * H; i++) if (sea[i] || (wall[i] && (sea[i - 1] || sea[i + 1]))) R.set(i, water, CLS.water);
-      console.log(`  ทะเล ${(filled / (W * H) * 100).toFixed(1)}% ของภาพ`);
-    } else console.log("  ชายฝั่งไม่ครบในกรอบ — ข้ามทะเล");
+    console.log(`  ทะเล ${((filled / (W * H)) * 100).toFixed(1)}% ของภาพ (${nComp} พื้นที่)`);
   }
   layer((e) => tag(e, "natural") === "water" || tag(e, "waterway") === "riverbank" || lu(e) === "basin" || lu(e) === "reservoir", COL.water, CLS.water);
 
