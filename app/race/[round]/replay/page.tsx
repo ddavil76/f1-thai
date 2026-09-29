@@ -63,6 +63,7 @@ export default async function ReplayPage({ params }: Params) {
           season={SEASON}
           raceStart={toDate({ date: race.date, time: race.time })?.toISOString() ?? null}
           track={circuitTrack(race.Circuit.circuitId)}
+          circuitId={race.Circuit.circuitId}
         />
       ) : (
         <p className="card p-6 text-sm text-white/60">สนามนี้ยังไม่ได้แข่ง</p>

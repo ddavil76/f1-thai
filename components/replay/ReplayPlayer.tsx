@@ -158,9 +158,11 @@ const TimingTower = memo(function TimingTower({
 export default function ReplayPlayer({
   replay,
   track,
+  circuitId,
 }: {
   replay: RaceReplay;
   track?: TrackPath | null;
+  circuitId?: string;
 }) {
   const { totalLaps, durationMs, frames } = replay;
   // memo — ฉาก 3D สร้างใหม่ทุกครั้งที่ object นี้เปลี่ยน (ไม่งั้นสร้างใหม่ทุกรอบที่ frame เลื่อน)
@@ -251,6 +253,7 @@ export default function ReplayPlayer({
               frames={frames}
               drivers={meta}
               timeRef={timeRef}
+              circuitId={circuitId}
               onFail={() => setView("2d")}
             />
           ) : (

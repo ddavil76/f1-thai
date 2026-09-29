@@ -56,7 +56,7 @@ export default async function TelemetryPage({ params }: Params) {
       {SEASON < 2023 ? (
         <p className="card p-6 text-sm text-white/60">เทเลเมทรีมีตั้งแต่ฤดูกาล 2023</p>
       ) : sessions.length > 0 ? (
-        <TelemetryCompare season={SEASON} sessions={sessions} />
+        <TelemetryCompare season={SEASON} sessions={sessions} circuitId={race.Circuit.circuitId} />
       ) : (
         <p className="card p-6 text-sm text-white/60">ยังไม่มีควอลิฟายหรือเรซของสนามนี้ — กลับมาดูหลังแข่ง</p>
       )}
