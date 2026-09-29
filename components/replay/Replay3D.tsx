@@ -9,6 +9,7 @@ import { trackGroundPoints } from "@/lib/track3d";
 import { fogColor, isNightCircuit, skyBackground, useSceneStyle } from "@/lib/three-style";
 import type { CircuitMeshes } from "@/lib/three-circuit";
 import SceneStyleToggle from "../SceneStyleToggle";
+import OsmCredit from "../OsmCredit";
 
 /**
  * รีเพลย์บนสนาม 3D — ตำแหน่งเดียวกับผัง 2D (dotsAt) พร้อมรหัสนักขับ
@@ -41,6 +42,7 @@ export default function Replay3D({
   const style = useSceneStyle();
   const real = style === "real";
   const night = isNightCircuit(circuitId);
+  const [osmOn, setOsmOn] = useState(false);
   const onFailRef = useRef(onFail);
   useEffect(() => {
     onFailRef.current = onFail;
@@ -73,9 +75,13 @@ export default function Replay3D({
             ...(await import("three/addons/utils/BufferGeometryUtils.js")),
             ...(await import("@/lib/three-circuit")),
             ...(await import("@/lib/three-car")),
+            ...(await import("@/lib/osm-scene")),
           }
         : null;
+      // ฉากรอบสนามจริง (OSM) ถ้ามี — ผังรีเพลย์ผูกกับแผนที่อยู่แล้ว วางซ้อนได้ตรง
+      const osm = kit ? await kit.loadOsmScene(circuitId) : null;
       if (disposed) return;
+      setOsmOn(!!osm);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -91,7 +97,7 @@ export default function Replay3D({
       const grid = real ? null : buildGrid(THREE);
       if (grid) scene.add(grid.grid);
       const ground = trackGroundPoints(track).map(([x, z]) => [x, 0, z] as [number, number, number]);
-      const t3 = kit ? kit.buildCircuit(THREE, kit.mergeGeometries, ground, { night }) : buildTrack(THREE, ground);
+      const t3 = kit ? kit.buildCircuit(THREE, kit.mergeGeometries, ground, { night, osm }) : buildTrack(THREE, ground);
       scene.add(t3.group);
 
       /* ---- รถ: รถ F1 สีทีม (สมจริง) หรือลูกกลมสีทีม (เรียบ) + ป้ายรหัส ---- */
@@ -272,7 +278,7 @@ export default function Replay3D({
       visible.cancel();
       cleanup();
     };
-  }, [track, frames, drivers, timeRef, real, night]);
+  }, [track, frames, drivers, timeRef, real, night, circuitId]);
 
   const list = Object.values(drivers).sort((a, b) => a.code.localeCompare(b.code));
 
@@ -315,6 +321,7 @@ export default function Replay3D({
           </span>
         )
       )}
+      {real && osmOn && <OsmCredit className="bottom-3 left-3" />}
     </figure>
   );
 }

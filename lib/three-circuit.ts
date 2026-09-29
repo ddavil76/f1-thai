@@ -6,6 +6,7 @@
 import type * as THREE_NS from "three";
 import { clearance, cornerMask, roadWidth, seeded, type XZ } from "./circuit-layout";
 import type { TrackMeshes, Vec3 } from "./three-track";
+import type { OsmScene } from "./osm-scene";
 
 type Three = typeof THREE_NS;
 type Geo = THREE_NS.BufferGeometry;
@@ -62,7 +63,20 @@ export function buildCircuit(
   THREE: Three,
   merge: Merge,
   pts: Vec3[],
-  { night = false, samples = 800, half = 0.15, seed = 7 }: { night?: boolean; samples?: number; half?: number; seed?: number } = {},
+  {
+    night = false,
+    samples = 800,
+    half = 0.15,
+    seed = 7,
+    osm = null,
+  }: {
+    night?: boolean;
+    samples?: number;
+    half?: number;
+    seed?: number;
+    /** ฉากรอบสนามจริงจาก OpenStreetMap (พื้น ตึก ต้นไม้) — null = ฉากทั่วไป */
+    osm?: OsmScene | null;
+  } = {},
 ): CircuitMeshes {
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
@@ -183,14 +197,35 @@ export function buildCircuit(
   grassTex.repeat.set(60, 60);
   const ground = keep(new THREE.CircleGeometry(60, 48));
   ground.rotateX(-Math.PI / 2);
-  ground.translate(0, -0.004, 0);
-  const grassMat = keep(new THREE.MeshLambertMaterial({ map: grassTex }));
+  ground.translate(0, osm ? -0.006 : -0.004, 0);
+  const grassMat = keep(
+    osm
+      ? new THREE.MeshLambertMaterial({ color: new THREE.Color(osm.data.outside) })
+      : new THREE.MeshLambertMaterial({ map: grassTex }),
+  );
   add(ground, grassMat);
 
-  /* ---- ขอบสนามถึงแบริเออร์ (หญ้า) + ลาดดินลงพื้นเมื่อสนามลอยสูง ---- */
+  // พื้นจริงรอบสนาม (ภาพมองจากบนที่วาดจาก OSM) — ทับพื้นทั่วไปในกรอบของมัน
+  if (osm) {
+    const [bx0, bz0, bx1, bz1] = osm.data.bounds;
+    const tex = keep(new THREE.Texture(osm.image));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.needsUpdate = true;
+    const plane = keep(new THREE.PlaneGeometry(bx1 - bx0, bz1 - bz0));
+    plane.rotateX(-Math.PI / 2); // ขอบบนของภาพ (เหนือ) → z น้อย ตรงกับผังสนาม
+    plane.translate((bx0 + bx1) / 2, -0.004, (bz0 + bz1) / 2);
+    add(plane, keep(new THREE.MeshLambertMaterial({ map: tex })));
+  }
+
+  /* ---- ขอบสนามถึงแบริเออร์ (หญ้า / สนามในเมืองเป็นทางเท้าคอนกรีต) + ลาดดินลงพื้นเมื่อสนามลอยสูง ---- */
   const vergeTex = keep(grassTex.clone());
   vergeTex.repeat.set(1, 1);
-  const vergeMat = keep(new THREE.MeshLambertMaterial({ map: vergeTex, side: THREE.DoubleSide }));
+  const vergeMat = keep(
+    osm?.data.urban
+      ? new THREE.MeshLambertMaterial({ color: 0xb4afa4, side: THREE.DoubleSide })
+      : new THREE.MeshLambertMaterial({ map: vergeTex, side: THREE.DoubleSide }),
+  );
   for (const side of [1, -1]) {
     add(strip((i) => side * (H(i) - 0.01), (i) => side * (wallOf(i, side) + 0.02), y(0.001), y(0.001), { vLen: 0.6 }), vergeMat);
     if (height > 0.03) {
@@ -348,6 +383,48 @@ export function buildCircuit(
   };
   const taken: { x: number; z: number; r: number }[] = [];
 
+  /* ---- ตึกจริงจาก OSM: ยกรูปฐานขึ้นตามความสูง รวมเป็น mesh เดียว ---- */
+  if (osm?.data.buildings.length) {
+    const pos: number[] = [];
+    const col: number[] = [];
+    const roofs = [0xd9d4c7, 0xc9c2b3, 0xb9b3a7, 0xe4dfd4, 0xaaa49b, 0xcfc9bd, 0xc27b5c];
+    const cRoof = new THREE.Color();
+    const cWall = new THREE.Color();
+    const push = (x: number, yy: number, z: number, c: THREE_NS.Color) => {
+      pos.push(x, yy, z);
+      col.push(c.r, c.g, c.b);
+    };
+    let n = 0;
+    for (const b of osm.data.buildings) {
+      const h = b[0];
+      const ring: XZ[] = [];
+      for (let k = 1; k + 1 < b.length; k += 2) ring.push([b[k], b[k + 1]]);
+      if (ring.length < 3) continue;
+      // ตึกที่ล้ำเข้ามาในสนาม (ข้อมูลคลาดเล็กน้อย/อาคารคร่อมถนน) → ตัดทิ้ง ไม่ให้บังรถ
+      const cx = ring.reduce((a, p) => a + p[0], 0) / ring.length;
+      const cz = ring.reduce((a, p) => a + p[1], 0) / ring.length;
+      if (room.nearest(cx, cz) < half + 0.08 || ring.some(([x, z]) => room.nearest(x, z) < half + 0.03)) continue;
+      cRoof.setHex(roofs[(n * 7919 + 13) % roofs.length]);
+      cWall.copy(cRoof).multiplyScalar(0.78);
+      n++;
+      for (let k = 0; k < ring.length; k++) {
+        const [ax, az] = ring[k];
+        const [bx, bz] = ring[(k + 1) % ring.length];
+        push(ax, 0, az, cWall); push(bx, 0, bz, cWall); push(bx, h, bz, cWall);
+        push(ax, 0, az, cWall); push(bx, h, bz, cWall); push(ax, h, az, cWall);
+      }
+      const tri = THREE.ShapeUtils.triangulateShape(ring.map(([x, z]) => new THREE.Vector2(x, z)), []);
+      for (const t of tri) for (const k of t) push(ring[k][0], h, ring[k][1], cRoof);
+      const r = Math.max(...ring.map(([x, z]) => Math.hypot(x - cx, z - cz)));
+      taken.push({ x: cx, z: cz, r });
+    }
+    const g = keep(new THREE.BufferGeometry());
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    add(g, keep(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+  }
+
   /* ---- อัฒจันทร์: ขั้นบันได + คนดู (จุดสี) + หลังคา ---- */
   const crowdTex = keep(canvasTex(THREE, 64, 16, (g) => {
     g.fillStyle = "#2b2f38";
@@ -465,11 +542,21 @@ export function buildCircuit(
   const sc = new THREE.Vector3();
   const pos = new THREE.Vector3();
   const R = radius * 1.35;
-  for (let tries = 0; tries < 1400 && spots.length < 220; tries++) {
-    const a = rnd() * Math.PI * 2;
-    const r = Math.sqrt(rnd()) * R;
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
+  // มีฉาก OSM → ต้นไม้อยู่ในป่า/สวนจริง · ไม่มี → สุ่มรอบสนาม
+  const osmTrees = osm?.data.trees ?? null;
+  const treeCount = osmTrees ? osmTrees.length / 2 : 1400;
+  for (let tries = 0; tries < treeCount && spots.length < (osmTrees ? 450 : 220); tries++) {
+    let x: number;
+    let z: number;
+    if (osmTrees) {
+      x = osmTrees[tries * 2];
+      z = osmTrees[tries * 2 + 1];
+    } else {
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(rnd()) * R;
+      x = Math.cos(a) * r;
+      z = Math.sin(a) * r;
+    }
     if (room.nearest(x, z) < half + 0.5) continue;
     if (taken.some((t) => Math.hypot(t.x - x, t.z - z) < t.r + 0.25)) continue;
     const k = 0.7 + rnd() * 0.7;

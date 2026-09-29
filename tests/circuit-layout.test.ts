@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearance, cornerMask, curvature, roadWidth, seeded, type XZ } from "@/lib/circuit-layout";
+import { alignTo, clearance, cornerMask, curvature, roadWidth, seeded, type XZ } from "@/lib/circuit-layout";
 
 /** วงกลมรัศมี r ทวนเข็ม (มุมเพิ่ม) n จุด */
 function circle(r: number, n = 200): XZ[] {
@@ -100,5 +100,28 @@ describe("ความกว้างถนน", () => {
     expect(w[mid]).toBeGreaterThanOrEqual(0.05);
     // ในโค้งหักศอกเอง (สองขาเชื่อมกันด้วยโค้ง) ไม่นับเป็นถนนอีกเส้น → ไม่บีบเกินจำเป็น
     expect(Math.max(...w)).toBeLessThanOrEqual(0.15);
+  });
+});
+
+describe("วางเส้นสนามให้ตรงผัง", () => {
+  it("หมุน/ย่อ/เลื่อน/กลับด้าน → กลับมาทับผังเดิม", () => {
+    // รูปไม่สมมาตร (สนามกีฬา + ปมหนึ่งจุด) เพื่อให้มีมุมที่ถูกเพียงมุมเดียว
+    const ref = stadium(0.8).map(([x, z]): XZ => [x + (x > 2 && z > 0 ? 0.6 : 0), z]);
+    for (const flip of [1, -1]) {
+      const a = 0.65;
+      const moved = ref.map(([x, z]): XZ => {
+        const xx = x * flip;
+        return [(xx * Math.cos(a) - z * Math.sin(a)) * 37 + 500, (xx * Math.sin(a) + z * Math.cos(a)) * 37 - 80];
+      });
+      // ลำดับจุดเริ่มต่างกัน (เหมือนรอบของรถที่เริ่มคนละที่กับผัง)
+      const shifted = [...moved.slice(100), ...moved.slice(0, 100)];
+      const fit = alignTo(ref, shifted);
+      const err = shifted.map((p, i) => {
+        const q = fit(p);
+        const r = ref[(i + 100) % ref.length];
+        return Math.hypot(q[0] - r[0], q[1] - r[1]);
+      });
+      expect(Math.max(...err)).toBeLessThan(0.08);
+    }
   });
 });

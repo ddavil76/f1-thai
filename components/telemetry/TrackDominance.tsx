@@ -39,6 +39,7 @@ export default function TrackDominance({
   status,
   controls,
   circuitId,
+  ground,
 }: {
   a: Side;
   b: Side;
@@ -51,6 +52,8 @@ export default function TrackDominance({
   controls?: React.ReactNode;
   /** สนามไนต์เรซ → ฉาก 3D กลางคืน */
   circuitId?: string;
+  /** ผังสนามที่ผูกกับแผนที่ — ฉากรอบสนามจริง (OSM) */
+  ground?: [number, number][];
 }) {
   const [mode, setMode] = useState<Mode>("dom");
   const [view, setView] = useState<"3d" | "2d">("3d");
@@ -146,6 +149,7 @@ export default function TrackDominance({
             { code: b.code, colour: b.colour, frac: bFrac, hud: hud(b.trace, bFrac) },
           ]}
           circuitId={circuitId}
+          ground={ground}
           onFail={() => setView("2d")}
         />
       ) : (

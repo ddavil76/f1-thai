@@ -1,0 +1,4 @@
+# สนามที่มีฉากรอบสนามจาก OpenStreetMap — แก้ไฟล์นี้แล้ว push → GitHub Actions (osm.yml) สร้างให้
+baku
+monaco
+zandvoort

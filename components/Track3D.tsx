@@ -7,6 +7,7 @@ import { ELEVATION_EXAGGERATION } from "@/lib/elevation";
 import { fogColor, isNightCircuit, REAL_EXAGGERATION, skyBackground, useSceneStyle } from "@/lib/three-style";
 import type { CircuitMeshes } from "@/lib/three-circuit";
 import SceneStyleToggle from "./SceneStyleToggle";
+import OsmCredit from "./OsmCredit";
 
 /** รถสาธิตในแบบสมจริง — สีทั่วไป ไม่ใช่ลายทีมจริง */
 const DEMO_CARS = [
@@ -53,6 +54,9 @@ export default function Track3D({
   const style = useSceneStyle();
   const real = style === "real";
   const night = isNightCircuit(circuitId);
+  // ใน effect ชื่อ circuitId ถูกใช้กับข้อมูลเนิน — แยกชื่อไว้ใช้โหลดฉาก OSM
+  const sceneId = circuitId ?? "";
+  const [osmOn, setOsmOn] = useState(false);
   // string แทน object — กัน effect รันซ้ำทุก render
   const elevKey = elevation
     ? [elevation.circuitId, elevation.season, elevation.country, elevation.locality].join("|")
@@ -84,9 +88,14 @@ export default function Track3D({
             ...(await import("three/addons/utils/BufferGeometryUtils.js")),
             ...(await import("@/lib/three-circuit")),
             ...(await import("@/lib/three-car")),
+            ...(await import("@/lib/osm-scene")),
+            ...(await import("@/lib/circuit-layout")),
           }
         : null;
+      // ฉากรอบสนามจริง (OSM) ถ้ามี — ไม่มี/โหลดไม่ได้ก็ใช้ฉากทั่วไป
+      const osm = kit ? await kit.loadOsmScene(sceneId) : null;
       if (disposed) return;
+      setOsmOn(!!osm);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -105,7 +114,7 @@ export default function Track3D({
       if (grid) scene.add(grid.grid);
 
       const make = (pts: [number, number, number][]) =>
-        kit ? kit.buildCircuit(THREE, kit.mergeGeometries, pts, { night }) : buildTrack(THREE, pts);
+        kit ? kit.buildCircuit(THREE, kit.mergeGeometries, pts, { night, osm }) : buildTrack(THREE, pts);
       let track = make(points.map(([x, z]) => [x, 0, z]));
       scene.add(track.group);
 
@@ -245,7 +254,12 @@ export default function Track3D({
           track.dispose();
           // แคชเก็บความสูงที่ขยาย ×5 — แบบสมจริงลดเหลือ ×2 (มีรถวิ่ง ×5 ดูเหมือนไต่เขา)
           const k = real ? REAL_EXAGGERATION / ELEVATION_EXAGGERATION : 1;
-          track = make(pts.map(([x, h, z]) => [x, h * k, z]));
+          // มีฉาก OSM → หมุน/วางเส้นจากพิกัดรถให้ทับผังที่ผูกกับแผนที่ (แกนของ openf1 ไม่ได้ชี้เหนือเสมอ)
+          const fitXZ = osm && kit ? kit.alignTo(points, pts.map(([x, , z]) => [x, z])) : null;
+          track = make(pts.map(([x, h, z]) => {
+            const [ax, az] = fitXZ ? fitXZ([x, z]) : [x, z];
+            return [ax, h * k, az];
+          }));
           scene.add(track.group);
           fit();
           setHilly(true);
@@ -260,7 +274,7 @@ export default function Track3D({
       visible.cancel();
       cleanup();
     };
-  }, [points, elevKey, real, night]);
+  }, [points, elevKey, real, night, sceneId]);
 
   return (
     // flow-root: กัน mt-5 ของผัง 2D ทะลุออกนอกกล่อง ไม่งั้นชั้น 3D (top-5) วางเลื่อนลงมา
@@ -303,6 +317,7 @@ export default function Track3D({
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-(--color-f1)" />
           {name}
         </span>
+        {real && osmOn && <OsmCredit className="bottom-11 right-3" />}
       </div>
     </div>
   );
