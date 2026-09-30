@@ -113,7 +113,7 @@ export default function WidgetPreview() {
                 <img
                   src={
                     `/api/widget/card?round=${data.race!.round}&size=${size}&w=${w}&h=${h}&s=2` +
-                    `&theme=${dark ? "dark" : "light"}&tz=${tz}&v=1` +
+                    `&theme=${dark ? "dark" : "light"}&tz=${tz}&v=2` +
                     (cur.s ? `&next=${cur.s.code}` : "") +
                     (cur.live ? "&live=1" : "")
                   }

@@ -9,6 +9,7 @@ import {
 } from "./f1";
 import { circuitTrack } from "./circuits";
 import { countryFlag } from "./flags";
+import { sessionCode } from "./widget-card";
 
 /**
  * · upcoming    = มีสนามถัดไป ยังไม่ถึงเวลา
@@ -101,16 +102,6 @@ export const PODIUM_DAYS = 3.5;
 /** ผังสนามส่งไม่เกินกี่จุด — widget เล็กนิดเดียว เกินนี้มองไม่ออกแต่เปลืองเน็ต */
 export const TRACK_MAX_POINTS = 64;
 
-const SESSION_CODE: Record<string, string> = {
-  "ซ้อม 1": "FP1",
-  "ซ้อม 2": "FP2",
-  "ซ้อม 3": "FP3",
-  "Sprint Quali": "SQ",
-  Sprint: "SPRINT",
-  Qualifying: "Q",
-  Race: "RACE",
-};
-
 type NamedDriver = { code?: string; givenName: string; familyName: string };
 
 const shortName = (d: NamedDriver) => `${d.givenName.charAt(0)}. ${d.familyName}`;
@@ -150,7 +141,7 @@ export function widgetTrack(circuitId: string): WidgetTrack | null {
 
 function sessionsOf(race: Race): WidgetSession[] {
   return getSessionWindows(race).map((w) => ({
-    code: SESSION_CODE[w.label] ?? w.label.slice(0, 3).toUpperCase(),
+    code: sessionCode(w.label),
     label: w.label,
     startsAt: new Date(w.start).toISOString(),
     endsAt: new Date(w.end).toISOString(),
