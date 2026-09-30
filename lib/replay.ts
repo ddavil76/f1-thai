@@ -482,3 +482,49 @@ async function loadReplay(
       })),
   };
 }
+
+/**
+ * เวลาแข่ง (ms) ที่รถเบอร์ num เริ่มรอบที่ lap — ประมาณจากระยะสะสม (frac) ระหว่างเฟรม
+ * ใช้กระโดดจากหน้าเทียบรอบกลับมาดูช่วงเดียวกันในรีเพลย์ · null = หาไม่เจอ (ออกก่อนถึงรอบนั้น)
+ */
+export function lapStartMs(frames: ReplayFrame[], num: number, lap: number): number | null {
+  const target = lap - 1;
+  const fracOf = (f: ReplayFrame) => f.rows.find((r) => r.num === num)?.frac;
+  const f0 = frames[0] && fracOf(frames[0]);
+  if (f0 == null) return null;
+  // ช่วงก่อนผู้นำจบรอบแรก — dotsAt วิ่งจาก 0 ไปถึง frac ของเฟรมแรกแบบเส้นตรง
+  if (target <= f0) return f0 > 0 ? (target / f0) * frames[0].atMs : 0;
+  for (let i = 0; i + 1 < frames.length; i++) {
+    const a = fracOf(frames[i]);
+    const b = fracOf(frames[i + 1]);
+    if (a == null || b == null || b <= a) continue;
+    if (target >= a && target <= b) {
+      return frames[i].atMs + ((target - a) / (b - a)) * (frames[i + 1].atMs - frames[i].atMs);
+    }
+  }
+  return null;
+}
+
+export type LapPick = { num: number; lap: number };
+
+/**
+ * คู่เทียบเทเลเมทรี ณ เวลา t: คนที่เลือก (ไม่เลือก = ผู้นำ) กับคันข้างหน้า
+ * (ผู้นำ → คันข้างหลัง) · รอบ = รอบที่แต่ละคนกำลังวิ่งอยู่ตอนนั้น
+ */
+export function compareAt(
+  frames: ReplayFrame[],
+  t: number,
+  subject: number | null,
+  totalLaps: number,
+): { a: LapPick; b: LapPick } | null {
+  const running = dotsAt(frames, t)
+    .filter((d) => !d.out)
+    .sort((x, y) => x.pos - y.pos);
+  const me = running.find((d) => d.num === subject) ?? running[0];
+  if (!me) return null;
+  // คันที่ยังวิ่งอยู่ที่ใกล้สุดข้างหน้า (ข้ามคันที่ออกไปแล้ว) · ไม่มี = คันถัดไปข้างหลัง
+  const rival = running.filter((d) => d.pos < me.pos).at(-1) ?? running.find((d) => d.pos > me.pos);
+  if (!rival) return null;
+  const lapOf = (frac: number) => Math.max(1, Math.min(totalLaps, Math.floor(frac) + 1));
+  return { a: { num: me.num, lap: lapOf(me.frac) }, b: { num: rival.num, lap: lapOf(rival.frac) } };
+}

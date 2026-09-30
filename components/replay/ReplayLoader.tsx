@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import StartLights from "../StartLights";
 import type { TrackPath } from "@/lib/circuits";
 import { getRaceReplay, type RaceReplay } from "@/lib/replay";
-import ReplayPlayer from "./ReplayPlayer";
+import type { LapPick } from "@/lib/replay";
+import ReplayPlayer, { type ReplayJump } from "./ReplayPlayer";
 
 type State =
   | { s: "loading" }
@@ -17,6 +18,9 @@ export default function ReplayLoader({
   raceStart,
   track,
   circuitId,
+  jump = null,
+  active = true,
+  onCompare,
 }: {
   season: number;
   /** เวลาออกสตาร์ทตามปฏิทิน (ISO) — null = ไม่รู้เวลา */
@@ -24,6 +28,9 @@ export default function ReplayLoader({
   track?: TrackPath | null;
   /** สนามไนต์เรซ → ฉาก 3D กลางคืน */
   circuitId?: string;
+  jump?: ReplayJump | null;
+  active?: boolean;
+  onCompare?: (a: LapPick, b: LapPick) => void;
 }) {
   const [state, setState] = useState<State>(
     raceStart ? { s: "loading" } : { s: "err" },
@@ -77,5 +84,16 @@ export default function ReplayLoader({
       </p>
     );
   }
-  return <ReplayPlayer replay={state.data} track={track} circuitId={circuitId} />;
+  return (
+    // กระโดดมาจากแท็บเทียบรอบ → เริ่ม player ใหม่ที่ต้นรอบนั้น (ข้อมูลที่โหลดแล้วใช้ต่อ)
+    <ReplayPlayer
+      key={jump?.nonce ?? 0}
+      replay={state.data}
+      track={track}
+      circuitId={circuitId}
+      jump={jump}
+      active={active}
+      onCompare={onCompare}
+    />
+  );
 }

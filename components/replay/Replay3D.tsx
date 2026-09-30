@@ -24,9 +24,14 @@ export default function Replay3D({
   drivers,
   timeRef,
   circuitId,
+  follow,
+  onFollow,
   onFail,
 }: {
   track: TrackPath;
+  /** เบอร์รถที่กล้องตามอยู่ (null = ภาพรวม) — ผู้เรียกถือค่าไว้ ใช้ต่อกับปุ่มเทียบรอบ */
+  follow: number | null;
+  onFollow: (num: number | null) => void;
   /** สนามไนต์เรซ → ฉากกลางคืน */
   circuitId?: string;
   frames: ReplayFrame[];
@@ -37,7 +42,6 @@ export default function Replay3D({
   const host = useRef<HTMLDivElement>(null);
   const followRef = useRef<number | null>(null);
   const setActiveRef = useRef<(on: boolean) => void>(() => {});
-  const [follow, setFollow] = useState<number | null>(null);
   const [active, setActive] = useState(false);
   const style = useSceneStyle();
   const real = style === "real";
@@ -295,7 +299,7 @@ export default function Replay3D({
         <select
           id="replay-follow"
           value={follow ?? ""}
-          onChange={(e) => setFollow(e.target.value ? Number(e.target.value) : null)}
+          onChange={(e) => onFollow(e.target.value ? Number(e.target.value) : null)}
           className="rounded-full border border-white/15 bg-black/60 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur"
         >
           <option value="">ภาพรวม</option>

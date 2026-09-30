@@ -4,9 +4,12 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getSchedule, isPastRace, toDate } from "@/lib/f1";
 import { circuitTrack } from "@/lib/circuits";
-import ReplayLoader from "@/components/replay/ReplayLoader";
+import RaceAnalysis from "@/components/RaceAnalysis";
 import SiteFooter from "@/components/SiteFooter";
 import { SEASON } from "@/lib/season";
+import { telemetrySessions } from "@/lib/telemetry-sessions";
+import { trackGroundPoints } from "@/lib/track3d";
+import { hasOsmScene } from "@/lib/osm-scene";
 
 export const revalidate = 3600;
 
@@ -28,7 +31,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   if (!race) return {};
   return {
     title: `รีเพลย์ · ${race.raceName}`,
-    description: `รีเพลย์ไทม์มิ่งรอบต่อรอบของ ${race.raceName}`,
+    description: `รีเพลย์ไทม์มิ่งรอบต่อรอบ และเทียบความเร็ว คันเร่ง เบรก เกียร์ ของ ${race.raceName}`,
   };
 }
 
@@ -39,6 +42,12 @@ export default async function ReplayPage({ params }: Params) {
   if (!race) notFound();
 
   const past = isPastRace(race);
+  const circuitId = race.Circuit.circuitId;
+  const track = circuitTrack(circuitId);
+  // เทเลเมทรีมีตั้งแต่ปี 2023 · เทียบได้ตั้งแต่ (สปรินต์)ควอลิฟายจบ แม้เรซยังไม่แข่ง
+  const sessions = SEASON >= 2023 ? telemetrySessions(race) : [];
+  // สนามที่มีฉากรอบสนามจริง (OSM) → ผังที่ผูกกับแผนที่ ไว้วางเส้นจากพิกัดรถให้ตรง
+  const ground = track && hasOsmScene(circuitId) ? trackGroundPoints(track) : undefined;
 
   return (
     <main className="mx-auto max-w-5xl space-y-4">
@@ -51,23 +60,26 @@ export default async function ReplayPage({ params }: Params) {
           {race.raceName}
         </Link>
         <h1 className="mt-2 text-2xl font-black tracking-tight md:text-3xl">
-          รีเพลย์ไทม์มิ่ง
+          รีเพลย์ &amp; เทเลเมทรี
         </h1>
         <p className="text-sm text-white/50">
           Round {race.round} · {race.Circuit.circuitName}
         </p>
       </div>
 
-      {past ? (
-        <ReplayLoader
-          season={SEASON}
-          raceStart={toDate({ date: race.date, time: race.time })?.toISOString() ?? null}
-          track={circuitTrack(race.Circuit.circuitId)}
-          circuitId={race.Circuit.circuitId}
-        />
-      ) : (
-        <p className="card p-6 text-sm text-white/60">สนามนี้ยังไม่ได้แข่ง</p>
-      )}
+      <RaceAnalysis
+        replay={
+          past
+            ? {
+                season: SEASON,
+                raceStart: toDate({ date: race.date, time: race.time })?.toISOString() ?? null,
+                track,
+                circuitId,
+              }
+            : null
+        }
+        telemetry={sessions.length > 0 ? { season: SEASON, sessions, circuitId, ground } : null}
+      />
 
       <SiteFooter source="openf1" />
     </main>

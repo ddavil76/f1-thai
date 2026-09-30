@@ -1,9 +1,11 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { Activity, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { TrackPath } from "@/lib/circuits";
-import type { Cell, RaceReplay, ReplayDriver, ReplayFrame } from "@/lib/replay";
+import {
+  compareAt, lapStartMs, type Cell, type LapPick, type RaceReplay, type ReplayDriver, type ReplayFrame,
+} from "@/lib/replay";
 import SectionTabs from "../SectionTabs";
 import TrackMap from "./TrackMap";
 import Replay3D from "./Replay3D";
@@ -155,14 +157,25 @@ const TimingTower = memo(function TimingTower({
   );
 });
 
+/** กระโดดมาดูรอบหนึ่งของรถคันหนึ่ง (มาจากแท็บเทียบรอบ) — ผู้เรียก remount player ด้วย key ทุกครั้งที่กระโดด */
+export type ReplayJump = { num: number; lap: number; nonce: number };
+
 export default function ReplayPlayer({
   replay,
   track,
   circuitId,
+  jump = null,
+  active = true,
+  onCompare,
 }: {
   replay: RaceReplay;
   track?: TrackPath | null;
   circuitId?: string;
+  jump?: ReplayJump | null;
+  /** แท็บนี้ถูกซ่อนอยู่ → หยุดเล่น */
+  active?: boolean;
+  /** กด "เทียบรอบนี้" → ส่งคู่เทียบ (คนที่ตาม/ผู้นำ กับคันข้างหน้า) ไปแท็บเทียบรอบ */
+  onCompare?: (a: LapPick, b: LapPick) => void;
 }) {
   const { totalLaps, durationMs, frames } = replay;
   // memo — ฉาก 3D สร้างใหม่ทุกครั้งที่ object นี้เปลี่ยน (ไม่งั้นสร้างใหม่ทุกรอบที่ frame เลื่อน)
@@ -171,10 +184,14 @@ export default function ReplayPlayer({
     [replay.drivers],
   );
 
-  const timeRef = useRef(0); // เวลาแข่งที่ผ่านไป (ms)
+  // เริ่มที่ต้นรอบที่กระโดดมา (ถ้ามี) และให้กล้องตามคันนั้น
+  const [startMs] = useState(() => (jump ? (lapStartMs(frames, jump.num, jump.lap) ?? 0) : 0));
+  const timeRef = useRef(startMs); // เวลาแข่งที่ผ่านไป (ms)
   const [playing, setPlaying] = useState(false);
+  const run = playing && active;
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(40);
-  const [frameIdx, setFrameIdx] = useState(0);
+  const [frameIdx, setFrameIdx] = useState(() => frameIdxAt(frames, startMs));
+  const [follow, setFollow] = useState<number | null>(jump?.num ?? null);
 
   const scrubRef = useRef<HTMLInputElement>(null);
   const clockRef = useRef<HTMLSpanElement>(null);
@@ -185,7 +202,7 @@ export default function ReplayPlayer({
     const loop = (now: number) => {
       const dt = now - last;
       last = now;
-      if (playing) {
+      if (run) {
         timeRef.current += dt * speed;
         if (timeRef.current >= durationMs) {
           timeRef.current = durationMs;
@@ -205,7 +222,7 @@ export default function ReplayPlayer({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [playing, speed, durationMs, frames]);
+  }, [run, speed, durationMs, frames]);
 
   const seek = (t: number) => {
     timeRef.current = Math.max(0, Math.min(durationMs, t));
@@ -254,6 +271,8 @@ export default function ReplayPlayer({
               drivers={meta}
               timeRef={timeRef}
               circuitId={circuitId}
+              follow={follow}
+              onFollow={setFollow}
               onFail={() => setView("2d")}
             />
           ) : (
@@ -265,6 +284,27 @@ export default function ReplayPlayer({
             />
           )}
         </div>
+      )}
+
+      {onCompare && (
+        <button
+          type="button"
+          onClick={() => {
+            setPlaying(false);
+            const c = compareAt(frames, timeRef.current, follow, totalLaps);
+            if (c) onCompare(c.a, c.b);
+          }}
+          className="card flex w-full items-center gap-3 p-3 text-left transition hover:border-white/20"
+        >
+          <Activity className="h-5 w-5 shrink-0 text-(--color-f1)" />
+          <span className="flex-1 text-sm font-semibold">
+            ดูเทเลเมทรีรอบนี้{follow !== null && meta[follow] ? ` · ${meta[follow].code}` : ""}
+            <span className="block text-xs font-normal text-white/45">
+              {follow !== null ? "เทียบกับคันข้างหน้า" : "ผู้นำเทียบกับอันดับ 2"} · ความเร็ว คันเร่ง เบรก เกียร์ ในรอบที่กำลังวิ่ง
+            </span>
+          </span>
+          <span className="text-white/30">→</span>
+        </button>
       )}
 
       {/* แถบควบคุม */}
@@ -334,7 +374,7 @@ export default function ReplayPlayer({
           type="range"
           min={0}
           max={durationMs}
-          defaultValue={0}
+          defaultValue={startMs}
           step={500}
           onChange={(e) => {
             setPlaying(false);
