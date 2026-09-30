@@ -3,11 +3,15 @@ package app.f1weekrace.widget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.res.Configuration
+import android.os.Bundle
 import app.f1weekrace.widget.model.Payload
+import app.f1weekrace.widget.model.cardUrl
 import app.f1weekrace.widget.model.alertPlan
 import app.f1weekrace.widget.model.nextRefresh
 import app.f1weekrace.widget.model.normalize
 import app.f1weekrace.widget.model.parsePayload
+import java.time.Instant
 import java.time.ZoneId
 import kotlin.concurrent.thread
 
@@ -54,11 +58,29 @@ object Updater {
         val now = System.currentTimeMillis()
         val p = current(ctx, now)
         val mgr = AppWidgetManager.getInstance(ctx)
+        val dark = ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         for (id in mgr.getAppWidgetIds(ComponentName(ctx, RaceWidget::class.java))) {
-            val size = Render.sizeOf(mgr.getAppWidgetOptions(id))
-            mgr.updateAppWidget(id, Render.build(ctx, p, size, now, offline = prefs.lastFetchFailed))
+            val opts = mgr.getAppWidgetOptions(id)
+            val size = Render.sizeOf(opts)
+            val art = if (prefs.classic) null else art(ctx, p, size, opts, dark, now)
+            mgr.updateAppWidget(id, Render.build(ctx, p, size, now, offline = prefs.lastFetchFailed, art = art, dark = dark))
         }
         Scheduler.scheduleRefresh(ctx, nextRefresh(p, now))
         Alerts.sync(ctx, if (prefs.alerts) alertPlan(p, now, prefs.raceOnly, ZoneId.systemDefault()) else emptyList())
     }
+
+    /** รูปการ์ดขนาดพอดี widget นี้ — โหลดไม่ได้ = null (ใช้หน้าตาแบบเดิม) */
+    private fun art(ctx: Context, p: Payload?, size: Render.Size, o: Bundle, dark: Boolean, now: Long) = runCatching {
+        // แนวตั้ง: กว้าง = MIN_WIDTH · สูง = MAX_HEIGHT (0 = launcher ไม่บอก ใช้ขนาดมาตรฐาน)
+        val (dw, dh) = when (size) {
+            Render.Size.SMALL -> 170 to 170
+            Render.Size.MEDIUM -> 340 to 170
+            Render.Size.LARGE -> 340 to 360
+        }
+        val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 } ?: dw
+        val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: dh
+        val scale = minOf(ctx.resources.displayMetrics.density, 2.5f)
+        val tz = ZoneId.systemDefault().rules.getOffset(Instant.ofEpochMilli(now)).totalSeconds / 60
+        cardUrl(p, size.name.lowercase(), w, h, scale, dark, tz)?.let { CardCache.get(ctx, it) }
+    }.getOrNull()
 }

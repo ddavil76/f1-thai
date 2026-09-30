@@ -24,9 +24,12 @@ import app.f1weekrace.widget.model.LastRace
 import app.f1weekrace.widget.model.Payload
 import app.f1weekrace.widget.model.SITE
 import app.f1weekrace.widget.model.State
+import app.f1weekrace.widget.model.TH_SESSION
 import app.f1weekrace.widget.model.Track
 import app.f1weekrace.widget.model.daysLeft
 import app.f1weekrace.widget.model.hm
+import app.f1weekrace.widget.model.lightsLit
+import app.f1weekrace.widget.model.whenShort
 import app.f1weekrace.widget.model.whenText
 import java.time.ZoneId
 import kotlin.math.min
@@ -74,9 +77,14 @@ object Render {
 
     private fun RemoteViews.sp(id: Int, size: Float) = setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_SP, size)
 
-    fun build(ctx: Context, p: Payload?, size: Size, now: Long, offline: Boolean): RemoteViews {
+    /** art = รูปการ์ดจากเว็บ (ธีมการ์ด) · null = โหลดไม่ได้/ปิดไว้ → หน้าตาแบบเดิม */
+    fun build(
+        ctx: Context, p: Payload?, size: Size, now: Long, offline: Boolean,
+        art: Bitmap? = null, dark: Boolean = false,
+    ): RemoteViews {
         val zone = ZoneId.systemDefault()
         val race = p?.race ?: return message(ctx, p, size, offline)
+        if (art != null) return card(ctx, p, size, now, art, dark, zone)
         val v = RemoteViews(
             ctx.packageName,
             when (size) {
@@ -116,6 +124,77 @@ object Render {
                 p.lastRace?.let {
                     v.show(R.id.podium_box, true)
                     podium(ctx, v, it, R.id.podium_title, R.id.podium_list, R.id.podium_box)
+                }
+            }
+        }
+        return v
+    }
+
+    /* ---------- ธีมการ์ด ---------- */
+
+    private const val PILL_RED = 0xffff3b2f.toInt()
+    private const val PILL_TEXT = 0xfff3f1ec.toInt()
+
+    /**
+     * รูปการ์ดจากเว็บเต็ม widget (ชื่อสนาม ผังสนาม ตาราง) + กล่องนับถอยหลังมุมซ้ายล่างที่วาดเอง
+     * ให้ตัวนับเดินตรงเวลา — ตรรกะเดียวกับ pill() ใน public/scriptable-widget.js
+     */
+    private fun card(
+        ctx: Context, p: Payload, size: Size, now: Long, art: Bitmap, dark: Boolean, zone: ZoneId,
+    ): RemoteViews {
+        val race = p.race!!
+        val v = RemoteViews(ctx.packageName, R.layout.widget_card)
+        v.setOnClickPendingIntent(R.id.root, open(ctx, "$SITE/race/${race.round}"))
+        v.setImageViewBitmap(R.id.art, art)
+        v.setTextViewText(R.id.stamp, p.generatedAt?.let { "↻" + hm(it, zone) } ?: "")
+        v.setTextColor(R.id.stamp, if (dark) 0x59ffffff else 0x591b1b22)
+        v.setInt(R.id.pill, "setBackgroundResource", if (dark) R.drawable.pill_bg_dark else R.drawable.pill_bg)
+
+        val s = p.session
+        val target = s?.startsAt ?: race.startsAt
+        val code = s?.code ?: "RACE"
+        val left = target - now
+        val name = if (size == Size.SMALL) code else TH_SESSION[code] ?: code
+        v.setTextViewText(
+            R.id.pill_label,
+            when {
+                p.state == State.LIVE -> "$name · กำลังแข่ง"
+                p.state == State.DONE -> "จบสุดสัปดาห์"
+                size == Size.MEDIUM -> "$name · ${whenShort(target, zone)}"
+                else -> "$name เริ่มใน"
+            },
+        )
+        val lit = if (p.state == State.UPCOMING) lightsLit(left) else 0
+        listOf(R.id.l1, R.id.l2, R.id.l3, R.id.l4, R.id.l5).forEachIndexed { i, id ->
+            v.setImageViewResource(id, if (i < lit) R.drawable.light_on else R.drawable.light_off)
+        }
+
+        val fs = when (size) { Size.SMALL -> 24f; Size.MEDIUM -> 25f; Size.LARGE -> 28f }
+        v.show(R.id.timer, false)
+        v.show(R.id.big, true)
+        when (p.state) {
+            State.LIVE -> big(v, "● LIVE", fs * 0.8f, PILL_RED)
+            State.DONE -> big(v, "🏁 จบแล้ว", fs * 0.7f, PILL_TEXT)
+            else -> {
+                val d = daysLeft(target, now)
+                if (d != null) {
+                    // ตัวเลขแดงใหญ่ หน่วยขาวเล็ก: "4 วัน 07 ชม."
+                    val text = "${d.first} วัน ${"%02d".format(d.second)} ชม."
+                    val sp = SpannableString(text)
+                    for (unit in listOf("วัน", "ชม.")) {
+                        val i = text.indexOf(unit)
+                        sp.setSpan(RelativeSizeSpan(0.42f), i, i + unit.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        sp.setSpan(ForegroundColorSpan(PILL_TEXT), i, i + unit.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    }
+                    v.setTextViewText(R.id.big, sp)
+                    v.sp(R.id.big, fs)
+                    v.setTextColor(R.id.big, PILL_RED)
+                } else {
+                    v.show(R.id.big, false)
+                    v.show(R.id.timer, true)
+                    v.sp(R.id.timer, fs)
+                    v.setChronometer(R.id.timer, SystemClock.elapsedRealtime() + left, null, true)
+                    v.setChronometerCountDown(R.id.timer, true)
                 }
             }
         }
