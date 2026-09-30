@@ -580,13 +580,16 @@ const DARK = PARAM.includes("dark") ? true : PARAM.includes("light") ? false
 // ชื่อ session ภาษาไทยในกล่องนับถอยหลัง
 const TH_SESSION = { FP1: "ซ้อม 1", FP2: "ซ้อม 2", FP3: "ซ้อม 3", SQ: "สปรินต์ควอลิฟาย", SPRINT: "สปรินต์", Q: "ควอลิฟาย", RACE: "เรซ" };
 
+// รุ่นหน้าตาการ์ด — เพิ่มเมื่อแก้วิธีวาดที่เว็บ รูปที่แคชไว้ในเครื่อง (ตาม URL) จะได้โหลดใหม่
+const CARD_V = 2;
+
 function cardUrl(data, family) {
   const [w, h] = widgetSize(family);
   const s = data.session;
   const q = [
     `round=${encodeURIComponent(data.race.round)}`, `size=${family}`, `w=${w}`, `h=${h}`,
     `s=${Math.min(3, Device.screenScale())}`, `theme=${DARK ? "dark" : "light"}`,
-    `tz=${-new Date().getTimezoneOffset()}`, `v=1`,
+    `tz=${-new Date().getTimezoneOffset()}`, `v=${CARD_V}`,
   ];
   if (s) q.push(`next=${encodeURIComponent(s.code)}`);
   if (data.state === "live") q.push("live=1");

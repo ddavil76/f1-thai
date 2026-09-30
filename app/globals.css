@@ -310,7 +310,7 @@ html[data-intro="seen"] .launch-intro {
   container-type: inline-size;
 }
 .poster-name {
-  font-size: min(96px, calc(100cqw / (var(--len, 8) * 0.66)));
+  font-size: min(96px, calc(100cqw / (var(--len, 8) * 0.74)));
   line-height: 0.9;
 }
 .speed-streak {

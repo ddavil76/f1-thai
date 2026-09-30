@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardName, cardSessions, fitName, lastWinner, lightsLit, raceLaps } from "@/lib/widget-card";
+import { cardName, cardSessions, fitName, lastWinner, lightsLit, raceLaps, sessionCode } from "@/lib/widget-card";
 
 describe("การ์ด widget", () => {
   it("ชื่อสนามสั้น: สนามที่รู้จักใช้ชื่อที่คนเรียก · สนามใหม่ตัดคำทั่วไปออก", () => {
@@ -54,5 +54,12 @@ describe("การ์ด widget", () => {
     expect(fitName("SEPANG", 300, 64)).toBe(64);
     expect(fitName("MEXICO CITY", 140, 38)).toBeLessThan(38);
     expect(fitName("A VERY VERY LONG CIRCUIT NAME", 100, 38)).toBe(14);
+  });
+
+  it("รหัส session แบบ F1 จากชื่อใน lib/f1 (ใช้ร่วมกับ /api/widget)", () => {
+    expect(["ซ้อม 1", "Sprint Quali", "Sprint", "Qualifying", "Race"].map(sessionCode)).toEqual([
+      "FP1", "SQ", "SPRINT", "Q", "RACE",
+    ]);
+    expect(sessionCode("Shootout")).toBe("SHO");
   });
 });

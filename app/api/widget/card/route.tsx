@@ -15,6 +15,7 @@ import {
  *
  * /api/widget/card?round=16&size=medium&w=364&h=170&s=3&theme=light&next=FP1&tz=420
  * · w, h = ขนาด widget เป็น point/dp (รูปออกมาสัดส่วนเดียวกับ widget พอดี) · s = ความคมชัด
+ * · v = รุ่นหน้าตา (เว็บไม่ได้อ่าน) — widget แคชรูปตาม URL เพิ่มเลขนี้ในตัว widget เมื่อแก้วิธีวาด
  * · next = session ถัดไป (ไฮไลต์ในตาราง) · live=1 = กำลังแข่ง · tz = เขตเวลาของเครื่อง (นาทีจาก UTC)
  * · layer=text|side = แยกเป็นสองชั้นพื้นใส (Android): text = ตัวหนังสือฝั่งซ้ายบน สูงเท่าเนื้อหา ·
  *   side = ธงหมากรุก + ผังสนาม (+ ผู้ชนะ) ชิดขวา — launcher บางยี่ห้อบอกขนาด widget คลาดจากจริง
@@ -39,13 +40,17 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
 
 /** ผังสนาม: เส้นหนาสีหมึก + เส้นกลางสีพื้น + จุดสตาร์ทแดง */
 function trackSvg(d: string, w: number, h: number, boxW: number, boxH: number, sw: number, ink: string, bg: string) {
-  const vw = w + 12;
-  const vh = h + 12;
+  // ขอบกันเส้นหนา/จุดสตาร์ทโดนตัด — จุดสตาร์ทรัศมี ~2.5 เท่าของเส้น (สนามที่จุดสตาร์ทอยู่ริมผัง เช่น
+  // Marina Bay, Mexico City เคยโดนตัดครึ่ง) · คิดจากสเกลคร่าว ๆ ก่อน แล้วค่อยคิดสเกลจริงรวมขอบ
+  const k0 = Math.min(boxW / (w + 12), boxH / (h + 12));
+  const m = Math.max(6, (sw * 2.6) / k0 + 1);
+  const vw = w + m * 2;
+  const vh = h + m * 2;
   const k = Math.min(boxW / vw, boxH / vh); // point ต่อหน่วยของผัง
   const first = d.match(/M(-?[\d.]+),(-?[\d.]+)/);
   const [fx, fy] = first ? [Number(first[1]), Number(first[2])] : [0, 0];
   return svgUri(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 ${vw} ${vh}" width="${boxW}" height="${boxH}" preserveAspectRatio="xMidYMid meet">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${vw} ${vh}" width="${boxW}" height="${boxH}" preserveAspectRatio="xMidYMid meet">` +
       `<path d="${d}" fill="none" stroke="${ink}" stroke-width="${(sw * 2.3) / k}" stroke-linejoin="round" stroke-linecap="round"/>` +
       `<path d="${d}" fill="none" stroke="${bg}" stroke-width="${(sw * 0.7) / k}" stroke-linejoin="round" stroke-linecap="round"/>` +
       `<circle cx="${fx}" cy="${fy}" r="${(sw * 1.9) / k}" fill="${RED}" stroke="${bg}" stroke-width="${(sw * 0.6) / k}"/>` +
