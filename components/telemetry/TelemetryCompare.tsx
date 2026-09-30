@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, PlayCircle } from "lucide-react";
 import StartLights from "../StartLights";
 import {
   fastestLaps, findSessionKey, fmtLap, fracAtTime, getLapTrace, getSessionLaps, indexOfFrac,
@@ -39,7 +39,12 @@ function parseUrl(search: string): { s?: string; a?: Pick; b?: Pick } {
 }
 
 function writeUrl(s: string, a: Pick, b: Pick) {
-  const q = new URLSearchParams({ s, a: String(a.num), b: String(b.num) });
+  // เก็บพารามิเตอร์อื่นของหน้าไว้ (เช่น ?v=lap ของแท็บ)
+  const q = new URLSearchParams(window.location.search);
+  for (const k of ["s", "a", "b", "la", "lb"]) q.delete(k);
+  q.set("s", s);
+  q.set("a", String(a.num));
+  q.set("b", String(b.num));
   if (a.lap) q.set("la", String(a.lap));
   if (b.lap) q.set("lb", String(b.lap));
   window.history.replaceState(null, "", `${window.location.pathname}?${q}`);
@@ -67,11 +72,17 @@ function useLoad<T>(key: string | null, load: () => Promise<T | null>): Load<T> 
   return key && res?.key === key ? res.v : { s: "loading" };
 }
 
+/** คู่เทียบที่ส่งมาจากรีเพลย์ ("ดูเทเลเมทรีรอบนี้") — ผู้เรียก remount ด้วย key ทุกครั้งที่ส่งใหม่ */
+export type LapPreset = { code: TelemetrySessionCode; a: Pick; b: Pick };
+
 export default function TelemetryCompare({
   season,
   sessions,
   circuitId,
   ground,
+  preset = null,
+  active = true,
+  onShowInReplay,
 }: {
   season: number;
   /** session ที่แข่งไปแล้ว เรียงตามเวลา */
@@ -80,6 +91,11 @@ export default function TelemetryCompare({
   circuitId?: string;
   /** ผังสนามที่ผูกกับแผนที่ — ฉากรอบสนามจริง (OSM) */
   ground?: [number, number][];
+  preset?: LapPreset | null;
+  /** แท็บนี้ถูกซ่อนอยู่ → หยุดเล่น */
+  active?: boolean;
+  /** มีรีเพลย์ของเรซนี้ → ปุ่ม "ดูรอบนี้ในรีเพลย์" (เฉพาะ session เรซ) */
+  onShowInReplay?: (num: number, lap: number) => void;
 }) {
   // ค่าจาก URL — ฝั่งเซิร์ฟเวอร์/ตอน hydrate เป็นค่าว่าง แล้วค่อยอ่านจริงหลังขึ้นจอ (ไม่ให้ HTML ไม่ตรงกัน)
   const search = useSyncExternalStore(noSubscribe, () => window.location.search, () => "");
@@ -93,6 +109,7 @@ export default function TelemetryCompare({
 
   const code =
     userCode ??
+    sessions.find((s) => s.code === preset?.code)?.code ??
     sessions.find((s) => s.code === url.s)?.code ??
     (sessions.find((s) => s.code === "Q") ?? sessions[sessions.length - 1]).code;
   const session = sessions.find((s) => s.code === code)!;
@@ -110,8 +127,18 @@ export default function TelemetryCompare({
 
   // คู่เริ่มต้น = เร็วสุดอันดับ 1 กับ 2 · คนที่ไม่มีใน session นี้ (สลับ session) ใช้ค่าเริ่มต้นแทน
   const valid = (p: Pick | null | undefined): p is Pick => !!p && best.some((l) => l.num === p.num);
-  const pa: Pick | null = valid(userA) ? userA : valid(url.a) ? url.a : best[0] ? { num: best[0].num, lap: null } : null;
-  const pbWanted = valid(userB) ? userB : valid(url.b) ? url.b : null;
+  // ลำดับ: ที่ผู้ใช้เลือกเอง > ที่ส่งมาจากรีเพลย์ > URL > ค่าเริ่มต้น
+  const fromPreset = !userCode && preset && preset.code === code ? preset : null;
+  const pa: Pick | null = valid(userA)
+    ? userA
+    : valid(fromPreset?.a)
+      ? fromPreset!.a
+      : valid(url.a)
+        ? url.a
+        : best[0]
+          ? { num: best[0].num, lap: null }
+          : null;
+  const pbWanted = valid(userB) ? userB : valid(fromPreset?.b) ? fromPreset!.b : valid(url.b) ? url.b : null;
   const pbFallback = best.find((l) => l.num !== pa?.num);
   const pb: Pick | null = pbWanted ?? (pbFallback ? { num: pbFallback.num, lap: null } : null);
   const setPa = setUserA;
@@ -221,6 +248,29 @@ export default function TelemetryCompare({
             ))}
           </div>
 
+          {([[pa, lapA, dA], [pb, lapB, dB]] as const).map(([p, lap, d], i) =>
+            p.lap != null && lap && lap.lap !== p.lap ? (
+              <p key={i} className="text-xs text-white/45">
+                รอบ {p.lap} ของ {d?.code} ไม่มีข้อมูลครบ (เช่น รอบออกตัว/เข้าพิท) — แสดงรอบเร็วสุด L{lap.lap} แทน
+              </p>
+            ) : null,
+          )}
+
+          {code === "RACE" && onShowInReplay && lapA && dA && (
+            <button
+              type="button"
+              onClick={() => onShowInReplay(lapA.num, lapA.lap)}
+              className="card flex w-full items-center gap-3 p-3 text-left transition hover:border-white/20"
+            >
+              <PlayCircle className="h-5 w-5 shrink-0 text-(--color-f1)" />
+              <span className="flex-1 text-sm font-semibold">
+                ดูรอบ {lapA.lap} ของ {dA.code} ในรีเพลย์
+                <span className="block text-xs font-normal text-white/45">ทุกคันบนสนาม · กล้องตาม {dA.code} ตั้งแต่ต้นรอบ</span>
+              </span>
+              <span className="text-white/30">→</span>
+            </button>
+          )}
+
           {lapA && lapB && (
             <p className="text-center text-sm">
               {lapA.time === lapB.time ? (
@@ -243,6 +293,7 @@ export default function TelemetryCompare({
               b={{ code: dB.code, colour: colourB, trace: tb.v }}
               circuitId={circuitId}
               ground={ground}
+              active={active}
             />
           ) : ta.s === "loading" || tb.s === "loading" ? (
             <Loading text="กำลังโหลดเทเลเมทรีของรอบที่เลือก…" />
@@ -270,9 +321,23 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padSta
  * แตะกราฟ = เวลาที่คนแรกถึงจุดนั้น · เล่น = เวลาเดินไปเรื่อย ๆ
  * จุดของแต่ละคนบนผัง = ตำแหน่งของคนนั้น ณ เวลาเดียวกัน → เห็นว่าอีกคนห่างอยู่เท่าไหร่
  */
-function LapBattle({ a, b, circuitId, ground }: { a: Side; b: Side; circuitId?: string; ground?: [number, number][] }) {
+function LapBattle({
+  a,
+  b,
+  circuitId,
+  ground,
+  active = true,
+}: {
+  a: Side;
+  b: Side;
+  circuitId?: string;
+  ground?: [number, number][];
+  active?: boolean;
+}) {
   const [cursor, setCursor] = useState<number | null>(null);
-  const [playing, setPlaying] = useState(false);
+  const [userPlaying, setPlaying] = useState(false);
+  // แท็บถูกซ่อน → หยุด (ไม่วนเฟรมทิ้งไว้เบื้องหลัง)
+  const playing = userPlaying && active;
   const [speed, setSpeed] = useState(1);
   const cursorRef = useRef<number | null>(null);
   const end = Math.max(a.trace.t[a.trace.t.length - 1], b.trace.t[b.trace.t.length - 1]);

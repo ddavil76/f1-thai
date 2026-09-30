@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dotsAt, matchRaceSession, type ReplayFrame, type ReplayRow } from "@/lib/replay";
+import { compareAt, dotsAt, lapStartMs, matchRaceSession, type ReplayFrame, type ReplayRow } from "@/lib/replay";
 
 const row = (num: number, pos: number, frac: number, out = false) =>
   ({ num, pos, frac, out }) as ReplayRow;
@@ -58,5 +58,36 @@ describe("matchRaceSession", () => {
   it("ห่างเกิน 36 ชม. ไม่นับ · รายการว่างหรือวันที่พัง → null", () => {
     expect(matchRaceSession(list, Date.parse("2026-04-05T05:00:00Z"))).toBeNull();
     expect(matchRaceSession([], Date.now())).toBeNull();
+  });
+});
+
+describe("กระโดดระหว่างรีเพลย์กับเทียบรอบ", () => {
+  it("เวลาเริ่มรอบของแต่ละคน (จากระยะสะสม)", () => {
+    // รอบ 1 เริ่มที่ 0 · เบอร์ 1 จบรอบแรก (frac 1) ที่ 100 วิ → รอบ 2 เริ่ม 100 วิ
+    expect(lapStartMs(frames, 1, 1)).toBe(0);
+    expect(lapStartMs(frames, 1, 2)).toBeCloseTo(100_000);
+    // เบอร์ 4 ถึง frac 1 ระหว่างเฟรม (0.95 → 2 ใน 90 วิ)
+    expect(lapStartMs(frames, 4, 2)).toBeCloseTo(100_000 + (0.05 / 1.05) * 90_000);
+    // ไม่มีข้อมูล / เกินรอบที่วิ่งได้
+    expect(lapStartMs(frames, 77, 1)).toBeNull();
+    expect(lapStartMs(frames, 1, 5)).toBeNull();
+  });
+
+  it("คู่เทียบ: คนที่เลือกกับคันข้างหน้า · ผู้นำเทียบกับคันข้างหลัง · รอบที่กำลังวิ่ง", () => {
+    const three: ReplayFrame[] = [
+      { lap: 1, atMs: 100_000, flag: null, rows: [row(1, 1, 1), row(4, 2, 0.95), row(16, 3, 0.9)] },
+      { lap: 2, atMs: 200_000, flag: null, rows: [row(1, 1, 2), row(4, 2, 1.95), row(16, 3, 1.9)] },
+    ];
+    // ที่ 150 วิ: เบอร์ 16 (P3) วิ่งรอบ 2 · คันข้างหน้าคือเบอร์ 4
+    expect(compareAt(three, 150_000, 16, 50)).toEqual({ a: { num: 16, lap: 2 }, b: { num: 4, lap: 2 } });
+    // ไม่เลือกใคร → ผู้นำ กับ P2
+    expect(compareAt(three, 150_000, null, 50)).toEqual({ a: { num: 1, lap: 2 }, b: { num: 4, lap: 2 } });
+  });
+
+  it("คันที่ออกจากการแข่งไม่ถูกเลือกเป็นคู่เทียบ", () => {
+    const out: ReplayFrame[] = [
+      { lap: 1, atMs: 100_000, flag: null, rows: [row(1, 1, 1), row(4, 2, 0.9, true), row(16, 3, 0.8)] },
+    ];
+    expect(compareAt(out, 100_000, 16, 50)?.b.num).toBe(1);
   });
 });

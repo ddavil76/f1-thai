@@ -252,7 +252,7 @@ export default async function RacePage({ params }: Params) {
       )}
       {telemetryOpen && (
         <Link
-          href={`/race/${round}/telemetry`}
+          href={`/race/${round}/replay?v=lap`}
           className="card flex items-center gap-3 p-4 transition hover:border-white/20"
         >
           <Activity className="h-5 w-5 shrink-0 text-(--color-f1)" />
