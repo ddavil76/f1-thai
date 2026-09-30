@@ -29,7 +29,7 @@ export default function TeammateH2H({
 
   return (
     <section className="card p-5">
-      <h2 className="mb-1 text-lg font-bold">ปะทะเพื่อนร่วมทีม</h2>
+      <h2 className="mb-1 text-lg font-bold sec-title">ปะทะเพื่อนร่วมทีม</h2>
       <p className="mb-4 text-xs text-white/40">
         เทียบกับ{" "}
         <Link

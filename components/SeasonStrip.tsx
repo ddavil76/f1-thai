@@ -31,7 +31,7 @@ export default function SeasonStrip({
   return (
     <section className="card p-4 sm:p-5">
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-bold">ผู้ชนะทั้งฤดูกาล</h2>
+        <h2 className="text-base font-bold sec-title">ผู้ชนะทั้งฤดูกาล</h2>
         <span className="text-xs text-white/40">
           {byRound.size}/{schedule.length} สนาม
         </span>

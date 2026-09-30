@@ -17,6 +17,7 @@ import PuCard from "@/components/PuCard";
 import SiteFooter from "@/components/SiteFooter";
 import { getPuUsage, findUsage } from "@/lib/power-units";
 import { SEASON } from "@/lib/season";
+import SpeedStreak from "@/components/poster/SpeedStreak";
 
 export const revalidate = 600;
 
@@ -105,11 +106,13 @@ export default async function DriverPage({ params }: Params) {
             <span className="h-12 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
           )}
           <div className="min-w-0">
-            <h1 className="text-2xl font-black tracking-tight md:text-3xl">
+            <p className="poster text-sm text-(--color-f1-text)">DRIVER</p>
+            <h1 className="poster text-3xl leading-none md:text-4xl">
               {flag(driver.nationality)} {driver.givenName}{" "}
-              <span className="uppercase">{driver.familyName}</span>
+              <span className="text-(--color-f1)">{driver.familyName.toUpperCase()}</span>
             </h1>
-            <p className="text-sm text-white/60">
+            <SpeedStreak small className="mt-2" />
+            <p className="mt-2 font-display text-sm font-semibold text-white/60">
               {driver.permanentNumber ? `#${driver.permanentNumber} · ` : ""}
               {team && teamName(team.constructorId, team.name)}
             </p>
@@ -120,19 +123,19 @@ export default async function DriverPage({ params }: Params) {
       {standing && (
         <TiltCard className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
           <div className="p-4">
-            <p className="display text-2xl font-bold tabular-nums">
+            <p className="poster text-3xl tabular-nums">
               <CountUp value={Number(standing.position)} prefix="P" />
             </p>
             <p className="text-xs text-white/40">อันดับ</p>
           </div>
           <div className="p-4">
-            <p className="display text-2xl font-bold tabular-nums">
+            <p className="poster text-3xl tabular-nums">
               <CountUp value={Number(standing.points)} />
             </p>
             <p className="text-xs text-white/40">แต้ม</p>
           </div>
           <div className="p-4">
-            <p className="display text-2xl font-bold tabular-nums">
+            <p className="poster text-3xl tabular-nums">
               <CountUp value={Number(standing.wins)} />
             </p>
             <p className="text-xs text-white/40">ชนะ</p>
@@ -158,7 +161,7 @@ export default async function DriverPage({ params }: Params) {
       )}
 
       <section className="card overflow-hidden p-0">
-        <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">
+        <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold sec-title">
           ผลรายสนาม
         </h2>
         <ul className="stagger divide-y divide-white/5">
@@ -174,9 +177,7 @@ export default async function DriverPage({ params }: Params) {
                   href={`/race/${r.round}`}
                   className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.04] sm:px-5"
                 >
-                  <span className="w-6 text-right text-sm tabular-nums text-white/40">
-                    {r.round}
-                  </span>
+                  <span className="round-tag muted w-10 shrink-0 justify-center">R{r.round}</span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{r.raceName}</p>
                     <p className="truncate text-xs text-white/50">
@@ -194,7 +195,7 @@ export default async function DriverPage({ params }: Params) {
                     {r.result.points !== "0" ? `+${r.result.points}` : ""}
                   </span>
                   <span
-                    className={`w-12 shrink-0 text-right font-bold tabular-nums ${
+                    className={`poster w-12 shrink-0 text-right text-lg tabular-nums ${
                       dnf ? "text-white/30" : ""
                     }`}
                   >

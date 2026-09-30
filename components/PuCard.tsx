@@ -11,7 +11,7 @@ export default function PuCard({ rows, event }: { rows: Row[]; event: string }) 
   return (
     <section className="card p-5">
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="text-lg font-bold">ชิ้นส่วนเครื่องยนต์</h2>
+        <h2 className="text-lg font-bold sec-title">ชิ้นส่วนเครื่องยนต์</h2>
         <Link
           href="/power-units"
           className="inline-flex items-center gap-0.5 text-xs text-white/50 transition hover:text-white"

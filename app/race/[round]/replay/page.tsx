@@ -6,10 +6,12 @@ import { getSchedule, isPastRace, toDate } from "@/lib/f1";
 import { circuitTrack } from "@/lib/circuits";
 import RaceAnalysis from "@/components/RaceAnalysis";
 import SiteFooter from "@/components/SiteFooter";
+import SpeedStreak from "@/components/poster/SpeedStreak";
 import { SEASON } from "@/lib/season";
 import { telemetrySessions } from "@/lib/telemetry-sessions";
 import { trackGroundPoints } from "@/lib/track3d";
 import { hasOsmScene } from "@/lib/osm-scene";
+import { cardName } from "@/lib/widget-card";
 
 export const revalidate = 3600;
 
@@ -59,11 +61,16 @@ export default async function ReplayPage({ params }: Params) {
           <ArrowLeft className="h-3.5 w-3.5" />
           {race.raceName}
         </Link>
-        <h1 className="mt-2 text-2xl font-black tracking-tight md:text-3xl">
+        <p className="poster mt-3 text-sm text-(--color-f1-text)">
+          REPLAY · {cardName(circuitId, race.Circuit.circuitName)}
+        </p>
+        <h1 className="mt-1 text-2xl font-black tracking-tight md:text-3xl">
           รีเพลย์ &amp; เทเลเมทรี
         </h1>
-        <p className="text-sm text-white/50">
-          Round {race.round} · {race.Circuit.circuitName}
+        <SpeedStreak className="mt-2.5" />
+        <p className="mt-2 flex items-center gap-2 font-display text-sm font-semibold text-white/55">
+          <span className="round-tag">R{race.round}</span>
+          {race.Circuit.circuitName}
         </p>
       </div>
 

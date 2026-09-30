@@ -46,7 +46,7 @@ function PointsCell({ points, leader }: { points: string; leader: number }) {
   const gap = leader - Number(points);
   return (
     <div className="w-16 shrink-0 text-right">
-      <p className="display text-[15px] font-bold leading-none tabular-nums">{points}</p>
+      <p className="poster text-lg leading-none tabular-nums">{points}</p>
       {gap > 0 ? (
         <p className="mt-0.5 text-[11px] tabular-nums text-white/35">−{gap}</p>
       ) : (
@@ -79,7 +79,7 @@ export default function Standings({
   return (
     <section className="card p-5">
       <div className="mb-4 flex items-center gap-2">
-        <h2 className="mr-auto text-lg font-bold">ตารางคะแนน</h2>
+        <h2 className="mr-auto text-lg font-bold sec-title">ตารางคะแนน</h2>
         <Tabs tab={tab} setTab={setTab} />
       </div>
 
@@ -95,7 +95,7 @@ export default function Standings({
                     href={`/driver/${s.Driver.driverId}`}
                     className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.04]"
                   >
-                    <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
+                    <span className="poster w-7 text-right text-lg text-white/45">{s.position}</span>
                     {img ? (
                       <span
                         className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full"
@@ -119,11 +119,10 @@ export default function Standings({
                       />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">
-                        {s.Driver.givenName.charAt(0)}.{" "}
-                        <span className="uppercase">{s.Driver.familyName}</span>
+                      <p className="poster truncate text-lg leading-tight">
+                        {s.Driver.givenName.charAt(0)}. {s.Driver.familyName.toUpperCase()}
                       </p>
-                      <p className="truncate text-xs text-white/50">
+                      <p className="truncate font-display text-xs font-semibold text-white/50">
                         {c && teamName(c.constructorId, c.name)}
                       </p>
                       <div className="h-1 w-full bg-white/10 mt-1 rounded-full overflow-hidden">
@@ -153,13 +152,13 @@ export default function Standings({
                   href={`/constructor/${s.Constructor.constructorId}`}
                   className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.04]"
                 >
-                  <span className="w-6 text-right text-sm text-white/40">{s.position}</span>
+                  <span className="poster w-7 text-right text-lg text-white/45">{s.position}</span>
                   <span
                     className="h-8 w-1 rounded-full"
                     style={{ background: TEAM_COLOR[s.Constructor.constructorId] ?? "#666666" }}
                   />
-                  <span className="flex-1 truncate font-medium">
-                    {teamName(s.Constructor.constructorId, s.Constructor.name)}
+                  <span className="poster flex-1 truncate text-lg">
+                    {teamName(s.Constructor.constructorId, s.Constructor.name).toUpperCase()}
                   </span>
                   <PointsCell points={s.points} leader={constructorLeader} />
                 </Link>

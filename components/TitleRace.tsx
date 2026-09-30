@@ -41,7 +41,7 @@ export default function TitleRace({
   return (
     <section className="card p-5">
       <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
-        <h2 className="flex items-center gap-1.5 text-lg font-bold">
+        <h2 className="flex items-center gap-1.5 text-lg font-bold sec-title">
           <Trophy className="h-4 w-4 text-(--color-f1)" />
           ลุ้นแชมป์
         </h2>

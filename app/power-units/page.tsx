@@ -12,6 +12,7 @@ import {
 } from "@/lib/power-units";
 import { teamColor, teamName } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
+import SpeedStreak from "@/components/poster/SpeedStreak";
 
 export const revalidate = 3600;
 
@@ -35,9 +36,11 @@ export default async function PowerUnitsPage() {
 
   const header = (
     <header className="space-y-1">
+      <p className="poster text-sm text-(--color-f1-text)">POWER UNITS</p>
       <h1 className="text-3xl font-black tracking-tight md:text-4xl">
         ชิ้นส่วน<span className="text-(--color-f1)">เครื่องยนต์</span>
       </h1>
+      <SpeedStreak className="pb-1 pt-1.5" />
       <p className="text-sm text-white/50">
         ฤดูกาล {SEASON}
         {pu && ` · ข้อมูลถึง ${pu.event}`}
@@ -129,7 +132,7 @@ export default async function PowerUnitsPage() {
           rows.length > 0 && (
             <section key={status} className="card overflow-hidden p-0">
               <header className="border-b border-white/5 px-4 py-3 sm:px-5">
-                <h2 className="flex items-center gap-2 font-bold">
+                <h2 className="flex items-center gap-2 font-bold sec-title">
                   <span className={`h-2 w-2 rounded-full ${PU_STATUS_UI[status].dot}`} />
                   {PU_STATUS_UI[status].title}
                   <span className="text-sm font-normal text-white/40 tabular-nums">
@@ -184,7 +187,7 @@ export default async function PowerUnitsPage() {
       <div className="grid gap-4 md:grid-cols-2">
         {[...teams.values()].map((t) => (
           <section key={t.id} className="card p-4 sm:p-5">
-            <h2 className="flex items-center gap-2 font-bold">
+            <h2 className="flex items-center gap-2 font-bold sec-title">
               <span
                 className="h-4 w-1 shrink-0 rounded-full"
                 style={{ background: teamColor(t.id) }}
@@ -336,7 +339,7 @@ export default async function PowerUnitsPage() {
       <section className="card grid grid-cols-3 divide-x divide-white/5 p-0 text-center">
         {groups.map(({ status, rows }) => (
           <div key={status} className="p-4">
-            <p className="display text-2xl font-bold tabular-nums">{rows.length}</p>
+            <p className="poster text-3xl tabular-nums">{rows.length}</p>
             <p className="flex items-center justify-center gap-1.5 text-xs text-white/50">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PU_STATUS_UI[status].dot}`} />
               {PU_STATUS_UI[status].badge}

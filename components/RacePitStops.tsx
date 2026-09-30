@@ -7,7 +7,7 @@ export default function RacePitStops({ summary }: { summary: RacePitSummary }) {
   return (
     <>
       <section className="card overflow-hidden p-0">
-        <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">พิทเร็วสุด</h2>
+        <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold sec-title">พิทเร็วสุด</h2>
         <ol className="divide-y divide-white/5">
           {summary.stops.slice(0, 5).map((s, i) => (
             <li
@@ -35,7 +35,7 @@ export default function RacePitStops({ summary }: { summary: RacePitSummary }) {
       </section>
 
       <section className="card overflow-hidden p-0">
-        <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">แยกตามทีม</h2>
+        <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold sec-title">แยกตามทีม</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm tabular-nums">
             <thead>

@@ -8,6 +8,8 @@ import { countryFlag } from "@/lib/flags";
 import SeasonGlobe, { type GlobeRace } from "@/components/SeasonGlobe";
 import { teamColor } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
+import SpeedStreak from "@/components/poster/SpeedStreak";
+import { cardName } from "@/lib/widget-card";
 
 export const metadata = { title: "ปฏิทินทั้งฤดูกาล" };
 
@@ -47,9 +49,11 @@ export default async function CalendarPage() {
     <main className="mx-auto max-w-3xl space-y-6 lg:max-w-5xl">
       <header className="space-y-3">
         <div className="space-y-1">
+          <p className="poster text-sm text-(--color-f1-text)">CALENDAR</p>
           <h1 className="text-3xl font-black tracking-tight md:text-4xl">
             ปฏิทิน <span className="text-(--color-f1)">F1</span> ทั้งฤดูกาล
           </h1>
+          <SpeedStreak className="pb-1 pt-1.5" />
           <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
         </div>
         {races.length > 0 && (
@@ -93,17 +97,15 @@ export default async function CalendarPage() {
                   // สนามที่จบแล้ว: แถบซ้ายเป็นสีทีมผู้ชนะ
                   style={winColor ? { boxShadow: `inset 3px 0 0 ${winColor}` } : undefined}
                 >
-                  <span
-                    className={`w-6 text-right text-sm tabular-nums ${
-                      isNext ? "font-bold text-(--color-f1)" : "text-white/40"
-                    }`}
-                  >
-                    {r.round}
+                  <span className={`round-tag w-10 shrink-0 justify-center ${isNext ? "" : "muted"}`}>
+                    R{r.round}
                   </span>
                   <div className="min-w-0 flex-1">
                     {/* ป้ายอยู่นอกส่วนที่ตัด … ไม่งั้นชื่อสนามยาว ๆ จะตัดป้ายเหลือแค่ก้อนสี */}
-                    <p className="flex min-w-0 items-center gap-2 font-medium">
-                      <span className="truncate">{r.raceName}</span>
+                    <p className="flex min-w-0 items-center gap-2">
+                      <span className="poster truncate text-lg leading-tight">
+                        {cardName(r.Circuit.circuitId, r.Circuit.circuitName)}
+                      </span>
                       {isNext && (
                         <span className="shrink-0 rounded-full bg-(--color-f1) px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
                           ถัดไป
@@ -120,8 +122,8 @@ export default async function CalendarPage() {
                         {win.Driver.givenName.charAt(0)}. {win.Driver.familyName}
                       </p>
                     ) : (
-                      <p className="truncate text-xs text-white/50">
-                        {r.Circuit.Location.locality}, {r.Circuit.Location.country}
+                      <p className="truncate font-display text-xs font-semibold text-white/50">
+                        {r.Circuit.Location.country.toUpperCase()} · {r.raceName}
                       </p>
                     )}
                   </div>

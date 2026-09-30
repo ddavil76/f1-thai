@@ -20,7 +20,7 @@ export default function ResultsTable({
 
   return (
     <section className="card overflow-hidden p-0">
-      <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">{title}</h2>
+      <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold sec-title">{title}</h2>
       <ul className="divide-y divide-white/5">
         {results.map((r, i) => (
           <li key={r.Driver.driverId}>
@@ -28,7 +28,7 @@ export default function ResultsTable({
               href={`/driver/${r.Driver.driverId}`}
               className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.04] sm:px-5"
             >
-              <span className="w-6 text-right text-sm tabular-nums text-white/40">
+              <span className="poster w-7 text-right text-lg tabular-nums text-white/45">
                 {r.position}
               </span>
               <span
@@ -36,9 +36,10 @@ export default function ResultsTable({
                 style={{ background: teamColor(r.Constructor.constructorId) }}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">
-                  {r.Driver.givenName.charAt(0)}.{" "}
-                  <span className="uppercase">{r.Driver.familyName}</span>
+                <p className="truncate">
+                  <span className="poster text-lg leading-tight">
+                    {r.Driver.givenName.charAt(0)}. {r.Driver.familyName.toUpperCase()}
+                  </span>
                   {r === fl && (
                     <span
                       title="Fastest lap"
@@ -49,7 +50,7 @@ export default function ResultsTable({
                     </span>
                   )}
                 </p>
-                <p className="truncate text-xs text-white/50">
+                <p className="truncate font-display text-xs font-semibold text-white/50">
                   {teamName(r.Constructor.constructorId, r.Constructor.name)}
                 </p>
               </div>

@@ -14,6 +14,7 @@ import {
 import { getDriverImages } from "@/lib/drivers";
 import { teamColor, teamName } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
+import SpeedStreak from "@/components/poster/SpeedStreak";
 
 export const metadata: Metadata = {
   title: "เทียบนักขับ",
@@ -41,9 +42,11 @@ export default async function ComparePage({ searchParams }: Props) {
 
   const header = (
     <header className="space-y-1">
+      <p className="poster text-sm text-(--color-f1-text)">HEAD TO HEAD</p>
       <h1 className="text-3xl font-black tracking-tight md:text-4xl">
         เทียบ<span className="text-(--color-f1)">นักขับ</span>
       </h1>
+      <SpeedStreak className="pb-1 pt-1.5" />
       <p className="text-sm text-white/50">ฤดูกาล {SEASON} · เลือกสองคนมาเทียบกันตรง ๆ</p>
     </header>
   );
@@ -153,7 +156,7 @@ export default async function ComparePage({ searchParams }: Props) {
 
       <section className="card space-y-3 p-5">
         <div>
-          <h2 className="text-lg font-bold">ปะทะกันตรง ๆ</h2>
+          <h2 className="text-lg font-bold sec-title">ปะทะกันตรง ๆ</h2>
           <p className="text-xs text-white/40">นับเฉพาะสนามที่ลงแข่งทั้งคู่</p>
         </div>
         {quali[0] + quali[1] > 0 && (
@@ -199,7 +202,7 @@ export default async function ComparePage({ searchParams }: Props) {
       {rows.length > 0 && (
         <section className="card overflow-hidden p-0">
           <div className="grid grid-cols-[1.5rem_1fr_3rem_3rem] items-center gap-3 border-b border-white/5 px-4 py-3 sm:px-5">
-            <h2 className="col-span-2 text-lg font-bold">ผลรายสนาม</h2>
+            <h2 className="col-span-2 text-lg font-bold sec-title">ผลรายสนาม</h2>
             <span className="text-right text-xs font-bold text-white/50">{code(a)}</span>
             <span className="text-right text-xs font-bold text-white/50">{code(b)}</span>
           </div>

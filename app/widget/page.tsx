@@ -7,6 +7,7 @@ import {
 import CopyCode from "@/components/CopyCode";
 import WidgetPreview from "@/components/WidgetPreview";
 import SiteFooter from "@/components/SiteFooter";
+import SpeedStreak from "@/components/poster/SpeedStreak";
 
 export const metadata: Metadata = {
   title: "Widget บนมือถือ",
@@ -39,7 +40,7 @@ function Step({
         {n}
       </span>
       <div className="min-w-0 flex-1 space-y-2">
-        <h2 className="flex items-center gap-2 text-base font-bold">
+        <h2 className="flex items-center gap-2 text-base font-bold sec-title">
           <Icon className="h-4 w-4 shrink-0 text-white/40" />
           {title}
         </h2>
@@ -110,9 +111,11 @@ export default function WidgetPage() {
   return (
     <main className="mx-auto max-w-2xl space-y-8">
       <header className="space-y-1">
+        <p className="poster text-sm text-(--color-f1-text)">WIDGET</p>
         <h1 className="text-3xl font-black tracking-tight md:text-4xl">
           Widget บน<span className="text-(--color-f1)">มือถือ</span>
         </h1>
+        <SpeedStreak className="pb-1 pt-1.5" />
         <p className="text-sm text-white/50">
           นับถอยหลังซ้อม ควอลิฟาย และเรซ เวลาไทย บนหน้าจอโฮม พร้อมแจ้งเตือนก่อนแข่ง 30 นาที — ได้ทั้ง iPhone และ Android
         </p>
@@ -127,7 +130,7 @@ export default function WidgetPage() {
         <p className="text-center text-xs text-white/35">ตัวอย่างจากข้อมูลจริงของสนามถัดไป — มีขนาดเล็ก กลาง ใหญ่ และบนหน้าจอล็อก · ธีมตามโหมดมืด/สว่างของเครื่อง</p>
       </section>
 
-      <h2 id="iphone" className="scroll-mt-24 text-xl font-black">iPhone</h2>
+      <h2 id="iphone" className="scroll-mt-24 text-xl font-black sec-title">iPhone</h2>
       <ol className="space-y-4">
         <Step n={1} icon={Download} title="ติดตั้งแอป Scriptable (ฟรี)">
           <p>
@@ -167,7 +170,7 @@ export default function WidgetPage() {
       </ol>
 
       <section className="card space-y-3 p-5">
-        <h2 className="flex items-center gap-2 text-base font-bold">
+        <h2 className="flex items-center gap-2 text-base font-bold sec-title">
           <LockKeyhole className="h-4 w-4 text-white/40" />
           หน้าจอล็อก (iPhone)
         </h2>
@@ -178,7 +181,7 @@ export default function WidgetPage() {
       </section>
 
       <section className="card space-y-3 p-5">
-        <h2 className="flex items-center gap-2 text-base font-bold">
+        <h2 className="flex items-center gap-2 text-base font-bold sec-title">
           <SlidersHorizontal className="h-4 w-4 text-white/40" />
           ตั้งค่าเพิ่ม iPhone (ไม่บังคับ)
         </h2>
@@ -199,7 +202,7 @@ export default function WidgetPage() {
         </p>
       </section>
 
-      <h2 id="android" className="scroll-mt-24 pt-4 text-xl font-black">Android</h2>
+      <h2 id="android" className="scroll-mt-24 pt-4 text-xl font-black sec-title">Android</h2>
       <ol className="space-y-4">
         <Step n={1} icon={Download} title="โหลดแอป F1 Week Race">
           <a
@@ -235,7 +238,7 @@ export default function WidgetPage() {
       </ol>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-bold">คำถามที่พบบ่อย</h2>
+        <h2 className="text-lg font-bold sec-title">คำถามที่พบบ่อย</h2>
         {FAQ.map(([q, a]) => (
           <details key={q} className="card group p-4">
             <summary className="cursor-pointer list-none font-semibold marker:hidden">
