@@ -69,7 +69,7 @@ object Updater {
         Alerts.sync(ctx, if (prefs.alerts) alertPlan(p, now, prefs.raceOnly, ZoneId.systemDefault()) else emptyList())
     }
 
-    /** รูปการ์ดขนาดพอดี widget นี้ — โหลดไม่ได้ = null (ใช้หน้าตาแบบเดิม) */
+    /** รูปการ์ดสองชั้นของ widget นี้ — โหลดไม่ได้สักชั้น = null (ใช้หน้าตาแบบเดิม) */
     private fun art(ctx: Context, p: Payload?, size: Render.Size, o: Bundle, dark: Boolean, now: Long) = runCatching {
         // แนวตั้ง: กว้าง = MIN_WIDTH · สูง = MAX_HEIGHT (0 = launcher ไม่บอก ใช้ขนาดมาตรฐาน)
         val (dw, dh) = when (size) {
@@ -81,6 +81,10 @@ object Updater {
         val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: dh
         val scale = minOf(ctx.resources.displayMetrics.density, 2.5f)
         val tz = ZoneId.systemDefault().rules.getOffset(Instant.ofEpochMilli(now)).totalSeconds / 60
-        cardUrl(p, size.name.lowercase(), w, h, scale, dark, tz)?.let { CardCache.get(ctx, it) }
+        fun layer(name: String) =
+            cardUrl(p, size.name.lowercase(), w, h, scale, dark, tz, name)?.let { CardCache.get(ctx, it) }
+        val text = layer("text") ?: return@runCatching null
+        val side = layer("side") ?: return@runCatching null
+        Render.CardArt(text, side)
     }.getOrNull()
 }

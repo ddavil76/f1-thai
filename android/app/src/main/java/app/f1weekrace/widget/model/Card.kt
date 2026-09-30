@@ -20,10 +20,13 @@ fun lightsLit(msLeft: Long): Int {
 }
 
 /**
- * URL รูปการ์ดของ widget ขนาด wDp×hDp (สัดส่วนเดียวกับ widget พอดี)
+ * URL รูปการ์ดของ widget ขนาด wDp×hDp — Android ขอเป็นสองชั้นพื้นใส (layer = text|side)
+ * เพราะ launcher บางยี่ห้อบอกขนาดคลาดจากจริง รูปเดียวเต็มกรอบจะโดนตัดขอบ
  * size = small|medium|large · tzMin = เขตเวลาของเครื่อง (นาทีจาก UTC) · null = ไม่มีสนามให้วาด
  */
-fun cardUrl(p: Payload?, size: String, wDp: Int, hDp: Int, scale: Float, dark: Boolean, tzMin: Int): String? {
+fun cardUrl(
+    p: Payload?, size: String, wDp: Int, hDp: Int, scale: Float, dark: Boolean, tzMin: Int, layer: String? = null,
+): String? {
     val race = p?.race ?: return null
     val q = mutableListOf(
         "round=${URLEncoder.encode(race.round, "UTF-8")}", "size=$size", "w=$wDp", "h=$hDp",
@@ -32,5 +35,6 @@ fun cardUrl(p: Payload?, size: String, wDp: Int, hDp: Int, scale: Float, dark: B
     )
     p.session?.let { q += "next=${URLEncoder.encode(it.code, "UTF-8")}" }
     if (p.state == State.LIVE) q += "live=1"
+    layer?.let { q += "layer=$it" }
     return "$SITE/api/widget/card?${q.joinToString("&")}"
 }
