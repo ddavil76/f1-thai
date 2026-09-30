@@ -7,10 +7,14 @@
   --color-border: rgba(255, 255, 255, 0.08);
   --color-f1: #e10600;
   --color-f1-dark: #a30400;
+  /* แดงสว่างสำหรับตัวหนังสือเล็กบนพื้นดำ — แดง F1 (#e10600) อ่านยากที่ขนาดเล็ก */
+  --color-f1-text: #ff3b2f;
 }
 
 @theme inline {
   --font-display: var(--font-display-src), "Chakra Petch", var(--font-sans);
+  /* ตัวเอียงหนาแบบโปสเตอร์ (Archivo, OFL) — มีแต่ละติน ใช้กับชื่อสนาม/รหัส/หัวอังกฤษ */
+  --font-poster: var(--font-poster-src), var(--font-display);
 }
 
 @layer base {
@@ -272,6 +276,99 @@ html[data-intro="seen"] .launch-intro {
     transform: scale(1.04);
     visibility: hidden;
   }
+}
+
+/* ---- ธีมโปสเตอร์ (เหมือนการ์ด widget) ---- */
+.poster {
+  font-family: var(--font-poster);
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+.round-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  background: var(--color-f1);
+  color: #fff;
+  padding: 1px 7px;
+  font-family: var(--font-poster);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 12px;
+  line-height: 1.35;
+}
+/* ชื่อสนามตัวใหญ่ — ย่อตามความกว้างการ์ด (container) และจำนวนตัวอักษร (--len) ไม่ล้นบนมือถือ */
+.poster-fit {
+  container-type: inline-size;
+}
+.poster-name {
+  font-size: min(96px, calc(100cqw / (var(--len, 8) * 0.66)));
+  line-height: 0.9;
+}
+.speed-streak {
+  display: flex;
+  gap: 6px;
+}
+.speed-streak > i {
+  display: block;
+  height: 6px;
+  background: var(--color-f1);
+  transform: skewX(-35deg);
+  transform-origin: left center;
+  animation: streak-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.speed-streak > i:nth-child(1) {
+  width: 150px;
+}
+.speed-streak > i:nth-child(2) {
+  width: 56px;
+  opacity: 0.7;
+  animation-delay: 0.08s;
+}
+.speed-streak > i:nth-child(3) {
+  width: 22px;
+  opacity: 0.4;
+  animation-delay: 0.16s;
+}
+.speed-streak-sm > i {
+  height: 4px;
+}
+.speed-streak-sm > i:nth-child(1) {
+  width: 70px;
+}
+.speed-streak-sm > i:nth-child(2) {
+  width: 26px;
+}
+.speed-streak-sm > i:nth-child(3) {
+  width: 10px;
+}
+@keyframes streak-in {
+  from {
+    transform: skewX(-35deg) scaleX(0);
+  }
+}
+/* พื้นคาร์บอนจาง + ธงหมากรุกจางมุมขวาบน — ใช้เฉพาะการ์ดใหญ่ */
+.card-poster {
+  position: relative;
+  overflow: hidden;
+  background-color: #0e0e12;
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.028) 0 3px, transparent 3px 6px);
+}
+.card-poster::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 220px;
+  height: 220px;
+  pointer-events: none;
+  background: conic-gradient(rgba(255, 255, 255, 0.09) 25%, transparent 0 50%, rgba(255, 255, 255, 0.09) 0 75%, transparent 0) 0 0 / 24px
+    24px;
+  mask-image: linear-gradient(225deg, #000 0%, rgba(0, 0, 0, 0.35) 30%, transparent 55%);
+}
+.card-poster > * {
+  position: relative;
 }
 
 /* ---- การ์ดเอียงตามเมาส์/นิ้ว (components/TiltCard.tsx) ----
@@ -561,6 +658,7 @@ html[data-intro="seen"] .launch-intro {
      สปินเนอร์ตอนโหลดรีเพลย์ (spin) และโครงหน้าตอนโหลด (pulse)
      ping วางทับจุดทึบสีเดียวกันอยู่แล้ว หยุดนิ่งจึงยังเห็นเป็นจุดปกติ
      ส่วน spin/pulse มีข้อความกำกับอยู่ ไม่ได้สื่อความหมายด้วยการเคลื่อนไหวอย่างเดียว */
+  .speed-streak > i,
   .animate-ping,
   .animate-spin,
   .animate-pulse {

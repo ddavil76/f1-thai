@@ -95,6 +95,9 @@ const SESSION_CODE: Record<string, string> = {
   Race: "RACE",
 };
 
+/** รหัส session แบบ F1 จากชื่อใน lib/f1 ("ซ้อม 1" → FP1, "Qualifying" → Q) */
+export const sessionCode = (label: string) => SESSION_CODE[label] ?? label.slice(0, 3).toUpperCase();
+
 export type CardSession = {
   code: string;
   /** "ศ. 2 ต.ค." ตามเขตเวลาของเครื่องผู้ใช้ */
@@ -109,7 +112,7 @@ export function cardSessions(
   windows: SessionWindow[],
   { next, live, tzMin }: { next: string | null; live: boolean; tzMin: number },
 ): CardSession[] {
-  const list = windows.map((w) => ({ code: SESSION_CODE[w.label] ?? w.label.slice(0, 3).toUpperCase(), start: w.start }));
+  const list = windows.map((w) => ({ code: sessionCode(w.label), start: w.start }));
   const at = next ? list.findIndex((s) => s.code === next) : -1;
   return list.map((s, i) => {
     const local = new Date(s.start + tzMin * 60_000);

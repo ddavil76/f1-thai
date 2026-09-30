@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { Noto_Sans_Thai, Chakra_Petch } from "next/font/google";
+import localFont from "next/font/local";
 import BottomNav from "@/components/BottomNav";
 import HeaderNav from "@/components/HeaderNav";
 import PageTransition from "@/components/PageTransition";
@@ -22,6 +23,15 @@ const chakra = Chakra_Petch({
   display: "swap",
   weight: ["500", "600", "700"],
   variable: "--font-display-src",
+});
+
+// ตัวเอียงหนาแบบโปสเตอร์ (ชุดเดียวกับการ์ด widget) — Archivo, OFL · ไม่ใช่ฟอนต์ของ F1
+const poster = localFont({
+  src: "../assets/fonts/Archivo-SemiCondensedBlackItalic.ttf",
+  weight: "900",
+  style: "italic",
+  display: "swap",
+  variable: "--font-poster-src",
 });
 
 const TITLE = "F1 Week Race";
@@ -53,17 +63,14 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     // suppressHydrationWarning: สคริปต์ของ LaunchIntro ติด data-intro ที่ <html> ก่อน hydrate
-    <html lang="th" className={`${notoThai.className} ${chakra.variable}`} suppressHydrationWarning>
+    <html lang="th" className={`${notoThai.className} ${chakra.variable} ${poster.variable}`} suppressHydrationWarning>
       <body className="antialiased">
         <LaunchIntro />
         <div className="scroll-progress" aria-hidden="true" />
         <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-md">
           <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3.5">
-            <Link href="/" className="flex items-center gap-2">
-              <span className="inline-flex h-6 w-1.5 rounded-full bg-(--color-f1)" />
-              <span className="text-lg font-black tracking-tight">
-                F1 <span className="text-(--color-f1)">Week Race</span>
-              </span>
+            <Link href="/" className="poster text-xl leading-none">
+              F1 <span className="text-(--color-f1)">WEEK RACE</span>
             </Link>
             <HeaderNav />
             <div className="ml-auto">
