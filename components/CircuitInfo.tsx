@@ -12,7 +12,7 @@ const Tile = ({
 }) => (
   <div className="flex flex-col items-center gap-1 p-3 text-center">
     <span className="text-white/35">{icon}</span>
-    <span className="display text-base font-bold tabular-nums leading-none">
+    <span className="poster text-lg tabular-nums leading-none">
       {value}
     </span>
     <span className="text-[11px] text-white/40">{label}</span>

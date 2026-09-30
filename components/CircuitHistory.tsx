@@ -12,7 +12,7 @@ export default function CircuitHistory({ winners }: { winners: RaceWithResults[]
   if (h.total === 1) {
     return (
       <section className="card p-5">
-        <h2 className="text-lg font-bold">ประวัติสนาม</h2>
+        <h2 className="text-lg font-bold sec-title">ประวัติสนาม</h2>
         <p className="mt-1 text-sm text-white/60">
           สนามใหม่ · จัด F1 ครั้งแรกปี {h.firstSeason} ผู้ชนะคนแรกคือ{" "}
           <span className="font-semibold text-white">{latest.driver}</span> (
@@ -35,7 +35,7 @@ export default function CircuitHistory({ winners }: { winners: RaceWithResults[]
   return (
     <section className="card space-y-4 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <h2 className="text-lg font-bold">ประวัติสนาม</h2>
+        <h2 className="text-lg font-bold sec-title">ประวัติสนาม</h2>
         <p className="text-xs text-white/40">
           จัดมาแล้ว {h.total} ครั้ง · ตั้งแต่ปี {h.firstSeason}
         </p>

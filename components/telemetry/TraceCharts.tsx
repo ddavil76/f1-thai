@@ -145,7 +145,7 @@ export default function TraceCharts({
   return (
     <section className="card space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-bold">เทียบทั้งรอบ</h2>
+        <h2 className="text-base font-bold sec-title">เทียบทั้งรอบ</h2>
         <div className="flex items-center gap-3 text-xs text-white/60">
           <LegendLine colour={a.colour} label={a.code} />
           <LegendLine colour={b.colour} label={b.code} dashed />

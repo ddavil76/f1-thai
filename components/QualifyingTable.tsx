@@ -16,7 +16,7 @@ export default function QualifyingTable({
 }) {
   return (
     <section className="card overflow-hidden p-0">
-      <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold">
+      <h2 className="border-b border-white/5 px-5 py-4 text-lg font-bold sec-title">
         ควอลิฟาย
       </h2>
       <ul className="divide-y divide-white/5">
@@ -27,7 +27,7 @@ export default function QualifyingTable({
               key={q.Driver.driverId}
               className="flex items-center gap-3 px-4 py-2.5 sm:px-5"
             >
-              <span className="w-6 text-right text-sm tabular-nums text-white/40">
+              <span className="poster w-7 text-right text-lg tabular-nums text-white/45">
                 {q.position}
               </span>
               <span
@@ -35,16 +35,17 @@ export default function QualifyingTable({
                 style={{ background: teamColor(q.Constructor.constructorId) }}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">
-                  {q.Driver.givenName.charAt(0)}.{" "}
-                  <span className="uppercase">{q.Driver.familyName}</span>
+                <p className="truncate">
+                  <span className="poster text-lg leading-tight">
+                    {q.Driver.givenName.charAt(0)}. {q.Driver.familyName.toUpperCase()}
+                  </span>
                   {i === 0 && (
                     <span className="ml-1.5 align-middle text-[10px] font-bold text-purple-300">
                       POLE
                     </span>
                   )}
                 </p>
-                <p className="truncate text-xs text-white/50">
+                <p className="truncate font-display text-xs font-semibold text-white/50">
                   {teamName(q.Constructor.constructorId, q.Constructor.name)}
                 </p>
               </div>

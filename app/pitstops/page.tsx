@@ -9,6 +9,7 @@ import { getPitStops, getSeasonResults } from "@/lib/f1";
 import { fmtSec, seasonPitRanking, summarizeRacePits } from "@/lib/pitstops";
 import { teamColor, teamName } from "@/lib/teams";
 import { SEASON } from "@/lib/season";
+import SpeedStreak from "@/components/poster/SpeedStreak";
 
 export const metadata: Metadata = {
   title: "พิทสต็อป",
@@ -35,9 +36,11 @@ export default async function PitStopsPage() {
 
   const header = (
     <header className="space-y-1">
+      <p className="poster text-sm text-(--color-f1-text)">PIT STOPS</p>
       <h1 className="text-3xl font-black tracking-tight md:text-4xl">
         พิท<span className="text-(--color-f1)">สต็อป</span>
       </h1>
+      <SpeedStreak className="pb-1 pt-1.5" />
       <p className="text-sm text-white/50">
         ฤดูกาล {SEASON}
         {races.length > 0 && ` · ${races.length} สนาม`}
@@ -152,7 +155,7 @@ export default async function PitStopsPage() {
           <p className="text-xs text-white/40">เร็วสุดของสนาม {mostWins.raceWins} ครั้ง</p>
         </div>
         <div className="p-4">
-          <p className="display text-2xl font-bold tabular-nums">{totalStops}</p>
+          <p className="poster text-3xl tabular-nums">{totalStops}</p>
           <p className="text-xs text-white/40">พิทที่นับ</p>
         </div>
       </section>

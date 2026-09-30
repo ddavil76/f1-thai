@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Activity, ArrowLeft, CalendarPlus, Flag, PlayCircle, Zap } from "lucide-react";
-import SessionCountdown from "@/components/SessionCountdown";
+import { Activity, ArrowLeft, PlayCircle, Zap } from "lucide-react";
 import CircuitMap from "@/components/CircuitMap";
 import CircuitInfo from "@/components/CircuitInfo";
 import CircuitHistory from "@/components/CircuitHistory";
@@ -17,15 +16,19 @@ import { telemetrySessions } from "@/lib/telemetry-sessions";
 import PodiumGraphic from "@/components/PodiumGraphic";
 import TiltCard from "@/components/TiltCard";
 import WeatherBadge from "@/components/WeatherBadge";
-import LocalTime from "@/components/tz/LocalTime";
 import SiteFooter from "@/components/SiteFooter";
 import CheckeredFlag from "@/components/CheckeredFlag";
-import { googleCalendarUrl } from "@/lib/calendar";
+import PosterCountdown from "@/components/poster/PosterCountdown";
+import PosterHeading from "@/components/poster/PosterHeading";
+import SpeedStreak from "@/components/poster/SpeedStreak";
+import WeekendTimeline from "@/components/poster/WeekendTimeline";
+import { circuitTrack } from "@/lib/circuits";
 import {
   getSchedule, getRaceResults, getQualifying, getSprintResults, findNextRace,
-  getCircuitImage, getSessions, isSprintWeekend, isPastRace, toDate, resultsGap,
-  getPitStops, getCircuitWinners,
+  getCircuitImage, getSessionWindows, isSprintWeekend, isPastRace, toDate, resultsGap,
+  getPitStops, getCircuitWinners, nowMs,
 } from "@/lib/f1";
+import { cardName, raceLaps } from "@/lib/widget-card";
 import { summarizeRacePits } from "@/lib/pitstops";
 import { getRaceWeather } from "@/lib/weather";
 import { SEASON } from "@/lib/season";
@@ -78,7 +81,16 @@ export default async function RacePage({ params }: Params) {
       past ? getPitStops(SEASON, round) : Promise.resolve([]),
       getCircuitWinners(race.Circuit.circuitId),
     ]);
-  const sessions = getSessions(race);
+  const windows = getSessionWindows(race);
+  const serverNow = nowMs();
+  const name = cardName(race.Circuit.circuitId, race.Circuit.circuitName);
+  const track = circuitTrack(race.Circuit.circuitId);
+  const laps = track ? raceLaps(race.Circuit.circuitId, track.length) : null;
+  const chips = [
+    track?.length ? `${(track.length / 1000).toFixed(3)} กม.` : null,
+    laps ? `${laps} รอบ` : null,
+    track?.firstGp ? `ตั้งแต่ ${track.firstGp}` : null,
+  ].filter((c): c is string => !!c);
   // เทเลเมทรีเทียบได้ตั้งแต่เริ่ม (สปรินต์)ควอลิฟาย — ก่อนเรซก็ดูได้
   const telemetryOpen = SEASON >= 2023 && telemetrySessions(race).length > 0;
   const pits =
@@ -88,32 +100,15 @@ export default async function RacePage({ params }: Params) {
   const winner = hasResults ? results!.Results[0] : null;
   const winnerColor = winner ? teamColor(winner.Constructor.constructorId) : null;
 
-  const sessionsCard = sessions.length > 0 && (
-    <section className="card p-5">
-      <h2 className="mb-3 text-lg font-bold">ตารางสุดสัปดาห์</h2>
-      <ul className="divide-y divide-white/5">
-        {sessions.map((s) => (
-          <li key={s.label} className="flex items-center justify-between py-2">
-            <span className="font-medium">{s.label}</span>
-            <span className="text-right text-sm">
-              <span className="text-white/50">
-                <LocalTime
-                  iso={s.at.toISOString()}
-                  kind="date"
-                  circuitId={race.Circuit.circuitId}
-                />
-              </span>{" "}
-              <span className="font-semibold tabular-nums">
-                <LocalTime
-                  iso={s.at.toISOString()}
-                  kind="time"
-                  circuitId={race.Circuit.circuitId}
-                />
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
+  const sessionsCard = windows.length > 0 && (
+    <section className="card card-poster p-5">
+      <PosterHeading kicker="WEEKEND" title="ตารางสุดสัปดาห์" />
+      <WeekendTimeline
+        windows={windows}
+        serverNow={serverNow}
+        circuitId={race.Circuit.circuitId}
+        dimDone={!past}
+      />
     </section>
   );
 
@@ -133,10 +128,11 @@ export default async function RacePage({ params }: Params) {
           <ArrowLeft className="h-3.5 w-3.5" />
           ปฏิทินทั้งฤดูกาล
         </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-white/50">
-            Round {race.round}
-          </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 font-display text-[13px] font-semibold text-white/55">
+          <span className="round-tag">R{race.round}</span>
+          <span>
+            {race.season} · {race.Circuit.Location.country.toUpperCase()}
+          </span>
           {isSprintWeekend(race) && (
             <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-300 ring-1 ring-yellow-400/30">
               <Zap className="h-3 w-3" fill="currentColor" />
@@ -157,13 +153,27 @@ export default async function RacePage({ params }: Params) {
             </span>
           )}
         </div>
-        <h1 className="mt-1 text-2xl font-black tracking-tight md:text-3xl">
-          {race.raceName}
-        </h1>
-        <p className="text-sm text-white/60">
-          {race.Circuit.circuitName} · {race.Circuit.Location.locality},{" "}
-          {race.Circuit.Location.country}
+        <div className="poster-fit mt-2">
+          <h1 className="poster poster-name" style={{ "--len": name.length } as React.CSSProperties}>
+            {name}
+          </h1>
+        </div>
+        <SpeedStreak className="mt-3" />
+        <p className="mt-3 font-display text-sm font-semibold text-white/60">
+          {race.raceName} · {race.Circuit.circuitName} · {race.Circuit.Location.locality}
         </p>
+        {chips.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {chips.map((c) => (
+              <span
+                key={c}
+                className="rounded-full border border-white/12 px-2.5 py-0.5 font-display text-[13px] font-semibold"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* สนามที่ยังไม่แข่ง: ผังสนามสูงเกือบเต็มจอแรก ดันนับถอยหลังกับตารางลงไปใต้ fold
@@ -184,38 +194,14 @@ export default async function RacePage({ params }: Params) {
             />
 
             {raceStart && (
-              <section className="card p-5">
-                <SessionCountdown race={race} />
-                <p className="mt-4 flex items-center gap-1.5 text-sm text-white/80">
-                  <Flag className="h-4 w-4 shrink-0 text-white/50" />
-                  <span>
-                    ออกสตาร์ท{" "}
-                    <LocalTime
-                      iso={raceStart.toISOString()}
-                      kind="full"
-                      circuitId={race.Circuit.circuitId}
-                    />{" "}
-                    น.
-                  </span>
-                </p>
-                <a
-                  href={googleCalendarUrl({
-                    title: `F1: ${race.raceName}`,
-                    start: raceStart,
-                    location: race.Circuit.circuitName,
-                  })}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85 active:scale-95"
-                >
-                  <CalendarPlus className="h-4 w-4" />
-                  เพิ่มลง Google Calendar
-                </a>
-                {weather && (
-                  <div>
-                    <WeatherBadge weather={weather} />
-                  </div>
-                )}
+              <section className="space-y-3">
+                <PosterCountdown
+                  windows={windows}
+                  serverNow={serverNow}
+                  raceStart={raceStart.toISOString()}
+                  circuitId={race.Circuit.circuitId}
+                />
+                {weather && <WeatherBadge weather={weather} />}
               </section>
             )}
 
@@ -304,7 +290,7 @@ export default async function RacePage({ params }: Params) {
                   },
                 ]
               : []),
-            ...(sessions.length > 0
+            ...(windows.length > 0
               ? [
                   {
                     key: "sessions",

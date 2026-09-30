@@ -44,7 +44,7 @@ export default function TyreStrategy({
   return (
     <section className="card overflow-x-auto p-4">
       <div className="mb-1 flex flex-wrap items-baseline gap-x-3">
-        <h2 className="text-lg font-bold">กลยุทธ์ยาง</h2>
+        <h2 className="text-lg font-bold sec-title">กลยุทธ์ยาง</h2>
         <span className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/45">
           {used.map((c) => (
             <span key={c} className="flex items-center gap-1">

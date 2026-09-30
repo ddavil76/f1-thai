@@ -12,6 +12,7 @@ import {
 } from "@/lib/f1";
 import { getDriverImages } from "@/lib/drivers";
 import { SEASON } from "@/lib/season";
+import SpeedStreak from "@/components/poster/SpeedStreak";
 
 export const metadata = { title: "ตารางคะแนน" };
 
@@ -51,9 +52,11 @@ export default async function StandingsPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
+        <p className="poster text-sm text-(--color-f1-text)">STANDINGS</p>
         <h1 className="text-3xl font-black tracking-tight md:text-4xl">
           ตารางคะแนน <span className="text-(--color-f1)">F1</span>
         </h1>
+        <SpeedStreak className="pb-1 pt-1.5" />
         <p className="text-sm text-white/50">ฤดูกาล {SEASON}</p>
       </header>
 

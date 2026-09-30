@@ -11,7 +11,7 @@ export default function NotFound() {
         <Flag className="h-9 w-9 text-white/40" strokeWidth={1.5} />
 
         <div className="space-y-1">
-          <p className="display text-5xl font-bold tabular-nums text-(--color-f1)">
+          <p className="poster text-6xl tabular-nums text-(--color-f1)">
             404
           </p>
           <h1 className="text-lg font-bold">ไม่พบหน้านี้</h1>

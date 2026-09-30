@@ -109,7 +109,10 @@
 @layer components {
   .card {
     border-radius: 1rem;
-    background: var(--color-surface);
+    /* พื้นคาร์บอนจาง ๆ แบบการ์ด widget */
+    background:
+      repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.022) 0 3px, transparent 3px 6px),
+      var(--color-surface);
     border: 1px solid var(--color-border);
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 40px -12px rgba(0, 0, 0, 0.6);
     transition:
@@ -298,6 +301,10 @@ html[data-intro="seen"] .launch-intro {
   font-size: 12px;
   line-height: 1.35;
 }
+.round-tag.muted {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.75);
+}
 /* ชื่อสนามตัวใหญ่ — ย่อตามความกว้างการ์ด (container) และจำนวนตัวอักษร (--len) ไม่ล้นบนมือถือ */
 .poster-fit {
   container-type: inline-size;
@@ -348,6 +355,21 @@ html[data-intro="seen"] .launch-intro {
     transform: skewX(-35deg) scaleX(0);
   }
 }
+/* หัวข้อย่อยในการ์ด: เส้นความเร็วเล็กใต้หัว (รูปเดียว ไม่ต้องเพิ่ม element) */
+.sec-title {
+  flex-wrap: wrap;
+}
+.sec-title::after {
+  content: "";
+  display: block;
+  flex-basis: 100%;
+  width: 124px;
+  height: 4px;
+  margin-top: 6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='124' height='4'%3E%3Cg fill='%23e10600'%3E%3Cpolygon points='5.6,0 75.6,0 70,4 0,4'/%3E%3Cpolygon points='81.6,0 107.6,0 102,4 76,4' fill-opacity='.7'/%3E%3Cpolygon points='113.6,0 123.6,0 118,4 108,4' fill-opacity='.4'/%3E%3C/g%3E%3C/svg%3E")
+    no-repeat;
+}
+
 /* พื้นคาร์บอนจาง + ธงหมากรุกจางมุมขวาบน — ใช้เฉพาะการ์ดใหญ่ */
 .card-poster {
   position: relative;
@@ -485,22 +507,6 @@ html[data-intro="seen"] .launch-intro {
 }
 
 /* ---------- ลูกเล่น ---------- */
-
-/* ตัวเลขนับถอยหลัง "พลิก" ตอนเปลี่ยน (split-flap) */
-@keyframes flap-in {
-  from {
-    transform: rotateX(-90deg);
-    opacity: 0;
-  }
-  to {
-    transform: rotateX(0);
-    opacity: 1;
-  }
-}
-.animate-flap {
-  transform-origin: top center;
-  animation: flap-in 0.4s cubic-bezier(0.2, 0.85, 0.3, 1);
-}
 
 /* กราฟแชมป์เปี้ยนชิพ fade + เลื่อนเข้าจากซ้ายเบา ๆ */
 @keyframes champ-in {
@@ -643,7 +649,6 @@ html[data-intro="seen"] .launch-intro {
   .tilt::after {
     display: none;
   }
-  .animate-flap,
   .animate-page-in,
   .animate-fade-up,
   .animate-crossfade,

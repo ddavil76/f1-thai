@@ -10,10 +10,13 @@ export default function WeekendTimeline({
   windows,
   serverNow,
   circuitId,
+  dimDone = true,
 }: {
   windows: SessionWindow[];
   serverNow: number;
   circuitId: string;
+  /** จางแถวที่จบแล้ว — ปิดได้สำหรับสนามที่แข่งจบไปแล้ว (ไม่งั้นจางทั้งตาราง) */
+  dimDone?: boolean;
 }) {
   const [now, setNow] = useState(serverNow);
   useEffect(() => {
@@ -37,7 +40,7 @@ export default function WeekendTimeline({
           <li
             key={w.label}
             className={`grid grid-cols-[14px_62px_1fr_auto] items-center gap-2.5 font-display text-[15px] font-semibold ${
-              done ? "opacity-45" : ""
+              done && dimDone ? "opacity-45" : ""
             }`}
           >
             <span

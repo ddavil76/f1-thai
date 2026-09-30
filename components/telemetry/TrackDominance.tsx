@@ -121,7 +121,7 @@ export default function TrackDominance({
   return (
     <section className="card space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-bold">ผังสนาม</h2>
+        <h2 className="text-base font-bold sec-title">ผังสนาม</h2>
         <div className="flex gap-1 rounded-full bg-white/5 p-1 text-xs" role="tablist" aria-label="มุมมอง">
           {(["3d", "2d"] as const).map((v) => (
             <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
