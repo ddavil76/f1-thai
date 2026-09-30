@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import StartLights from "../StartLights";
 import type { TrackPath } from "@/lib/circuits";
 import { getRaceReplay, type RaceReplay } from "@/lib/replay";
 import ReplayPlayer from "./ReplayPlayer";
@@ -64,14 +64,8 @@ export default function ReplayLoader({
 
   if (state.s === "loading") {
     return (
-      <div className="card flex items-center gap-3 p-6 text-sm text-white/55">
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-(--color-f1)" />
-        <span>
-          กำลังโหลดข้อมูลรีเพลย์…
-          <span className="block text-xs text-white/35">
-            ดึงจาก openf1 ทีละส่วน · ครั้งแรกอาจ ~10 วิ
-          </span>
-        </span>
+      <div className="card p-6">
+        <StartLights label="กำลังโหลดข้อมูลรีเพลย์…" sub="ดึงจาก openf1 ทีละส่วน · ครั้งแรกอาจ ~10 วิ" />
       </div>
     );
   }

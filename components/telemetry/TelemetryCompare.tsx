@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Loader2, Pause, Play } from "lucide-react";
+import { Pause, Play } from "lucide-react";
+import StartLights from "../StartLights";
 import {
   fastestLaps, findSessionKey, fmtLap, fracAtTime, getLapTrace, getSessionLaps, indexOfFrac,
   type SessionLaps, type TelemetryDriver, type TelemetryLap, type TelemetrySessionCode, type Trace,
@@ -402,12 +403,8 @@ function Stat({ label, value, hi, wide }: { label: string; value: string; hi?: b
 
 function Loading({ text }: { text: string }) {
   return (
-    <div className="card flex items-center gap-3 p-6 text-sm text-white/55">
-      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-(--color-f1)" />
-      <span>
-        {text}
-        <span className="block text-xs text-white/35">ดึงจาก openf1 ทีละส่วน · ครั้งแรกอาจ ~10 วิ</span>
-      </span>
+    <div className="card p-6">
+      <StartLights label={text} sub="ดึงจาก openf1 ทีละส่วน · ครั้งแรกอาจ ~10 วิ" />
     </div>
   );
 }
