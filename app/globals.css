@@ -184,6 +184,82 @@ html[data-intro="seen"] .launch-intro {
     box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5);
   }
 }
+/* ---------- ไฟสตาร์ท 5 ดวงระหว่างโหลด (StartLights) ---------- */
+/* รอบละ 2.6 วิ: ดวงที่ n ติดที่ 0.3n วิ · ครบ 5 ดวงค้างไว้ครู่หนึ่ง · ดับพร้อมกันที่ 2.0 วิ */
+.start-lights {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.45rem;
+  border-radius: 0.75rem;
+  background: #0c0c0f;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 12px 30px -16px #000;
+}
+.start-lights-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.25rem;
+  border-radius: 0.45rem;
+  background: rgb(0 0 0 / 0.6);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+.start-lights span {
+  display: block;
+  border-radius: 999px;
+  background: #2a0808;
+  box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5);
+  animation-duration: 2.6s;
+  animation-iteration-count: infinite;
+  animation-timing-function: steps(1, end);
+}
+.start-lights-md span {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+.start-lights-sm {
+  gap: 0.25rem;
+  padding: 0.3rem;
+}
+.start-lights-sm .start-lights-col {
+  gap: 0.2rem;
+  padding: 0.18rem;
+}
+.start-lights-sm span {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+@keyframes start-light-1 {
+  0%, 11.5% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+  11.6%, 76.8% { background: #ff1a0d; box-shadow: 0 0 12px 3px rgb(255 30 10 / 0.65), inset 0 0 5px rgb(255 200 180 / 0.6); }
+  76.9%, 100% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+}
+@keyframes start-light-2 {
+  0%, 23% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+  23.1%, 76.8% { background: #ff1a0d; box-shadow: 0 0 12px 3px rgb(255 30 10 / 0.65), inset 0 0 5px rgb(255 200 180 / 0.6); }
+  76.9%, 100% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+}
+@keyframes start-light-3 {
+  0%, 34.6% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+  34.7%, 76.8% { background: #ff1a0d; box-shadow: 0 0 12px 3px rgb(255 30 10 / 0.65), inset 0 0 5px rgb(255 200 180 / 0.6); }
+  76.9%, 100% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+}
+@keyframes start-light-4 {
+  0%, 46.1% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+  46.2%, 76.8% { background: #ff1a0d; box-shadow: 0 0 12px 3px rgb(255 30 10 / 0.65), inset 0 0 5px rgb(255 200 180 / 0.6); }
+  76.9%, 100% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+}
+@keyframes start-light-5 {
+  0%, 57.6% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+  57.7%, 76.8% { background: #ff1a0d; box-shadow: 0 0 12px 3px rgb(255 30 10 / 0.65), inset 0 0 5px rgb(255 200 180 / 0.6); }
+  76.9%, 100% { background: #2a0808; box-shadow: inset 0 0 0 1px rgb(120 20 20 / 0.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .start-lights span {
+    animation: none !important;
+    background: #ff1a0d;
+    box-shadow: 0 0 8px 2px rgb(255 30 10 / 0.5);
+  }
+}
 @keyframes intro-logo {
   from {
     opacity: 0;

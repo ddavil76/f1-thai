@@ -8,6 +8,7 @@ import type { Trace } from "@/lib/telemetry";
 import { fogColor, isNightCircuit, REAL_EXAGGERATION, skyBackground, useSceneStyle } from "@/lib/three-style";
 import type { CircuitMeshes } from "@/lib/three-circuit";
 import SceneStyleToggle from "../SceneStyleToggle";
+import StartLights from "../StartLights";
 import OsmCredit from "../OsmCredit";
 
 /** ค่าบนหน้าปัดของรถ ณ เวลาที่ชี้/ที่เล่นอยู่ */
@@ -413,7 +414,9 @@ export default function Telemetry3D({
     >
       <div ref={host} className="absolute inset-0" role="img" aria-label="สนาม 3 มิติ ระบายสีตามการเทียบ" />
       {!ready && (
-        <span className="absolute inset-0 flex items-center justify-center text-xs text-white/70">กำลังสร้างสนาม 3D…</span>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <StartLights size="sm" label="กำลังสร้างสนาม 3D…" />
+        </div>
       )}
       <span className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5">
         <span className="rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-bold tracking-wider text-white/80">3D</span>
