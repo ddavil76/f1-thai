@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ธีมการ์ด: รูปพื้นหลังจากเว็บ (ชื่อสนาม ผังสนาม ตาราง) + กล่องนับถอยหลังมุมซ้ายล่างที่วาดเอง -->
+<!--
+  ธีมการ์ด: พื้นสีเรียบ + รูปจากเว็บสองชั้นพื้นใส + กล่องนับถอยหลังมุมซ้ายล่างที่วาดเอง
+  · side = ธงหมากรุก + ผังสนาม ชิดขวาล่าง · art = ตัวหนังสือ ชิดซ้ายบน เหนือกล่องนับถอยหลัง
+  ต่างชั้นต่างย่อให้พอดีกรอบ (fit) ไม่ตัดขอบ — launcher บางยี่ห้อบอกขนาด widget คลาดจากจริง
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -8,10 +12,17 @@
     android:clipToOutline="true">
 
     <ImageView
+        android:id="@+id/side"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitEnd" />
+
+    <ImageView
         android:id="@+id/art"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="centerCrop" />
+        android:layout_marginBottom="68dp"
+        android:scaleType="fitStart" />
 
     <TextView
         android:id="@+id/stamp"

@@ -16,6 +16,9 @@ import {
  * /api/widget/card?round=16&size=medium&w=364&h=170&s=3&theme=light&next=FP1&tz=420
  * · w, h = ขนาด widget เป็น point/dp (รูปออกมาสัดส่วนเดียวกับ widget พอดี) · s = ความคมชัด
  * · next = session ถัดไป (ไฮไลต์ในตาราง) · live=1 = กำลังแข่ง · tz = เขตเวลาของเครื่อง (นาทีจาก UTC)
+ * · layer=text|side = แยกเป็นสองชั้นพื้นใส (Android): text = ตัวหนังสือฝั่งซ้ายบน สูงเท่าเนื้อหา ·
+ *   side = ธงหมากรุก + ผังสนาม (+ ผู้ชนะ) ชิดขวา — launcher บางยี่ห้อบอกขนาด widget คลาดจากจริง
+ *   รูปเดียวเต็มกรอบจะถูกตัดขอบ แยกชั้นแล้วแต่ละชั้นยึดมุมของตัวเอง ย่อได้แต่ไม่ถูกตัด
  * ไม่มีโลโก้/ฟอนต์ของ F1 — ฟอนต์ Archivo + Chakra Petch (OFL) อยู่ใน assets/fonts
  */
 
@@ -99,6 +102,7 @@ export async function GET(req: Request) {
   const tzMin = clamp(Number(q.get("tz")) || 420, -720, 840);
   const next = q.get("next");
   const live = q.get("live") === "1";
+  const layer = q.get("layer") === "text" ? "text" : q.get("layer") === "side" ? "side" : "full";
 
   const races = await getSchedule(SEASON).catch(() => []);
   const race = races.find((r) => r.round === q.get("round"));
@@ -129,7 +133,9 @@ export async function GET(req: Request) {
   // บนหัว: ขอบ + แถว R16 (~14) + ชื่อ + เส้นความเร็ว
   const headBottom = pad.t + 14 + 5 + nameSize * 0.9 + 5 + 4;
   // widget กลางที่เตี้ย (iPhone ส่วนใหญ่ ~158) ใส่ป้ายสถิติไม่พอ → ย้ายจำนวนรอบไปต่อท้ายแถวบน
-  const chipsFit = size === "large" || (size === "medium" && headBottom + 7 + 15 + 4 <= pillTop);
+  // ชั้น text ของ Android: ความสูงจริงเดาไม่ได้แน่ (launcher บอกคลาด) → แบบกลางใช้แถวบนแบบย่อเสมอ ชื่อจะได้ไม่ถูกย่อ
+  const chipsFit =
+    size === "large" || (size === "medium" && layer !== "text" && headBottom + 7 + 15 + 4 <= pillTop);
   const small = (() => {
     const bottom = pillTop - 4;
     // ซ้อนมุมท้ายชื่อได้นิดหน่อย (แบบโปสเตอร์) แต่ห้ามลงไปชนกล่องนับถอยหลัง
@@ -142,9 +148,19 @@ export async function GET(req: Request) {
       : size === "medium"
         ? { w: trackW, h: H - 24, top: 12, right: 14, sw: 3 }
         : { w: trackW, h: (150 * H) / 382, top: (168 * H) / 382, right: 10, sw: 3.4 };
-  const timelineW = Math.min(168, W - pad.l - trackBox.w - trackBox.right - 8);
-  const streak = streakSvg(u(size === "large" ? 5 : 4), size === "large" ? [u(90), u(34), u(14)] : [u(46), u(18), u(8)]);
   const checker = size === "small" ? 120 : size === "medium" ? 170 : 200;
+  const timelineW = Math.min(168, W - pad.l - trackBox.w - trackBox.right - 8);
+  // ชั้น text สูงเท่าเนื้อหาพอดี (เผื่อเล็กน้อย) — ยิ่งไม่มีที่ว่างเกิน ยิ่งไม่ต้องย่อเมื่อ widget จริงเตี้ยกว่าที่คาด
+  const textH = Math.ceil(
+    headBottom +
+      (size === "large" ? 7 + 13 : 0) +
+      (size !== "small" && chipsFit ? 7 + 17 : 0) +
+      (size === "large" ? 12 + sessions.length * 15 + Math.max(0, sessions.length - 1) * 6 : 0) +
+      8,
+  );
+  const sideW = Math.max(checker, trackBox.w + trackBox.right, size === "large" ? 150 : 0);
+  const [outW, outH] = layer === "text" ? [W, Math.min(H, textH)] : layer === "side" ? [sideW, H] : [W, H];
+  const streak = streakSvg(u(size === "large" ? 5 : 4), size === "large" ? [u(90), u(34), u(14)] : [u(46), u(18), u(8)]);
 
   const meta = (
     <div style={{ display: "flex", alignItems: "center", gap: u(6) }}>
@@ -209,14 +225,16 @@ export async function GET(req: Request) {
 
   return new ImageResponse(
     (
-      <div style={{ display: "flex", position: "relative", width: "100%", height: "100%", background: T.bg }}>
-        {T.tex && (
+      <div style={{ display: "flex", position: "relative", width: "100%", height: "100%", background: layer === "full" ? T.bg : "transparent" }}>
+        {layer === "full" && T.tex && (
           // eslint-disable-next-line @next/next/no-img-element -- ImageResponse วาดด้วย satori ไม่ใช่หน้าเว็บ
           <img alt="" src={carbonSvg(u(W), u(H), T.tex)} width={u(W)} height={u(H)} style={{ position: "absolute", left: 0, top: 0 }} />
         )}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" src={checkerSvg(u(checker), T.ink, theme === "dark" ? 0.22 : 0.13)} width={u(checker)} height={u(checker)} style={{ position: "absolute", right: 0, top: 0 }} />
-        {path && (
+        {layer !== "text" && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt="" src={checkerSvg(u(checker), T.ink, theme === "dark" ? 0.22 : 0.13)} width={u(checker)} height={u(checker)} style={{ position: "absolute", right: 0, top: 0 }} />
+        )}
+        {layer !== "text" && path && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             alt=""
@@ -226,27 +244,29 @@ export async function GET(req: Request) {
             style={{ position: "absolute", right: u(trackBox.right), top: u(trackBox.top) }}
           />
         )}
-        <div style={{ display: "flex", flexDirection: "column", padding: `${u(pad.t)}px ${u(pad.r)}px 0 ${u(pad.l)}px`, width: "100%" }}>
-          {meta}
-          <div
-            style={{
-              display: "flex", marginTop: u(size === "large" ? 6 : 5), fontFamily: "Archivo", fontStyle: "italic", fontWeight: 900,
-              fontSize: u(nameSize), lineHeight: 0.9, color: T.ink, letterSpacing: -u(nameSize) * 0.01, whiteSpace: "nowrap",
-            }}
-          >
-            {name}
-          </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" src={streak.uri} width={streak.w} height={u(size === "large" ? 5 : 4)} style={{ marginTop: u(5) }} />
-          {size === "large" && (
-            <div style={{ display: "flex", marginTop: u(7), fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: T.dim }}>
-              {`${race.raceName} · ${race.Circuit.Location.locality}`}
+        {layer !== "side" && (
+          <div style={{ display: "flex", flexDirection: "column", padding: `${u(pad.t)}px ${u(pad.r)}px 0 ${u(pad.l)}px`, width: "100%" }}>
+            {meta}
+            <div
+              style={{
+                display: "flex", marginTop: u(size === "large" ? 6 : 5), fontFamily: "Archivo", fontStyle: "italic", fontWeight: 900,
+                fontSize: u(nameSize), lineHeight: 0.9, color: T.ink, letterSpacing: -u(nameSize) * 0.01, whiteSpace: "nowrap",
+              }}
+            >
+              {name}
             </div>
-          )}
-          {size !== "small" && chipsFit && chipRow}
-          {size === "large" && timeline}
-        </div>
-        {size === "large" && winner && (
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" src={streak.uri} width={streak.w} height={u(size === "large" ? 5 : 4)} style={{ marginTop: u(5) }} />
+            {size === "large" && (
+              <div style={{ display: "flex", marginTop: u(7), fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: T.dim }}>
+                {`${race.raceName} · ${race.Circuit.Location.locality}`}
+              </div>
+            )}
+            {size !== "small" && chipsFit && chipRow}
+            {size === "large" && timeline}
+          </div>
+        )}
+        {layer !== "text" && size === "large" && winner && (
           <div
             style={{
               display: "flex", flexDirection: "column", alignItems: "flex-end", position: "absolute",
@@ -263,8 +283,8 @@ export async function GET(req: Request) {
       </div>
     ),
     {
-      width: Math.round(u(W)),
-      height: Math.round(u(H)),
+      width: Math.round(u(outW)),
+      height: Math.round(u(outH)),
       fonts: [
         { name: "Archivo", data: archivo, weight: 900, style: "italic" },
         { name: "Chakra", data: chakra6, weight: 600, style: "normal" },

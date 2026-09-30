@@ -32,6 +32,9 @@ class CardTest {
         assertTrue(!url.contains("live=1"))
         val live = cardUrl(payload(State.LIVE, Session("Q", "Q", 0, 0)), "small", 150, 150, 2f, false, 0)!!
         assertTrue(live.contains("live=1") && live.contains("theme=light"))
+        assertTrue(!url.contains("layer="))
+        val side = cardUrl(payload(State.UPCOMING, null), "large", 338, 354, 2f, false, 420, layer = "side")!!
+        assertTrue(side.contains("layer=side") && !side.contains("next="))
     }
 
     @Test

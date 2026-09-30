@@ -77,10 +77,13 @@ object Render {
 
     private fun RemoteViews.sp(id: Int, size: Float) = setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_SP, size)
 
+    /** รูปการ์ดจากเว็บสองชั้น: text = ตัวหนังสือมุมซ้ายบน · side = ธงหมากรุก + ผังสนาม ชิดขวา */
+    class CardArt(val text: Bitmap, val side: Bitmap)
+
     /** art = รูปการ์ดจากเว็บ (ธีมการ์ด) · null = โหลดไม่ได้/ปิดไว้ → หน้าตาแบบเดิม */
     fun build(
         ctx: Context, p: Payload?, size: Size, now: Long, offline: Boolean,
-        art: Bitmap? = null, dark: Boolean = false,
+        art: CardArt? = null, dark: Boolean = false,
     ): RemoteViews {
         val zone = ZoneId.systemDefault()
         val race = p?.race ?: return message(ctx, p, size, offline)
@@ -136,16 +139,19 @@ object Render {
     private const val PILL_TEXT = 0xfff3f1ec.toInt()
 
     /**
-     * รูปการ์ดจากเว็บเต็ม widget (ชื่อสนาม ผังสนาม ตาราง) + กล่องนับถอยหลังมุมซ้ายล่างที่วาดเอง
+     * พื้นสีเรียบ + รูปการ์ดจากเว็บสองชั้น (ตัวหนังสือ / ผังสนาม) + กล่องนับถอยหลังมุมซ้ายล่างที่วาดเอง
      * ให้ตัวนับเดินตรงเวลา — ตรรกะเดียวกับ pill() ใน public/scriptable-widget.js
      */
     private fun card(
-        ctx: Context, p: Payload, size: Size, now: Long, art: Bitmap, dark: Boolean, zone: ZoneId,
+        ctx: Context, p: Payload, size: Size, now: Long, art: CardArt, dark: Boolean, zone: ZoneId,
     ): RemoteViews {
         val race = p.race!!
         val v = RemoteViews(ctx.packageName, R.layout.widget_card)
         v.setOnClickPendingIntent(R.id.root, open(ctx, "$SITE/race/${race.round}"))
-        v.setImageViewBitmap(R.id.art, art)
+        v.setInt(R.id.root, "setBackgroundResource", if (dark) R.drawable.card_clip_dark else R.drawable.card_clip)
+        // แต่ละชั้นยึดมุมของตัวเองและย่อให้พอดีกรอบ — launcher บอกขนาดคลาดไปก็ไม่โดนตัดขอบ
+        v.setImageViewBitmap(R.id.side, art.side)
+        v.setImageViewBitmap(R.id.art, art.text)
         v.setTextViewText(R.id.stamp, p.generatedAt?.let { "↻" + hm(it, zone) } ?: "")
         v.setTextColor(R.id.stamp, if (dark) 0x59ffffff else 0x591b1b22)
         v.setInt(R.id.pill, "setBackgroundResource", if (dark) R.drawable.pill_bg_dark else R.drawable.pill_bg)
