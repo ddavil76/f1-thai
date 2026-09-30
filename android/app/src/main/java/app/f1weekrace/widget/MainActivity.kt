@@ -92,6 +92,10 @@ class MainActivity : Activity() {
             prefs.raceOnly = on
             Updater.async(this, fetch = false) { runOnUiThread { showStatus() } }
         }.gap(4))
+        col.addView(toggle("หน้าตาแบบเดิม (ไม่ใช้ธีมการ์ด)", prefs.classic) { on ->
+            prefs.classic = on
+            Updater.async(this, fetch = false)
+        }.gap(4))
 
         exact = button("ให้แจ้งเตือน/เปลี่ยนเป็น LIVE ตรงเวลาเป๊ะ", primary = false) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

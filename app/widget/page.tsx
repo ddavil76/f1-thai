@@ -56,7 +56,9 @@ const Key = ({ children }: { children: React.ReactNode }) => (
 const OPTIONS: [string, string][] = [
   ["race", "นับถอยหลังเฉพาะเรซ ข้ามซ้อมและควอลิฟาย (แจ้งเตือนเฉพาะเรซด้วย)"],
   ["noalert", "ไม่ต้องแจ้งเตือนก่อนแข่ง"],
-  ["race noalert", "ใช้ทั้งสองอย่าง"],
+  ["race noalert", "ใช้ทั้งสองอย่าง (ใส่หลายคำได้ เว้นวรรคคั่น)"],
+  ["dark / light", "บังคับธีมการ์ดมืดหรือสว่าง (ค่าเริ่มต้นตามโหมดของเครื่อง)"],
+  ["classic", "หน้าตาแบบเดิม ไม่ใช้ธีมการ์ด"],
 ];
 
 const FAQ: [string, React.ReactNode][] = [
@@ -122,7 +124,7 @@ export default function WidgetPage() {
 
       <section className="space-y-2">
         <WidgetPreview />
-        <p className="text-center text-xs text-white/35">ตัวอย่างหน้าตา — มีขนาดเล็ก กลาง ใหญ่ และบนหน้าจอล็อก</p>
+        <p className="text-center text-xs text-white/35">ตัวอย่างจากข้อมูลจริงของสนามถัดไป — มีขนาดเล็ก กลาง ใหญ่ และบนหน้าจอล็อก · ธีมตามโหมดมืด/สว่างของเครื่อง</p>
       </section>
 
       <h2 id="iphone" className="scroll-mt-24 text-xl font-black">iPhone</h2>

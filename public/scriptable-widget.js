@@ -13,10 +13,13 @@ const SITE = "https://f1-thai.vercel.app"; // ← แก้เป็นโดเ
 // ตั้งค่าผ่านช่อง Parameter ของ widget (กดค้างที่ widget → แก้ไขวิดเจ็ต) — พิมพ์ได้หลายคำ คั่นด้วยเว้นวรรค
 // · race    = นับถอยหลังเฉพาะเรซ ข้ามซ้อมและควอลิฟาย
 // · noalert = ไม่ต้องแจ้งเตือนก่อนแข่ง
+// · dark / light = บังคับธีม (ปกติตามโหมดมืด/สว่างของเครื่อง)
+// · classic = หน้าตาแบบเดิม (พื้นดำ ไม่โหลดรูปการ์ด)
 const PARAM = String((typeof args !== "undefined" && args && args.widgetParameter) || "")
   .toLowerCase().split(/[\s,]+/).filter(Boolean);
 const RACE_ONLY = PARAM.includes("race");
 const NO_ALERT = PARAM.includes("noalert");
+const CLASSIC = PARAM.includes("classic");
 
 const RED = new Color("#e10600");
 const WHITE = Color.white();
@@ -545,6 +548,167 @@ async function scheduleAlerts(data) {
   }
 }
 
+
+/* ---------- ธีมการ์ด: รูปพื้นหลังจากเว็บ + กล่องนับถอยหลังวาดเอง ---------- */
+// เว็บวาดชื่อสนาม ผังสนาม สถิติ ตาราง ด้วยฟอนต์ที่ออกแบบไว้ (/api/widget/card) โดยเว้นมุมซ้ายล่างไว้
+// widget วางกล่องนับถอยหลัง + ไฟสตาร์ททับตรงนั้นเอง ตัวเลขจึงเดินได้ตรงเวลา
+// โหลดรูปไม่ได้ → กลับไปใช้หน้าตาแบบเดิม (build) ไม่ให้ widget ว่าง
+
+/** ขนาด widget (point) ตามรุ่นเครื่อง — รูปการ์ดสั่งทำสัดส่วนนี้พอดี ไม่ถูกครอป */
+const WIDGET_SIZES = {
+  "430x932": [170, 364, 382], "428x926": [170, 364, 382], "414x896": [169, 360, 379],
+  "414x736": [159, 348, 357], "393x852": [158, 338, 354], "390x844": [158, 338, 354],
+  "375x812": [155, 329, 345], "360x780": [155, 329, 345], "375x667": [148, 321, 324],
+  "320x568": [141, 292, 311],
+};
+
+function widgetSize(family) {
+  const sc = Device.screenSize();
+  const sw = Math.round(Math.min(sc.width, sc.height));
+  const sh = Math.round(Math.max(sc.width, sc.height));
+  // รุ่นที่ไม่มีในตาราง: ประมาณจากความกว้างจอ (สัดส่วนใกล้เคียงรุ่นที่รู้จัก)
+  const [small, wide, tall] = WIDGET_SIZES[`${sw}x${sh}`] ||
+    [Math.round(sw * 0.395), Math.round(sw * 0.847), Math.round(sw * 0.888)];
+  if (family === "small") return [small, small];
+  if (family === "large") return [wide, tall];
+  return [wide, small];
+}
+
+const DARK = PARAM.includes("dark") ? true : PARAM.includes("light") ? false
+  : typeof Device !== "undefined" && Device.isUsingDarkAppearance();
+
+// ชื่อ session ภาษาไทยในกล่องนับถอยหลัง
+const TH_SESSION = { FP1: "ซ้อม 1", FP2: "ซ้อม 2", FP3: "ซ้อม 3", SQ: "สปรินต์ควอลิฟาย", SPRINT: "สปรินต์", Q: "ควอลิฟาย", RACE: "เรซ" };
+
+function cardUrl(data, family) {
+  const [w, h] = widgetSize(family);
+  const s = data.session;
+  const q = [
+    `round=${encodeURIComponent(data.race.round)}`, `size=${family}`, `w=${w}`, `h=${h}`,
+    `s=${Math.min(3, Device.screenScale())}`, `theme=${DARK ? "dark" : "light"}`,
+    `tz=${-new Date().getTimezoneOffset()}`, `v=1`,
+  ];
+  if (s) q.push(`next=${encodeURIComponent(s.code)}`);
+  if (data.state === "live") q.push("live=1");
+  return `${SITE}/api/widget/card?${q.join("&")}`;
+}
+
+/** โหลดรูปการ์ด — เก็บในเครื่อง รูปเดิม (URL เดิม) ไม่ต้องโหลดซ้ำทุกรอบรีเฟรช */
+async function loadCard(url) {
+  const fm = FileManager.local();
+  const dir = fm.joinPath(fm.cacheDirectory(), "f1wr-cards");
+  if (!fm.fileExists(dir)) fm.createDirectory(dir, true);
+  let hash = 5381;
+  for (let i = 0; i < url.length; i++) hash = ((hash * 33) ^ url.charCodeAt(i)) >>> 0;
+  const file = fm.joinPath(dir, `${hash.toString(16)}.png`);
+  if (fm.fileExists(file)) {
+    const img = fm.readImage(file);
+    if (img) return img;
+  }
+  const req = new Request(url);
+  req.timeoutInterval = 15;
+  const img = await req.loadImage();
+  if (req.response && req.response.statusCode && req.response.statusCode !== 200) throw new Error("card " + req.response.statusCode);
+  fm.writeImage(file, img);
+  // เก็บไว้ไม่เกิน 12 รูปล่าสุด
+  const files = fm.listContents(dir).map((n) => fm.joinPath(dir, n));
+  if (files.length > 12) {
+    files.sort((a, b) => fm.modificationDate(a) - fm.modificationDate(b))
+      .slice(0, files.length - 12).forEach((f) => fm.remove(f));
+  }
+  return img;
+}
+
+const PILL_BG = () => new Color(DARK ? "#1d1d24" : "#1b1b22");
+const PILL_TEXT = new Color("#f3f1ec");
+const PILL_RED = new Color("#ff3b2f");
+
+/** ไฟสตาร์ทติดเพิ่มเมื่อใกล้เวลา: เหลือ ≥5 วัน = 0 … ไม่ถึงวัน = 5 · เริ่มแล้ว = ดับหมด (ตรงกับ lib/widget-card.ts) */
+function lightsLit(msLeft) {
+  if (!(msLeft > 0)) return 0;
+  return Math.max(0, Math.min(5, 5 - Math.floor(msLeft / DAY)));
+}
+
+function pill(parent, data, family) {
+  const s = data.session;
+  const target = s ? s.startsAt : data.race.startsAt;
+  const code = s ? s.code : "RACE";
+  const left = Date.parse(target) - Date.now();
+  const p = parent.addStack();
+  p.layoutVertically();
+  p.backgroundColor = PILL_BG();
+  p.cornerRadius = 12;
+  p.setPadding(5, 10, 6, 10);
+
+  const head = p.addStack();
+  head.layoutHorizontally();
+  head.centerAlignContent();
+  const name = family === "small" ? code : (TH_SESSION[code] || code);
+  const label =
+    data.state === "live" ? `${name} · กำลังแข่ง`
+    : data.state === "done" ? "จบสุดสัปดาห์"
+    : family === "medium" ? `${name} · ${whenShort(new Date(target))}`
+    : `${name} เริ่มใน`;
+  const l = text(head, label, { size: 9.5, color: new Color("#f3f1ec", 0.72), bold: true });
+  l.minimumScaleFactor = 0.8;
+  head.addSpacer(8);
+  const lit = data.state === "upcoming" ? lightsLit(left) : 0;
+  for (let i = 0; i < 5; i++) {
+    const dot = head.addStack();
+    dot.size = new Size(7, 7);
+    dot.cornerRadius = 3.5;
+    dot.backgroundColor = i < lit ? new Color("#ff2a1a") : new Color("#3a0d0b");
+    if (i < 4) head.addSpacer(3);
+  }
+
+  p.addSpacer(2);
+  const size = family === "large" ? 28 : family === "medium" ? 25 : 24;
+  if (data.state === "live") {
+    text(p, "● LIVE", { size: Math.round(size * 0.8), color: PILL_RED, heavy: true });
+  } else if (data.state === "done") {
+    text(p, "🏁 จบแล้ว", { size: Math.round(size * 0.7), color: PILL_TEXT, heavy: true });
+  } else if (left > DAY) {
+    const r = p.addStack();
+    r.layoutHorizontally();
+    r.bottomAlignContent();
+    r.spacing = 3;
+    text(r, String(Math.floor(left / DAY)), { size, color: PILL_RED, mono: true });
+    text(r, "วัน", { size: 10.5, color: PILL_TEXT, bold: true });
+    r.addSpacer(3);
+    text(r, String(Math.floor(left / HOUR) % 24).padStart(2, "0"), { size, color: PILL_RED, mono: true });
+    text(r, "ชม.", { size: 10.5, color: PILL_TEXT, bold: true });
+  } else {
+    const t = p.addDate(new Date(target));
+    t.applyTimerStyle();
+    t.font = monoFont(size);
+    t.textColor = PILL_RED;
+    t.lineLimit = 1;
+  }
+  return p;
+}
+
+function cardWidget(data, family, img) {
+  const w = new ListWidget();
+  w.backgroundImage = img;
+  w.url = `${SITE}/race/${data.race.round}`;
+  const pad = family === "large" ? 14 : 12;
+  w.setPadding(8, family === "large" ? 16 : 15, pad, 10);
+
+  // เวลาที่เว็บสร้างข้อมูล (มุมขวาบน ตัวเล็ก) — widget ดูค้างจะรู้ว่าข้อมูลเก่า
+  const top = w.addStack();
+  top.layoutHorizontally();
+  top.addSpacer();
+  const at = data.generatedAt ? new Date(data.generatedAt) : null;
+  if (at && !isNaN(at)) text(top, `↻${hm(at)}`, { size: 7, color: DARK ? new Color("#ffffff", 0.35) : new Color("#1b1b22", 0.35) });
+
+  w.addSpacer();
+  const row = w.addStack();
+  row.layoutHorizontally();
+  pill(row, data, family);
+  row.addSpacer();
+  return w;
+}
+
 /* ---------- ประกอบ ---------- */
 
 function build(data, family) {
@@ -580,7 +744,13 @@ const data = normalize(raw);
 // ต่อเน็ตไม่ได้ (raw = null) ไม่แตะแจ้งเตือนเดิม — ของที่ตั้งไว้รอบก่อนยังถูกอยู่
 if (raw) await scheduleAlerts(data);
 const family = config.widgetFamily || "medium";
-const widget = build(data, family);
+let widget = null;
+if (!CLASSIC && data && data.race && ["small", "medium", "large"].includes(family)) {
+  // ทุกขั้น (คำนวณขนาด/โหลด/อ่านไฟล์) พังได้ → ตกไปใช้หน้าตาแบบเดิม
+  const img = await Promise.resolve().then(() => loadCard(cardUrl(data, family))).catch(() => null);
+  if (img) widget = cardWidget(data, family, img);
+}
+if (!widget) widget = build(data, family);
 widget.refreshAfterDate = nextRefresh(data);
 
 if (config.runsInWidget) Script.setWidget(widget);

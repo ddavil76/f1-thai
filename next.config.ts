@@ -48,6 +48,10 @@ const nextConfig: NextConfig = {
     ],
   },
   headers: async () => [{ source: "/:path*", headers: SECURITY_HEADERS }],
+  // ฟอนต์ที่ใช้วาดการ์ด widget (อ่านจากไฟล์ตอนรัน — ต้องบอกให้ติดไปกับ route บน Vercel)
+  outputFileTracingIncludes: {
+    "/api/widget/card": ["./assets/fonts/**/*"],
+  },
   experimental: {
     // Jolpica จำกัด 4 req/วินาทีต่อ IP แต่ build ปกติแตก worker ตามจำนวนคอร์ (เคยเห็น 15)
     // และแต่ละ worker มีคิวของตัวเอง รวมกันยิงเกินจนโดน 429 → ค่าว่างถูก prerender ติดไป

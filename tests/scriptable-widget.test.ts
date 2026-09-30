@@ -37,6 +37,10 @@ type Captured = {
   refreshAfter?: Date;
   /** แจ้งเตือนที่ค้างรออยู่ในเครื่องหลังรันจบ */
   alerts: Alert[];
+  /** URL รูปการ์ดที่โหลด (ธีมการ์ด) */
+  cardUrls: string[];
+  /** รูปพื้นหลังของ widget (ธีมการ์ด) */
+  backgroundImage?: unknown;
 };
 
 type Alert = { identifier: string; title?: string; body?: string; openURL?: string; at?: Date };
@@ -57,6 +61,8 @@ type Env = {
   alerts?: Alert[];
   /** จำลอง Scriptable รุ่นที่ไม่มี Notification / iOS ไม่ให้สิทธิ์ */
   notification?: "none" | "throws";
+  /** มี Device + โหลดรูปได้ = ธีมการ์ด · fail = โหลดรูปการ์ดไม่ได้ · ไม่ส่ง = ไม่มี Device (หน้าตาเดิม) */
+  card?: { dark?: boolean; fail?: boolean; screen?: [number, number] };
 };
 
 afterEach(() => {
@@ -69,7 +75,8 @@ afterEach(() => {
  * ซึ่งมองไม่เห็นตัวแปรนอก global
  */
 async function run(src: string, env: Env): Promise<Captured> {
-  const out: Captured = { texts: [], dates: [], timers: [], stackUrls: [], tracks: [], fills: [], alerts: [] };
+  const out: Captured = { texts: [], dates: [], timers: [], stackUrls: [], tracks: [], fills: [], alerts: [], cardUrls: [] };
+  const images = new Map<string, unknown>();
   let pending: Alert[] = [...(env.alerts ?? [])];
   const files = env.files ?? new Map<string, string>();
   if (env.now) {
@@ -102,6 +109,7 @@ async function run(src: string, env: Env): Promise<Captured> {
   class FakeWidget extends FakeStack {
     set url(v: string) { out.url = v; }
     set backgroundGradient(v: unknown) { out.background = v; }
+    set backgroundImage(v: unknown) { out.backgroundImage = v; }
     set refreshAfterDate(v: Date) { out.refreshAfter = v; }
     async presentSmall() {} async presentMedium() {} async presentLarge() {}
   }
@@ -145,6 +153,12 @@ async function run(src: string, env: Env): Promise<Captured> {
         if (env.payload === null) throw new Error("offline");
         return env.payload;
       }
+      async loadImage() {
+        if (!env.card || env.card.fail) throw new Error("offline");
+        out.cardUrls.push(this.url);
+        this.response = { statusCode: 200 };
+        return { card: this.url };
+      }
       async loadString() {
         if (!env.code) throw new Error("offline");
         this.response = { statusCode: env.code.status };
@@ -173,8 +187,24 @@ async function run(src: string, env: Env): Promise<Captured> {
         fileExists: (f: string) => files.has(f),
         readString: (f: string) => files.get(f),
         writeString: (f: string, v: string) => void files.set(f, v),
+        cacheDirectory: () => "/cache",
+        createDirectory: () => {},
+        readImage: (f: string) => images.get(f),
+        writeImage: (f: string, v: unknown) => void images.set(f, v),
+        listContents: (d: string) => [...images.keys()].filter((k) => k.startsWith(d + "/")).map((k) => k.slice(d.length + 1)),
+        modificationDate: () => new Date(0),
+        remove: (f: string) => void images.delete(f),
       }),
     },
+    ...(env.card
+      ? {
+          Device: {
+            screenSize: () => ({ width: env.card!.screen?.[0] ?? 390, height: env.card!.screen?.[1] ?? 844 }),
+            screenScale: () => 3,
+            isUsingDarkAppearance: () => !!env.card!.dark,
+          },
+        }
+      : {}),
     config: { widgetFamily: env.family, runsInWidget: true },
     Script: { setWidget() {}, complete() {} },
   };
@@ -681,4 +711,69 @@ describe("widget.js (ตัวโหลดที่ดึงโค้ดล่�
     expect(SRC).toContain("Script.setWidget");
   });
 
+});
+
+describe("scriptable-widget.js — ธีมการ์ด (รูปพื้นหลังจากเว็บ + กล่องนับถอยหลัง)", () => {
+  const card = (family: Family, now = CALM, extra: Partial<Env> = {}) =>
+    run(SRC, { payload: payloadAt(now), family, now, card: {}, ...extra });
+
+  it("ขอรูปขนาดพอดี widget ของรุ่นเครื่อง + session ถัดไป + เขตเวลา แล้วใช้เป็นพื้นหลัง", async () => {
+    const r = await card("medium");
+    expect(r.cardUrls).toHaveLength(1);
+    const q = new URL(r.cardUrls[0]).searchParams;
+    expect(Object.fromEntries(q)).toMatchObject({
+      round: "15", size: "medium", w: "338", h: "158", s: "3", theme: "light", next: "FP1", tz: "420",
+    });
+    expect(r.backgroundImage).toEqual({ card: r.cardUrls[0] });
+    // เนื้อหาเดิม (ชื่อสนาม/ตาราง) อยู่ในรูปแล้ว ไม่วาดซ้ำ
+    expect(r.texts).not.toContain("ROUND 15");
+  });
+
+  it("เครื่องจอใหญ่ / large / โหมดมืด → ขนาดและธีมตาม", async () => {
+    const big = await card("large", CALM, { card: { screen: [430, 932], dark: true } });
+    const q = new URL(big.cardUrls[0]).searchParams;
+    expect([q.get("w"), q.get("h"), q.get("theme")]).toEqual(["364", "382", "dark"]);
+    // บังคับธีมผ่าน Parameter ได้
+    const light = await card("small", CALM, { card: { dark: true }, param: "light" });
+    expect(new URL(light.cardUrls[0]).searchParams.get("theme")).toBe("light");
+  });
+
+  it("เกินวัน: กล่องบอก วัน/ชม. ตัวแดง + ไฟสตาร์ทติดตามจำนวนวันที่เหลือ", async () => {
+    // CALM = อีก 4 วันกว่าถึงซ้อม 1 → ติด 1 ดวงจาก 5
+    const r = await card("small");
+    expect(r.texts).toContain("FP1 เริ่มใน");
+    expect(r.texts).toContain("วัน");
+    expect(r.fills.filter((f) => f === "#ff2a1a")).toHaveLength(1);
+    expect(r.fills.filter((f) => f === "#3a0d0b")).toHaveLength(4);
+  });
+
+  it("ไม่ถึงวัน: timer ของ iOS สีแดง ไฟติดครบ 5 ดวง · medium บอกชื่อ session ภาษาไทยและเวลา", async () => {
+    const r = await card("medium", NEAR);
+    expect(r.timers).toHaveLength(1);
+    expect(r.timers[0].color).toMatchObject({ hex: "#ff3b2f" });
+    expect(r.fills.filter((f) => f === "#ff2a1a")).toHaveLength(5);
+    expect(r.texts.some((t) => t.startsWith("ซ้อม 1 · "))).toBe(true);
+  });
+
+  it("กำลังแข่ง: LIVE ไม่มี timer ไฟดับหมด และรูปทำเครื่องหมาย live", async () => {
+    const r = await card("medium", "2026-09-24T09:00:00Z");
+    expect(r.texts).toContain("● LIVE");
+    expect(r.timers).toHaveLength(0);
+    expect(r.fills.filter((f) => f === "#ff2a1a")).toHaveLength(0);
+    expect(new URL(r.cardUrls[0]).searchParams.get("live")).toBe("1");
+  });
+
+  it("โหลดรูปไม่ได้ → หน้าตาแบบเดิม (ไม่ว่าง) · Parameter classic → ไม่โหลดรูปเลย", async () => {
+    const fail = await card("medium", CALM, { card: { fail: true } });
+    expect(fail.texts).toContain("ROUND 15");
+    expect(fail.backgroundImage).toBeUndefined();
+    const classic = await card("medium", CALM, { param: "classic" });
+    expect(classic.cardUrls).toHaveLength(0);
+    expect(classic.texts).toContain("ROUND 15");
+  });
+
+  it("หน้าจอล็อกไม่ใช้การ์ด", async () => {
+    const r = await card("accessoryRectangular");
+    expect(r.cardUrls).toHaveLength(0);
+  });
 });

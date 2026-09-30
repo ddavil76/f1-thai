@@ -30,6 +30,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("alerts", true)
         set(v) = sp.edit().putBoolean("alerts", v).apply()
 
+    /** หน้าตาแบบเดิม (ไม่ใช้ธีมการ์ดที่โหลดรูปจากเว็บ) */
+    var classic: Boolean
+        get() = sp.getBoolean("classic", false)
+        set(v) = sp.edit().putBoolean("classic", v).apply()
+
     /** id ของแจ้งเตือนที่ตั้งไว้ — รอบหน้าจะได้ยกเลิกตัวที่ไม่อยู่ในแผนใหม่ */
     var alertIds: Set<String>
         get() = sp.getStringSet("alertIds", emptySet()) ?: emptySet()
