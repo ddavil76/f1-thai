@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import type { RaceWithResults } from "@/lib/f1";
 import { teamColor, teamName } from "@/lib/teams";
 import PodiumGraphic from "./PodiumGraphic";
+import PosterHeading from "./poster/PosterHeading";
 import TiltCard from "./TiltCard";
 
 export default function Podium({ race }: { race: RaceWithResults }) {
@@ -17,30 +18,30 @@ export default function Podium({ race }: { race: RaceWithResults }) {
       className="card winner-glow p-5"
       style={{ "--winner": winner } as React.CSSProperties}
     >
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-2">
-        <h2 className="text-lg font-bold">ผลการแข่งล่าสุด</h2>
-        <span className="truncate text-sm text-white/50">
-          {race.raceName} · R{race.round}
-        </span>
-        <span
-          className="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-          style={{
-            // ผสมขาวให้อ่านออกบนพื้นมืด แม้สีทีมจะเข้ม (Williams, Red Bull)
-            color: `color-mix(in srgb, ${winner} 70%, white)`,
-            background: `color-mix(in srgb, ${winner} 14%, transparent)`,
-            boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${winner} 40%, transparent)`,
-          }}
-        >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: winner }} />
-          ผู้ชนะ · {teamName(team.constructorId, team.name)}
-        </span>
-      </div>
+      <PosterHeading kicker="RESULT" title="ผลการแข่งล่าสุด">
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 font-display text-[13px] font-semibold text-white/55">
+          <span className="round-tag">R{race.round}</span>
+          <span className="min-w-0 truncate">{race.raceName}</span>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+            style={{
+              // ผสมขาวให้อ่านออกบนพื้นมืด แม้สีทีมจะเข้ม (Williams, Red Bull)
+              color: `color-mix(in srgb, ${winner} 70%, white)`,
+              background: `color-mix(in srgb, ${winner} 14%, transparent)`,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${winner} 40%, transparent)`,
+            }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: winner }} />
+            ผู้ชนะ · {teamName(team.constructorId, team.name)}
+          </span>
+        </div>
+      </PosterHeading>
 
       <PodiumGraphic top3={top3} />
 
       <Link
         href={`/race/${race.round}`}
-        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-(--color-f1) transition hover:gap-1.5"
+        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-(--color-f1-text) transition hover:gap-1.5"
       >
         ดูผลเต็ม <ArrowRight className="h-3.5 w-3.5" />
       </Link>
