@@ -149,7 +149,8 @@ export async function GET(req: Request) {
         ? { w: trackW, h: H - 24, top: 12, right: 14, sw: 3 }
         : { w: trackW, h: (150 * H) / 382, top: (168 * H) / 382, right: 10, sw: 3.4 };
   const checker = size === "small" ? 120 : size === "medium" ? 170 : 200;
-  const timelineW = Math.min(168, W - pad.l - trackBox.w - trackBox.right - 8);
+  // ไม่ต่ำกว่า 150 — แคบกว่านี้วันที่ต้องขึ้นบรรทัดใหม่ (launcher บางยี่ห้อบอกความกว้างน้อยกว่าจริง)
+  const timelineW = Math.max(150, Math.min(168, W - pad.l - trackBox.w - trackBox.right - 8));
   // ชั้น text สูงเท่าเนื้อหาพอดี (เผื่อเล็กน้อย) — ยิ่งไม่มีที่ว่างเกิน ยิ่งไม่ต้องย่อเมื่อ widget จริงเตี้ยกว่าที่คาด
   const textH = Math.ceil(
     headBottom +
@@ -163,7 +164,7 @@ export async function GET(req: Request) {
   const streak = streakSvg(u(size === "large" ? 5 : 4), size === "large" ? [u(90), u(34), u(14)] : [u(46), u(18), u(8)]);
 
   const meta = (
-    <div style={{ display: "flex", alignItems: "center", gap: u(6) }}>
+    <div style={{ display: "flex", flexShrink: 0, alignItems: "center", gap: u(6) }}>
       <div
         style={{
           display: "flex", background: RED, color: "#fff", borderRadius: u(4), padding: `${u(1)}px ${u(6)}px`,
@@ -181,7 +182,7 @@ export async function GET(req: Request) {
   );
 
   const chipRow = (
-    <div style={{ display: "flex", gap: u(5), marginTop: u(7) }}>
+    <div style={{ display: "flex", flexShrink: 0, gap: u(5), marginTop: u(7) }}>
       {chips.map((c) => (
         <div
           key={c}
@@ -197,7 +198,7 @@ export async function GET(req: Request) {
   );
 
   const timeline = (
-    <div style={{ display: "flex", flexDirection: "column", gap: u(6), marginTop: u(12), width: u(timelineW) }}>
+    <div style={{ display: "flex", flexShrink: 0, flexDirection: "column", gap: u(6), marginTop: u(12), width: u(timelineW) }}>
       {sessions.map((x) => {
         const hot = x.state === "next" || x.state === "live";
         const done = x.state === "done";
@@ -213,10 +214,10 @@ export async function GET(req: Request) {
             <div style={{ display: "flex", width: u(40), fontFamily: "Archivo", fontStyle: "italic", fontWeight: 900, fontSize: u(11), color: hot ? RED : T.ink }}>
               {x.code}
             </div>
-            <div style={{ display: "flex", flex: 1, fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: T.dim }}>
+            <div style={{ display: "flex", flex: 1, fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: T.dim, whiteSpace: "nowrap" }}>
               {x.state === "live" ? "กำลังแข่ง" : x.day}
             </div>
-            <div style={{ display: "flex", fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: hot ? RED : T.ink }}>{x.time}</div>
+            <div style={{ display: "flex", fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: hot ? RED : T.ink, whiteSpace: "nowrap" }}>{x.time}</div>
           </div>
         );
       })}
@@ -249,16 +250,21 @@ export async function GET(req: Request) {
             {meta}
             <div
               style={{
-                display: "flex", marginTop: u(size === "large" ? 6 : 5), fontFamily: "Archivo", fontStyle: "italic", fontWeight: 900,
+                display: "flex", flexShrink: 0, marginTop: u(size === "large" ? 6 : 5), fontFamily: "Archivo", fontStyle: "italic", fontWeight: 900,
                 fontSize: u(nameSize), lineHeight: 0.9, color: T.ink, letterSpacing: -u(nameSize) * 0.01, whiteSpace: "nowrap",
               }}
             >
               {name}
             </div>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" src={streak.uri} width={streak.w} height={u(size === "large" ? 5 : 4)} style={{ marginTop: u(5) }} />
+            <img alt="" src={streak.uri} width={streak.w} height={u(size === "large" ? 5 : 4)} style={{ flexShrink: 0, marginTop: u(5) }} />
             {size === "large" && (
-              <div style={{ display: "flex", marginTop: u(7), fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: T.dim }}>
+              <div
+                style={{
+                  display: "block", flexShrink: 0, marginTop: u(7), fontFamily: "Chakra", fontWeight: 600, fontSize: u(10), color: T.dim,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                }}
+              >
                 {`${race.raceName} · ${race.Circuit.Location.locality}`}
               </div>
             )}
