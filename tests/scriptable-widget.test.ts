@@ -37,6 +37,8 @@ type Captured = {
   refreshAfter?: Date;
   /** แจ้งเตือนที่ค้างรออยู่ในเครื่องหลังรันจบ */
   alerts: Alert[];
+  /** ขนาดที่ตั้งให้ stack (กว้าง × สูง, 0 = ตามเนื้อหา) */
+  sizes: [number, number][];
   /** URL รูปการ์ดที่โหลด (ธีมการ์ด) */
   cardUrls: string[];
   /** รูปพื้นหลังของ widget (ธีมการ์ด) */
@@ -75,7 +77,7 @@ afterEach(() => {
  * ซึ่งมองไม่เห็นตัวแปรนอก global
  */
 async function run(src: string, env: Env): Promise<Captured> {
-  const out: Captured = { texts: [], dates: [], timers: [], stackUrls: [], tracks: [], fills: [], alerts: [], cardUrls: [] };
+  const out: Captured = { texts: [], dates: [], timers: [], stackUrls: [], tracks: [], fills: [], alerts: [], cardUrls: [], sizes: [] };
   const images = new Map<string, unknown>();
   let pending: Alert[] = [...(env.alerts ?? [])];
   const files = env.files ?? new Map<string, string>();
@@ -91,7 +93,8 @@ async function run(src: string, env: Env): Promise<Captured> {
     centerAlignText() {} leftAlignText() {} rightAlignText() {}
   }
   class FakeStack {
-    cornerRadius = 0; spacing = 0; size: unknown;
+    cornerRadius = 0; spacing = 0;
+    set size(v: { width: number; height: number }) { out.sizes.push([v.width, v.height]); }
     set backgroundColor(v: { hex: string }) { out.fills.push(v.hex); }
     addText(s: string) { out.texts.push(s); return new FakeText(); }
     addDate(d: Date) { out.dates.push(d); return new FakeText(); }
@@ -753,6 +756,8 @@ describe("scriptable-widget.js — ธีมการ์ด (รูปพื้�
     expect(r.timers[0].color).toMatchObject({ hex: "#ff3b2f" });
     expect(r.fills.filter((f) => f === "#ff2a1a")).toHaveLength(5);
     expect(r.texts.some((t) => t.startsWith("ซ้อม 1 · "))).toBe(true);
+    // timer อยู่ในกล่องกว้างคงที่ (สูงตามเนื้อหา) — ไม่งั้น iOS ยืดกล่องนับถอยหลังเต็ม widget
+    expect(r.sizes).toContainEqual([Math.ceil(25 * 0.62 * 8), 0]);
   });
 
   it("กำลังแข่ง: LIVE ไม่มี timer ไฟดับหมด และรูปทำเครื่องหมาย live", async () => {
