@@ -42,7 +42,7 @@ export default function ResultsPending({
   return href ? (
     <Link href={href} className="card flex items-center gap-3 p-4 transition hover:border-white/20">
       {body}
-      <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
     </Link>
   ) : (
     <section className="card flex items-center gap-3 p-4">{body}</section>

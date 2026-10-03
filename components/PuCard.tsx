@@ -41,7 +41,7 @@ export default function PuCard({ rows, event }: { rows: Row[]; event: string }) 
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs text-white/40">ข้อมูลจากเอกสาร FIA ถึง {event}</p>
+      <p className="mt-4 text-xs text-white/55">ข้อมูลจากเอกสาร FIA ถึง {event}</p>
     </section>
   );
 }

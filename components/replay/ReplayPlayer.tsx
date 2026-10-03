@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { TrackPath } from "@/lib/circuits";
 import {
@@ -72,7 +72,7 @@ const TimingTower = memo(function TimingTower({
   return (
     <div className="card overflow-x-auto p-2 sm:p-3">
       <div className="min-w-[560px]">
-        <div className="flex items-center gap-2 px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+        <div className="flex items-center gap-2 px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/55">
           <span className="w-6 text-center">P</span>
           <span className="w-16">นักแข่ง</span>
           <span className="w-20 text-right">Gap</span>
@@ -112,7 +112,7 @@ const TimingTower = memo(function TimingTower({
                 </span>
                 <span className="w-20 text-right leading-tight">
                   <span className="block tabular-nums">{r.gapAhead}</span>
-                  <span className="block text-[10px] tabular-nums text-white/35">
+                  <span className="block text-[10px] tabular-nums text-white/55">
                     {r.gapLeader}
                   </span>
                 </span>
@@ -125,7 +125,7 @@ const TimingTower = memo(function TimingTower({
                       >
                         {r.compound}
                       </span>
-                      <span className="text-[10px] tabular-nums text-white/40">
+                      <span className="text-[10px] tabular-nums text-white/55">
                         {r.tyreAge}
                       </span>
                     </span>
@@ -196,37 +196,42 @@ export default function ReplayPlayer({
   const scrubRef = useRef<HTMLInputElement>(null);
   const clockRef = useRef<HTMLSpanElement>(null);
 
+  /** แถบเวลา + นาฬิกา + ตาราง ตามเวลาปัจจุบัน (เขียน DOM ตรง ๆ — ไม่ re-render ทุกเฟรม) */
+  const paint = useCallback(() => {
+    const t = timeRef.current;
+    if (scrubRef.current && document.activeElement !== scrubRef.current) {
+      scrubRef.current.value = String(t);
+    }
+    const fi = frameIdxAt(frames, t);
+    if (clockRef.current) {
+      clockRef.current.textContent = `รอบ ${frames[fi].lap} · ${fmtClock(t)}`;
+    }
+    setFrameIdx((cur) => (cur === fi ? cur : fi));
+  }, [frames]);
+
+  // วนทุกเฟรมเฉพาะตอนกำลังเล่น — หยุดอยู่ไม่ต้องวน (เลื่อนเวลาเองเรียก paint ตรง ๆ)
   useEffect(() => {
+    paint();
+    if (!run) return;
     let last = performance.now();
     let raf = 0;
     const loop = (now: number) => {
-      const dt = now - last;
+      timeRef.current += (now - last) * speed;
       last = now;
-      if (run) {
-        timeRef.current += dt * speed;
-        if (timeRef.current >= durationMs) {
-          timeRef.current = durationMs;
-          setPlaying(false);
-        }
-      }
-      const t = timeRef.current;
-      if (scrubRef.current && document.activeElement !== scrubRef.current) {
-        scrubRef.current.value = String(t);
-      }
-      const fi = frameIdxAt(frames, t);
-      if (clockRef.current) {
-        clockRef.current.textContent = `รอบ ${frames[fi].lap} · ${fmtClock(t)}`;
-      }
-      setFrameIdx((cur) => (cur === fi ? cur : fi));
-      raf = requestAnimationFrame(loop);
+      const end = timeRef.current >= durationMs;
+      if (end) timeRef.current = durationMs;
+      paint();
+      if (end) setPlaying(false);
+      else raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [run, speed, durationMs, frames]);
+  }, [run, speed, durationMs, paint]);
 
   const seek = (t: number) => {
     timeRef.current = Math.max(0, Math.min(durationMs, t));
     if (scrubRef.current) scrubRef.current.value = String(timeRef.current);
+    paint();
   };
   const stepLap = (dir: 1 | -1) => {
     setPlaying(false);
@@ -299,11 +304,11 @@ export default function ReplayPlayer({
           <Activity className="h-5 w-5 shrink-0 text-(--color-f1)" />
           <span className="flex-1 text-sm font-semibold">
             ดูเทเลเมทรีรอบนี้{follow !== null && meta[follow] ? ` · ${meta[follow].code}` : ""}
-            <span className="block text-xs font-normal text-white/45">
+            <span className="block text-xs font-normal text-white/55">
               {follow !== null ? "เทียบกับคันข้างหน้า" : "ผู้นำเทียบกับอันดับ 2"} · ความเร็ว คันเร่ง เบรก เกียร์ ในรอบที่กำลังวิ่ง
             </span>
           </span>
-          <span className="text-white/30">→</span>
+          <span className="text-white/55">→</span>
         </button>
       )}
 
@@ -379,6 +384,7 @@ export default function ReplayPlayer({
           onChange={(e) => {
             setPlaying(false);
             timeRef.current = Number(e.target.value);
+            paint();
           }}
           onPointerDown={() => setPlaying(false)}
           className="h-1 min-w-[8rem] flex-1 accent-(--color-f1)"
@@ -394,7 +400,7 @@ export default function ReplayPlayer({
               className={`rounded-md px-2 py-1 text-xs font-semibold tabular-nums transition ${
                 speed === s
                   ? "bg-white/15 text-white"
-                  : "text-white/40 hover:text-white/70"
+                  : "text-white/55 hover:text-white/70"
               }`}
             >
               {s}×
@@ -402,7 +408,7 @@ export default function ReplayPlayer({
           ))}
         </div>
 
-        <span className="shrink-0 text-xs tabular-nums text-white/35">
+        <span className="shrink-0 text-xs tabular-nums text-white/55">
           จาก {totalLaps} รอบ
         </span>
       </div>
@@ -433,7 +439,7 @@ export default function ReplayPlayer({
         ]}
       />
 
-      <p className="px-1 text-xs text-white/35">
+      <p className="px-1 text-xs text-white/55">
         <span className="text-fuchsia-400">■</span> เร็วสุดในสนาม ·{" "}
         <span className="text-green-400">■</span> เร็วสุดของตัวเอง · เล่นตามเวลาแข่งจริง
         (ตัวคูณ) · ระยะห่าง/ตำแหน่งเป็นค่าประมาณจากเวลาต่อรอบ

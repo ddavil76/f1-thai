@@ -32,7 +32,7 @@ export default function SeasonStrip({
     <section className="card p-4 sm:p-5">
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h2 className="text-base font-bold sec-title">ผู้ชนะทั้งฤดูกาล</h2>
-        <span className="text-xs text-white/40">
+        <span className="text-xs text-white/55">
           {byRound.size}/{schedule.length} สนาม
         </span>
       </div>
@@ -64,7 +64,7 @@ export default function SeasonStrip({
           );
         })}
       </ol>
-      <div className="mt-1 flex justify-between text-[10px] tabular-nums text-white/35">
+      <div className="mt-1 flex justify-between text-[10px] tabular-nums text-white/55">
         <span>R1</span>
         <span>R{schedule.at(-1)?.round}</span>
       </div>
@@ -75,7 +75,7 @@ export default function SeasonStrip({
             <li key={id} className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-[2px]" style={{ background: teamColor(id) }} />
               {t.name}
-              <span className="tabular-nums text-white/35">{t.n}</span>
+              <span className="tabular-nums text-white/55">{t.n}</span>
             </li>
           ))}
         </ul>

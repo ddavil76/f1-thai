@@ -10,7 +10,10 @@ export default function BottomNav() {
   const { ref, style } = useSlidingPill<HTMLDivElement>(pathname);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 flex justify-center p-4 md:hidden">
+    <nav
+      aria-label="เมนูหลัก"
+      className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden"
+    >
       <div
         ref={ref}
         className="relative flex items-center gap-1 rounded-full border border-white/10 bg-neutral-950/80 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-md"

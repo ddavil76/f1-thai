@@ -210,7 +210,7 @@ export default function TelemetryCompare({
               [pb, setPb, lapB, colourB, "คนที่ 2"],
             ] as const).map(([p, set, lap, colour, label], idx) => (
               <div key={idx} className="card space-y-2 p-3" style={{ borderLeft: `4px solid ${colour}` }}>
-                <div className="text-[11px] font-semibold text-white/40">
+                <div className="text-[11px] font-semibold text-white/55">
                   {label} {idx === 1 && <span className="font-normal">(เส้นประ)</span>}
                 </div>
                 <div className="flex gap-2">
@@ -250,7 +250,7 @@ export default function TelemetryCompare({
 
           {([[pa, lapA, dA], [pb, lapB, dB]] as const).map(([p, lap, d], i) =>
             p.lap != null && lap && lap.lap !== p.lap ? (
-              <p key={i} className="text-xs text-white/45">
+              <p key={i} className="text-xs text-white/55">
                 รอบ {p.lap} ของ {d?.code} ไม่มีข้อมูลครบ (เช่น รอบออกตัว/เข้าพิท) — แสดงรอบเร็วสุด L{lap.lap} แทน
               </p>
             ) : null,
@@ -265,9 +265,9 @@ export default function TelemetryCompare({
               <PlayCircle className="h-5 w-5 shrink-0 text-(--color-f1)" />
               <span className="flex-1 text-sm font-semibold">
                 ดูรอบ {lapA.lap} ของ {dA.code} ในรีเพลย์
-                <span className="block text-xs font-normal text-white/45">ทุกคันบนสนาม · กล้องตาม {dA.code} ตั้งแต่ต้นรอบ</span>
+                <span className="block text-xs font-normal text-white/55">ทุกคันบนสนาม · กล้องตาม {dA.code} ตั้งแต่ต้นรอบ</span>
               </span>
-              <span className="text-white/30">→</span>
+              <span className="text-white/55">→</span>
             </button>
           )}
 
@@ -460,7 +460,7 @@ function LapSummary({ lap, other, trace }: { lap: TelemetryLap; other: Telemetry
 function Stat({ label, value, hi, wide }: { label: string; value: string; hi?: boolean; wide?: boolean }) {
   return (
     <div className={`rounded-md bg-white/[0.04] px-1 py-1 ${wide ? "col-span-2" : ""}`}>
-      <div className="text-white/35">{label}</div>
+      <div className="text-white/55">{label}</div>
       <div className={`font-mono ${hi ? "font-bold text-white" : "text-white/65"}`}>{value}</div>
     </div>
   );

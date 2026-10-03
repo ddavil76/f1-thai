@@ -56,7 +56,7 @@ export default async function ReplayPage({ params }: Params) {
       <div>
         <Link
           href={`/race/${round}`}
-          className="inline-flex items-center gap-1 text-sm text-white/40 transition hover:text-white/70"
+          className="inline-flex items-center gap-1 text-sm text-white/55 transition hover:text-white/70"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           {race.raceName}

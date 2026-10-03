@@ -135,11 +135,11 @@ export default async function PowerUnitsPage() {
                 <h2 className="flex items-center gap-2 font-bold sec-title">
                   <span className={`h-2 w-2 rounded-full ${PU_STATUS_UI[status].dot}`} />
                   {PU_STATUS_UI[status].title}
-                  <span className="text-sm font-normal text-white/40 tabular-nums">
+                  <span className="text-sm font-normal text-white/55 tabular-nums">
                     {rows.length} คน
                   </span>
                 </h2>
-                <p className="mt-0.5 text-xs text-white/40">{PU_STATUS_UI[status].desc}</p>
+                <p className="mt-0.5 text-xs text-white/55">{PU_STATUS_UI[status].desc}</p>
               </header>
               <ul className="divide-y divide-white/5">
                 {rows.map((r) => (
@@ -151,7 +151,7 @@ export default async function PowerUnitsPage() {
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <p className="text-sm">
                         {driverName(r, "font-semibold")}
-                        <span className="ml-2 text-xs text-white/40">{teamLabel(r)}</span>
+                        <span className="ml-2 text-xs text-white/55">{teamLabel(r)}</span>
                       </p>
                       <PuNextChange used={r.used} />
                     </div>
@@ -200,7 +200,7 @@ export default async function PowerUnitsPage() {
                   <div className="mb-1.5 flex items-baseline justify-between gap-2 text-sm">
                     <span className="min-w-0 truncate">
                       {driverName(r, "font-medium")}
-                      <span className="ml-1.5 text-xs text-white/35">#{Number(r.number)}</span>
+                      <span className="ml-1.5 text-xs text-white/55">#{Number(r.number)}</span>
                     </span>
                     <PuStatusBadge status={statusOf.get(r.number)!} />
                   </div>
@@ -219,12 +219,12 @@ export default async function PowerUnitsPage() {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[600px] text-sm tabular-nums">
           <thead>
-            <tr className="border-b border-white/5 text-[11px] text-white/40">
+            <tr className="border-b border-white/5 text-[11px] text-white/55">
               <th className="px-4 py-3 text-left font-medium">นักขับ</th>
               {PU_KEYS.map((k) => (
                 <th key={k} title={PU_INFO[k].th} className="px-1 py-3 text-center font-semibold">
                   {puLabel(k)}
-                  <span className="block font-normal text-white/25">/{PU_INFO[k].limit}</span>
+                  <span className="block font-normal text-white/55">/{PU_INFO[k].limit}</span>
                 </th>
               ))}
               <th className="px-4 py-3 text-right font-medium">สถานะ</th>
@@ -253,7 +253,7 @@ export default async function PowerUnitsPage() {
                           ? "font-bold text-red-400"
                           : n === limit
                             ? "text-white"
-                            : "text-white/45"
+                            : "text-white/55"
                       }`}
                     >
                       {n}
@@ -280,13 +280,13 @@ export default async function PowerUnitsPage() {
             <div className="min-w-0 flex-1">
               <p className="font-semibold">
                 {p.driver}
-                <span className="ml-2 text-xs font-normal text-white/45">
+                <span className="ml-2 text-xs font-normal text-white/55">
                   {p.event} · {sessionTh(p.session)}
                 </span>
               </p>
               <p className="text-sm text-red-300">{decisionTh(p.decision)}</p>
               {p.elements.length > 0 && (
-                <p className="mt-1 text-xs text-white/45">{p.elements.join(" · ")}</p>
+                <p className="mt-1 text-xs text-white/55">{p.elements.join(" · ")}</p>
               )}
             </div>
             <a
@@ -294,14 +294,14 @@ export default async function PowerUnitsPage() {
               target="_blank"
               rel="noreferrer"
               aria-label="เปิดคำตัดสิน (PDF)"
-              className="shrink-0 self-start text-white/30 transition hover:text-white/70"
+              className="shrink-0 self-start text-white/55 transition hover:text-white/70"
             >
               <FileText className="h-4 w-4" />
             </a>
           </li>
         ))}
       </ul>
-      <p className="px-1 text-xs text-white/35">แสดงคำตัดสินจากสนามล่าสุด</p>
+      <p className="px-1 text-xs text-white/55">แสดงคำตัดสินจากสนามล่าสุด</p>
     </section>
   );
 
@@ -313,7 +313,7 @@ export default async function PowerUnitsPage() {
             <span className="w-14 shrink-0 text-xs font-bold text-white/60">{k}</span>
             <div className="min-w-0 flex-1">
               <p className="font-medium">{PU_INFO[k].th}</p>
-              <p className="truncate text-xs text-white/40">{PU_INFO[k].en}</p>
+              <p className="truncate text-xs text-white/55">{PU_INFO[k].en}</p>
             </div>
             <span className="shrink-0 text-sm text-white/60">
               โควตา <b className="text-white tabular-nums">{PU_INFO[k].limit}</b>

@@ -280,7 +280,7 @@ export default function SeasonGlobe({ races }: { races: GlobeRace[] }) {
           <span className="text-2xl leading-none">{picked.flag}</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">
-              <span className="text-white/45">R{picked.round} · </span>
+              <span className="text-white/55">R{picked.round} · </span>
               {picked.name}
             </span>
             <span className="flex items-center gap-1.5 truncate text-xs text-white/60">

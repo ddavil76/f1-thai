@@ -28,7 +28,7 @@ export default function ResultsTable({
               href={`/driver/${r.Driver.driverId}`}
               className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.04] sm:px-5"
             >
-              <span className="poster w-7 text-right text-lg tabular-nums text-white/45">
+              <span className="poster w-7 text-right text-lg tabular-nums text-white/55">
                 {r.position}
               </span>
               <span

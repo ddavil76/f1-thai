@@ -59,7 +59,7 @@ export default function CircuitMap({
           }
         />
       ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-white/30">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-white/55">
           <Flag className="h-7 w-7" strokeWidth={1.5} />
           <span className="text-xs">ไม่มีผังสนาม</span>
         </div>

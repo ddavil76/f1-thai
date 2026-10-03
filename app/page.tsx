@@ -60,7 +60,7 @@ export default async function Home() {
       <h1 className="sr-only">
         F1 Week Race — สนามแข่ง F1 สนามถัดไป นับถอยหลัง ตารางคะแนน และปฏิทิน เวลาไทย
       </h1>
-      <p className="poster mb-5 text-sm text-white/45">
+      <p className="poster mb-5 text-sm text-white/55">
         SEASON <span className="text-(--color-f1-text)">{SEASON}</span>
       </p>
 
@@ -200,7 +200,7 @@ export default async function Home() {
                             circuitId={r.Circuit.circuitId}
                           />
                         </span>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
+                        <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
                       </Link>
                     </li>
                   );

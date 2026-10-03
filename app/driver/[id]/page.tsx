@@ -79,7 +79,7 @@ export default async function DriverPage({ params }: Params) {
       <div>
         <Link
           href="/standings"
-          className="inline-flex items-center gap-1 text-sm text-white/40 transition hover:text-white/70"
+          className="inline-flex items-center gap-1 text-sm text-white/55 transition hover:text-white/70"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           ตารางคะแนน
@@ -126,19 +126,19 @@ export default async function DriverPage({ params }: Params) {
             <p className="poster text-3xl tabular-nums">
               <CountUp value={Number(standing.position)} prefix="P" />
             </p>
-            <p className="text-xs text-white/40">อันดับ</p>
+            <p className="text-xs text-white/55">อันดับ</p>
           </div>
           <div className="p-4">
             <p className="poster text-3xl tabular-nums">
               <CountUp value={Number(standing.points)} />
             </p>
-            <p className="text-xs text-white/40">แต้ม</p>
+            <p className="text-xs text-white/55">แต้ม</p>
           </div>
           <div className="p-4">
             <p className="poster text-3xl tabular-nums">
               <CountUp value={Number(standing.wins)} />
             </p>
-            <p className="text-xs text-white/40">ชนะ</p>
+            <p className="text-xs text-white/55">ชนะ</p>
           </div>
         </TiltCard>
       )}
@@ -196,7 +196,7 @@ export default async function DriverPage({ params }: Params) {
                   </span>
                   <span
                     className={`poster w-12 shrink-0 text-right text-lg tabular-nums ${
-                      dnf ? "text-white/30" : ""
+                      dnf ? "text-white/55" : ""
                     }`}
                   >
                     {dnf ? "DNF" : `P${pos}`}

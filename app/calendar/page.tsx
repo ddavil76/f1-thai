@@ -88,7 +88,7 @@ export default async function CalendarPage() {
                 <Link
                   href={`/race/${r.round}`}
                   className={`flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/[0.05] ${
-                    past ? "opacity-60 hover:opacity-100" : ""
+                    past ? "text-white/70 hover:text-white" : ""
                   } ${
                     isNext
                       ? "bg-(--color-f1)/8 ring-1 ring-inset ring-(--color-f1)/30"
@@ -143,7 +143,7 @@ export default async function CalendarPage() {
                       น.
                     </span>
                   </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
                 </Link>
               </li>
             );

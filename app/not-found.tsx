@@ -8,7 +8,7 @@ export default function NotFound() {
   return (
     <main className="mx-auto max-w-3xl">
       <div className="card flex flex-col items-center gap-5 p-10 text-center">
-        <Flag className="h-9 w-9 text-white/40" strokeWidth={1.5} />
+        <Flag className="h-9 w-9 text-white/55" strokeWidth={1.5} />
 
         <div className="space-y-1">
           <p className="poster text-6xl tabular-nums text-(--color-f1)">
@@ -28,7 +28,10 @@ export default function NotFound() {
           กลับหน้าหลัก
         </Link>
 
-        <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1 border-t border-white/5 pt-5 text-sm">
+        <nav
+          aria-label="ไปหน้าอื่น"
+          className="flex flex-wrap justify-center gap-x-4 gap-y-1 border-t border-white/5 pt-5 text-sm"
+        >
           {NAV_ITEMS.filter((item) => item.href !== "/").map((item) => (
             <Link
               key={item.href}

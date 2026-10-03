@@ -11,11 +11,11 @@ const Tile = ({
   label: string;
 }) => (
   <div className="flex flex-col items-center gap-1 p-3 text-center">
-    <span className="text-white/35">{icon}</span>
+    <span className="text-white/55">{icon}</span>
     <span className="poster text-lg tabular-nums leading-none">
       {value}
     </span>
-    <span className="text-[11px] text-white/40">{label}</span>
+    <span className="text-[11px] text-white/55">{label}</span>
   </div>
 );
 

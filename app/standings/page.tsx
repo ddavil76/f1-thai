@@ -70,9 +70,9 @@ export default async function StandingsPage() {
           <Users className="h-5 w-5 shrink-0 text-(--color-f1)" />
           <span className="min-w-0 flex-1 text-sm font-semibold">
             เทียบนักขับ
-            <span className="ml-2 font-normal text-white/45">เลือกสองคนมาวัดกัน</span>
+            <span className="ml-2 font-normal text-white/55">เลือกสองคนมาวัดกัน</span>
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
         </Link>
         <Link
           href="/pitstops"
@@ -81,9 +81,9 @@ export default async function StandingsPage() {
           <Timer className="h-5 w-5 shrink-0 text-(--color-f1)" />
           <span className="min-w-0 flex-1 text-sm font-semibold">
             พิทสต็อป
-            <span className="ml-2 font-normal text-white/45">ทีมไหนเข้าพิทเร็วสุด</span>
+            <span className="ml-2 font-normal text-white/55">ทีมไหนเข้าพิทเร็วสุด</span>
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
         </Link>
       </div>
 
@@ -96,11 +96,11 @@ export default async function StandingsPage() {
         <Cog className="h-5 w-5 shrink-0 text-(--color-f1)" />
         <span className="flex-1 text-sm font-semibold">
           ชิ้นส่วนเครื่องยนต์
-          <span className="ml-2 font-normal text-white/45">
+          <span className="ml-2 font-normal text-white/55">
             ใครใช้เครื่องยนต์เกินโควตาแล้วบ้าง
           </span>
         </span>
-        <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+        <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
       </Link>
 
       <SectionTabs

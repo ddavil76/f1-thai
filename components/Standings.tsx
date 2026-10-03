@@ -48,7 +48,7 @@ function PointsCell({ points, leader }: { points: string; leader: number }) {
     <div className="w-16 shrink-0 text-right">
       <p className="poster text-lg leading-none tabular-nums">{points}</p>
       {gap > 0 ? (
-        <p className="mt-0.5 text-[11px] tabular-nums text-white/35">−{gap}</p>
+        <p className="mt-0.5 text-[11px] tabular-nums text-white/55">−{gap}</p>
       ) : (
         <p className="mt-0.5 text-[11px] font-semibold text-(--color-f1)">นำ</p>
       )}
@@ -95,7 +95,7 @@ export default function Standings({
                     href={`/driver/${s.Driver.driverId}`}
                     className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.04]"
                   >
-                    <span className="poster w-7 text-right text-lg text-white/45">{s.position}</span>
+                    <span className="poster w-7 text-right text-lg text-white/55">{s.position}</span>
                     {img ? (
                       <span
                         className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full"
@@ -136,7 +136,7 @@ export default function Standings({
                       </div>
                     </div>
                     {Number(s.wins) > 0 && (
-                      <span className="flex shrink-0 items-center gap-1 text-xs text-white/40">
+                      <span className="flex shrink-0 items-center gap-1 text-xs text-white/55">
                         <Trophy className="h-3 w-3" />
                         {s.wins}
                       </span>
@@ -152,7 +152,7 @@ export default function Standings({
                   href={`/constructor/${s.Constructor.constructorId}`}
                   className="flex items-center gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/[0.04]"
                 >
-                  <span className="poster w-7 text-right text-lg text-white/45">{s.position}</span>
+                  <span className="poster w-7 text-right text-lg text-white/55">{s.position}</span>
                   <span
                     className="h-8 w-1 rounded-full"
                     style={{ background: TEAM_COLOR[s.Constructor.constructorId] ?? "#666666" }}

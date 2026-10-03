@@ -18,14 +18,14 @@ export default function PuCells({ used }: { used: PuUsed }) {
               over > 0 ? "bg-red-500/10 ring-1 ring-inset ring-red-500/30" : "bg-white/[0.04]"
             }`}
           >
-            <p className="truncate text-[9px] font-semibold tracking-wide text-white/40">
+            <p className="truncate text-[9px] font-semibold tracking-wide text-white/55">
               {puLabel(k)}
             </p>
             <p className="leading-tight tabular-nums">
               <span className={`display text-base font-bold ${over > 0 ? "text-red-400" : ""}`}>
                 {n}
               </span>
-              <span className="text-[10px] text-white/35">/{limit}</span>
+              <span className="text-[10px] text-white/55">/{limit}</span>
             </p>
             <div className="mt-1 flex flex-wrap justify-center gap-px px-0.5">
               {Array.from({ length: Math.max(n, limit) }, (_, i) => (

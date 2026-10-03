@@ -36,18 +36,20 @@ export default function WeekendTimeline({
         const hot = i === at;
         const live = hot && w.start <= now;
         const iso = new Date(w.start).toISOString();
+        // จบแล้ว = ตัวหนังสือจางลงแต่ยังอ่านออก (ไม่ใช้ opacity ทั้งแถว — จางจนต่ำกว่าเกณฑ์อ่านได้)
+        const dim = done && dimDone;
         return (
           <li
             key={w.label}
             className={`grid grid-cols-[14px_62px_1fr_auto] items-center gap-2.5 font-display text-[15px] font-semibold ${
-              done && dimDone ? "opacity-45" : ""
+              dim ? "text-white/55" : ""
             }`}
           >
             <span
               className={`h-3 w-3 rounded-full border-2 ${
                 hot
                   ? "border-(--color-f1) bg-(--color-f1) shadow-[0_0_0_4px_rgb(225_6_0/0.25)]"
-                  : code === "RACE"
+                  : code === "RACE" && !dim
                     ? "border-white"
                     : "border-white/20"
               }`}

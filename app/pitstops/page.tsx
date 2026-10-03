@@ -67,7 +67,7 @@ export default async function PitStopsPage() {
         {/* จอมือถือซ่อนคอลัมน์ "เร็วสุดของสนาม" (ทีมที่เร็วสุดบ่อยสุดมีในการ์ดด้านบนแล้ว) */}
         <table className="w-full text-sm tabular-nums">
           <thead>
-            <tr className="border-b border-white/5 text-[11px] text-white/40">
+            <tr className="border-b border-white/5 text-[11px] text-white/55">
               <th className="px-4 py-3 text-left font-medium sm:px-5">ทีม</th>
               <th className="px-2 py-3 text-right font-medium">อันดับเฉลี่ย</th>
               <th className="hidden px-2 py-3 text-right font-medium sm:table-cell">
@@ -81,7 +81,7 @@ export default async function PitStopsPage() {
               <tr key={t.constructorId}>
                 <td className="px-4 py-2.5 sm:px-5">
                   <span className="flex items-center gap-2 whitespace-nowrap">
-                    <span className="w-4 text-right text-white/40">{i + 1}</span>
+                    <span className="w-4 text-right text-white/55">{i + 1}</span>
                     <span
                       className="h-3.5 w-1 shrink-0 rounded-full"
                       style={{ background: teamColor(t.constructorId) }}
@@ -95,7 +95,7 @@ export default async function PitStopsPage() {
                 </td>
                 <td className="px-4 py-2.5 text-right sm:px-5">
                   {fmtSec(t.best.seconds)}
-                  <span className="ml-1 hidden text-xs text-white/40 sm:inline">R{t.best.round}</span>
+                  <span className="ml-1 hidden text-xs text-white/55 sm:inline">R{t.best.round}</span>
                 </td>
               </tr>
             ))}
@@ -114,7 +114,7 @@ export default async function PitStopsPage() {
               href={`/race/${f.round}`}
               className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.04] sm:px-5"
             >
-              <span className="w-6 shrink-0 text-right tabular-nums text-white/40">{f.round}</span>
+              <span className="w-6 shrink-0 text-right tabular-nums text-white/55">{f.round}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{f.raceName}</span>
                 <span className="flex items-center gap-1.5 truncate text-xs text-white/50">
@@ -127,9 +127,9 @@ export default async function PitStopsPage() {
               </span>
               <span className="shrink-0 font-bold tabular-nums">
                 {fmtSec(f.stop.seconds)}
-                <span className="ml-0.5 text-xs font-normal text-white/40">วิ</span>
+                <span className="ml-0.5 text-xs font-normal text-white/55">วิ</span>
               </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
+              <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
             </Link>
           </li>
         ))}
@@ -146,17 +146,17 @@ export default async function PitStopsPage() {
           <p className="display line-clamp-2 text-base font-bold leading-tight sm:text-lg">
             {teamName(teams[0].constructorId, teams[0].team)}
           </p>
-          <p className="text-xs text-white/40">อันดับเฉลี่ยดีสุด</p>
+          <p className="text-xs text-white/55">อันดับเฉลี่ยดีสุด</p>
         </div>
         <div className="min-w-0 p-4">
           <p className="display line-clamp-2 text-base font-bold leading-tight sm:text-lg">
             {teamName(mostWins.constructorId, mostWins.team)}
           </p>
-          <p className="text-xs text-white/40">เร็วสุดของสนาม {mostWins.raceWins} ครั้ง</p>
+          <p className="text-xs text-white/55">เร็วสุดของสนาม {mostWins.raceWins} ครั้ง</p>
         </div>
         <div className="p-4">
           <p className="poster text-3xl tabular-nums">{totalStops}</p>
-          <p className="text-xs text-white/40">พิทที่นับ</p>
+          <p className="text-xs text-white/55">พิทที่นับ</p>
         </div>
       </section>
 
