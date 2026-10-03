@@ -64,7 +64,7 @@ export default async function ReplayPage({ params }: Params) {
         <p className="poster mt-3 text-sm text-(--color-f1-text)">
           REPLAY · {cardName(circuitId, race.Circuit.circuitName)}
         </p>
-        <h1 className="mt-1 text-2xl font-black tracking-tight md:text-3xl">
+        <h1 className="mt-1 text-2xl font-black md:text-3xl">
           รีเพลย์ &amp; เทเลเมทรี
         </h1>
         <SpeedStreak className="mt-2.5" />

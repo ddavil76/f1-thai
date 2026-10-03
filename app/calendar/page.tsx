@@ -50,7 +50,7 @@ export default async function CalendarPage() {
       <header className="space-y-3">
         <div className="space-y-1">
           <p className="poster text-sm text-(--color-f1-text)">CALENDAR</p>
-          <h1 className="text-3xl font-black tracking-tight md:text-4xl">
+          <h1 className="text-3xl font-black md:text-4xl">
             ปฏิทิน <span className="text-(--color-f1)">F1</span> ทั้งฤดูกาล
           </h1>
           <SpeedStreak className="pb-1 pt-1.5" />
