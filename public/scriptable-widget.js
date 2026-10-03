@@ -681,11 +681,16 @@ function pill(parent, data, family) {
     text(r, String(Math.floor(left / HOUR) % 24).padStart(2, "0"), { size, color: PILL_RED, mono: true });
     text(r, "ชม.", { size: 10.5, color: PILL_TEXT, bold: true });
   } else {
-    const t = p.addDate(new Date(target));
+    // timer ของ iOS ขยายเต็มความกว้างที่เหลือ → กล่องยืดยาวทั้ง widget
+    // ห่อด้วยกล่องกว้างคงที่พอดี 8 ตัว ("15:40:49" ตัวเลขฟอนต์ mono กว้างราว 0.62 เท่าของขนาด)
+    const box = p.addStack();
+    box.size = new Size(Math.ceil(size * 0.62 * 8), 0);
+    const t = box.addDate(new Date(target));
     t.applyTimerStyle();
     t.font = monoFont(size);
     t.textColor = PILL_RED;
     t.lineLimit = 1;
+    t.leftAlignText();
   }
   return p;
 }
