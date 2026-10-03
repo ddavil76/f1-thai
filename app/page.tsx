@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ChevronRight, PartyPopper, Zap } from "lucide-react";
+import { ArrowRight, ChevronRight, PartyPopper, Zap } from "lucide-react";
 import CircuitMap from "@/components/CircuitMap";
 import Podium from "@/components/Podium";
+import Standings from "@/components/Standings";
 import WeatherBadge from "@/components/WeatherBadge";
 import ReactionPromo from "@/components/ReactionPromo";
 import WidgetPromo from "@/components/WidgetPromo";
@@ -16,20 +17,24 @@ import WeekendTimeline from "@/components/poster/WeekendTimeline";
 import { circuitTrack } from "@/lib/circuits";
 import {
   getSchedule, getLastResults, findNextRace, getUpcomingRaces, getSessionWindows,
-  getCircuitImage, isSprintWeekend, toDate, resultsGap, firstRaceWithoutResults, nowMs,
+  getCircuitImage, getDriverStandings, getConstructorStandings, isSprintWeekend, toDate, resultsGap, firstRaceWithoutResults, nowMs,
 } from "@/lib/f1";
 import { cardName, raceLaps } from "@/lib/widget-card";
 import { getRaceWeather } from "@/lib/weather";
+import { getDriverImages } from "@/lib/drivers";
 import { SEASON } from "@/lib/season";
 
 export const revalidate = 600;
 
 
 export default async function Home() {
-  const [races, lastRace] = await Promise.all([
+  const [races, lastRace, drivers, constructors] = await Promise.all([
     getSchedule(SEASON),
     getLastResults(SEASON),
+    getDriverStandings(SEASON),
+    getConstructorStandings(SEASON),
   ]);
+  const driverImages = await getDriverImages(drivers.slice(0, 5).map((d) => d.Driver));
 
   const next = findNextRace(races);
   const following = getUpcomingRaces(races, 4).slice(1); // 3 สนามถัดจากสนามหน้า
@@ -74,7 +79,8 @@ export default async function Home() {
               <div className="flex flex-wrap items-center gap-2 font-display text-[13px] font-semibold text-white/55">
                 <span className="round-tag">R{next.round}</span>
                 <span>
-                  {next.season} · {next.Circuit.Location.country.toUpperCase()} · สนามถัดไป
+                  {next.season} · {next.Circuit.Location.country.toUpperCase()} ·{" "}
+                  <span className="poster text-(--color-f1-text)">NEXT RACE</span>
                 </span>
                 {isSprintWeekend(next) && (
                   <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-300 ring-1 ring-yellow-400/30">
@@ -129,6 +135,13 @@ export default async function Home() {
                     raceStart={raceStart.toISOString()}
                     circuitId={next.Circuit.circuitId}
                   />
+                  <Link
+                    href={`/race/${next.round}`}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-(--color-f1) px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-110 active:scale-[0.98]"
+                  >
+                    ดูรายละเอียดสนาม
+                    <ArrowRight className="size-4" />
+                  </Link>
                 </div>
               </div>
 
@@ -147,24 +160,39 @@ export default async function Home() {
             </p>
           )}
 
+          {next && windows.length > 0 && (
+            <section className="card card-poster p-5">
+              <PosterHeading kicker="RACE WEEK" title="ตารางสุดสัปดาห์นี้" />
+              <WeekendTimeline
+                variant="cards"
+                windows={windows}
+                serverNow={serverNow}
+                circuitId={next.Circuit.circuitId}
+              />
+            </section>
+          )}
+
           <ReactionPromo />
           <WidgetPromo />
         </div>
 
         {/* ---- คอลัมน์ขวา: ตารางสุดสัปดาห์ / ผลล่าสุด / ถัดไป ---- */}
         <div className="min-w-0 space-y-6">
-          {next && windows.length > 0 && (
-            <section className="card card-poster p-5">
-              <PosterHeading kicker="WEEKEND" title="ตารางสุดสัปดาห์นี้" />
-              <WeekendTimeline windows={windows} serverNow={serverNow} circuitId={next.Circuit.circuitId} />
-            </section>
-          )}
-
           {pendingStart && <ResultsRefresher startIso={pendingStart.toISOString()} />}
           {pending && pendingGap === "awaiting" && (
             <ResultsPending race={pending} status="awaiting" href={`/race/${pending.round}`} />
           )}
           {lastRace && <Podium race={lastRace} />}
+
+          {drivers.length > 0 && (
+            <Standings
+              drivers={drivers}
+              constructors={constructors}
+              driverImages={driverImages}
+              top={5}
+              href="/standings"
+            />
+          )}
 
           {following.length > 0 && (
             <section className="card card-poster p-5">
