@@ -26,6 +26,9 @@ export default function SiteFooter({
 }) {
   return (
     <footer className={`space-y-2 text-center text-xs text-white/55 ${className}`}>
+      <p className="poster text-[11px]">
+        F1 WEEK RACE <span className="text-(--color-f1-text)">|</span> RACE WEEK. CLOSER TO YOU.
+      </p>
       <p>{source ? `${SOURCES[source]} · ${DISCLAIMER}` : DISCLAIMER}</p>
       {children}
     </footer>

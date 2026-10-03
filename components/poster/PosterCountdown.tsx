@@ -5,7 +5,6 @@ import LocalTime from "@/components/tz/LocalTime";
 import { pickSession, type SessionWindow } from "@/lib/race-window";
 import { lightsLit } from "@/lib/widget-card";
 
-const DAY = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** ชื่อ session ภาษาไทยในกล่องนับถอยหลัง (ตรงกับ widget) */
@@ -18,7 +17,7 @@ const TH: Record<string, string> = {
 
 /**
  * กล่องนับถอยหลังแบบ widget ธีมการ์ด — ไฟสตาร์ท 5 ดวงติดเพิ่มวันละดวงเมื่อใกล้เวลา
- * · เกินวัน: "1 วัน 10 ชม. 56 นาที" · ไม่ถึงวัน: 05:42:10 เดินทุกวินาที · กำลังแข่ง: ● LIVE ไฟดับหมด
+ * · กล่อง 4 ช่อง วัน/ชั่วโมง/นาที/วินาที เดินทุกวินาที · กำลังแข่ง: ● LIVE ไฟดับหมด
  * เลือก session ฝั่ง client — หน้าถูกแคช (ISR) เลือกครั้งเดียวตอน render จะค้าง
  */
 export default function PosterCountdown({
@@ -53,7 +52,16 @@ export default function PosterCountdown({
   const hours = Math.floor(s / 3600) % 24;
   const mins = Math.floor(s / 60) % 60;
 
-  const unit = (t: string) => <small className="mr-2 font-display text-[15px] font-bold text-white/85">{t}</small>;
+  const box = (v: string, label: string, hot = false) => (
+    <div className="rounded-xl bg-black/40 px-1 py-2 text-center ring-1 ring-white/10">
+      <div
+        className={`poster text-[32px] leading-none tabular-nums sm:text-[38px] ${hot ? "text-(--color-f1-text)" : ""}`}
+      >
+        {v}
+      </div>
+      <div className="mt-1.5 font-display text-[12px] font-bold text-white/65">{label}</div>
+    </div>
+  );
 
   return (
     <div className="rounded-2xl bg-[#1b1b22] px-4 pb-3 pt-2.5 ring-1 ring-white/10">
@@ -71,34 +79,21 @@ export default function PosterCountdown({
         </span>
       </div>
 
-      <div className="mt-1 flex items-baseline font-display text-[42px] font-bold leading-none tabular-nums text-(--color-f1-text) sm:text-[46px]">
-        {live ? (
-          <span className="text-[34px]">● LIVE</span>
-        ) : left > DAY ? (
-          <>
-            <span className="sr-only">
-              เหลืออีก {days} วัน {hours} ชั่วโมง {mins} นาที
-            </span>
-            <span aria-hidden className="flex items-baseline gap-1">
-              {days}
-              {unit("วัน")}
-              {pad(hours)}
-              {unit("ชม.")}
-              {pad(mins)}
-              {unit("นาที")}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="sr-only">
-              เหลืออีก {Math.floor(s / 3600)} ชั่วโมง {mins} นาที
-            </span>
-            <span aria-hidden>
-              {pad(Math.floor(s / 3600))}:{pad(mins)}:{pad(s % 60)}
-            </span>
-          </>
-        )}
-      </div>
+      {live ? (
+        <div className="poster mt-2 py-2 text-[34px] leading-none text-(--color-f1-text)">● LIVE</div>
+      ) : (
+        <>
+          <span className="sr-only">
+            เหลืออีก {days} วัน {hours} ชั่วโมง {mins} นาที
+          </span>
+          <div aria-hidden className="mt-2.5 grid grid-cols-4 gap-2">
+            {box(pad(days), "วัน")}
+            {box(pad(hours), "ชั่วโมง")}
+            {box(pad(mins), "นาที")}
+            {box(pad(s % 60), "วินาที", true)}
+          </div>
+        </>
+      )}
 
       <p className="mt-2 border-t border-white/10 pt-2 text-[13px] text-white/60">
         ออกสตาร์ท <LocalTime iso={raceStart} kind="full" circuitId={circuitId} /> น.

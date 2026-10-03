@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Trophy } from "lucide-react";
+import { ChevronRight, Trophy } from "lucide-react";
 import type { DriverStanding, ConstructorStanding } from "@/lib/f1";
 import { TEAM_COLOR, teamName } from "@/lib/teams";
 import { useSlidingPill } from "./useSlidingPill";
@@ -57,12 +57,18 @@ function PointsCell({ points, leader }: { points: string; leader: number }) {
 }
 
 export default function Standings({
-  drivers, constructors, driverImages = {},
+  drivers: allDrivers, constructors: allConstructors, driverImages = {}, top, href,
 }: {
   drivers: DriverStanding[];
   constructors: ConstructorStanding[];
   driverImages?: Record<string, string>;
+  /** แสดงแค่ N อันดับแรก (หน้าแรก) — ระยะห่างแต้มยังคิดจากผู้นำเหมือนเดิม */
+  top?: number;
+  /** ลิงก์ "ดูตารางเต็ม" ใต้รายการ */
+  href?: string;
 }) {
+  const drivers = top ? allDrivers.slice(0, top) : allDrivers;
+  const constructors = top ? allConstructors.slice(0, top) : allConstructors;
   const [tab, setTab] = useState<"d" | "c">("d");
 
   const driverLeader = Number(drivers[0]?.points ?? 0);
@@ -165,6 +171,15 @@ export default function Standings({
               </li>
             ))}
       </ul>
+      {href && (
+        <Link
+          href={href}
+          className="mt-3 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-semibold text-(--color-f1-text) transition-colors hover:bg-white/[0.04]"
+        >
+          ดูตารางเต็ม
+          <ChevronRight className="size-4" />
+        </Link>
+      )}
     </section>
   );
 }

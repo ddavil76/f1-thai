@@ -287,6 +287,7 @@ export default function Track3D({
         }`}
         style={real ? { background: skyBackground(night) } : undefined}
         aria-hidden={!ready}
+        inert={!ready} // ยังไม่พร้อมแต่ในกล่องมีปุ่ม (สลับฉาก) — กัน Tab ไปโฟกัสของที่มองไม่เห็น
       >
         <div ref={host} className="absolute inset-0" role="img" aria-label={`ผังสนาม 3 มิติ ${name}`} />
         <span className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5">
