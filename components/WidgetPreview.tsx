@@ -52,7 +52,7 @@ function Pill({ size, s, live, done, now }: { size: Size; s: WidgetSession | nul
         <span className="text-[9.5px] font-bold text-[#f3f1ec]/70">{label}</span>
         <span className="flex gap-[3px]">
           {[0, 1, 2, 3, 4].map((i) => (
-            <span key={i} className={`h-[7px] w-[7px] rounded-full ${i < lit ? "bg-[#ff2a1a]" : "bg-[#3a0d0b]"}`} />
+            <span key={i} className={`size-[7px] rounded-full ${i < lit ? "bg-[#ff2a1a]" : "bg-[#3a0d0b]"}`} />
           ))}
         </span>
       </div>
@@ -61,7 +61,7 @@ function Pill({ size, s, live, done, now }: { size: Size; s: WidgetSession | nul
       ) : done ? (
         <div className="font-black leading-tight" style={{ fontSize: fs * 0.7 }}>จบแล้ว</div>
       ) : left > DAY ? (
-        <div className="flex items-baseline gap-[3px] font-mono font-bold leading-tight text-[#ff3b2f]" style={{ fontSize: fs }}>
+        <div className="flex items-baseline gap-[3px] font-mono font-bold leading-tight tabular-nums text-[#ff3b2f]" style={{ fontSize: fs }}>
           {Math.floor(left / DAY)}
           <span className="font-sans text-[10.5px] text-[#f3f1ec]">วัน</span>
           <span className="ml-[3px]">{pad(Math.floor(left / HOUR) % 24)}</span>
@@ -104,7 +104,7 @@ export default function WidgetPreview() {
         {SIZES.map(({ size, w, h }) => (
           <div
             key={size}
-            className="relative max-w-full overflow-hidden rounded-[22px] bg-white/5 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]"
+            className="relative max-w-full overflow-hidden rounded-[22px] bg-white/5 shadow-2xl"
             style={{ width: w, height: h }}
           >
             {data && cur && (
@@ -151,6 +151,10 @@ export default function WidgetPreview() {
           </button>
         ))}
       </div>
+      {/* อยู่ในนี้ ไม่ใช่ในหน้า — ถ้าโหลดตัวอย่างไม่ได้ คำอธิบายจะได้หายไปด้วย ไม่ค้างลอยอยู่ */}
+      <p className="text-center text-xs text-pretty text-white/55">
+        ตัวอย่างจากข้อมูลจริงของสนามถัดไป — มีขนาดเล็ก กลาง ใหญ่ และบนหน้าจอล็อก · ธีมตามโหมดมืด/สว่างของเครื่อง
+      </p>
     </div>
   );
 }

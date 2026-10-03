@@ -37,7 +37,7 @@ export default async function PowerUnitsPage() {
   const header = (
     <header className="space-y-1">
       <p className="poster text-sm text-(--color-f1-text)">POWER UNITS</p>
-      <h1 className="text-3xl font-black tracking-tight md:text-4xl">
+      <h1 className="text-3xl font-black md:text-4xl">
         ชิ้นส่วน<span className="text-(--color-f1)">เครื่องยนต์</span>
       </h1>
       <SpeedStreak className="pb-1 pt-1.5" />

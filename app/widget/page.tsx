@@ -36,15 +36,15 @@ function Step({
 }) {
   return (
     <li className="card flex gap-4 p-5">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--color-f1) font-display text-lg font-bold">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-(--color-f1) font-display text-lg font-bold">
         {n}
       </span>
       <div className="min-w-0 flex-1 space-y-2">
-        <h2 className="flex items-center gap-2 text-base font-bold sec-title">
-          <Icon className="h-4 w-4 shrink-0 text-white/55" />
+        <h2 className="flex items-center gap-2 text-base font-bold text-balance sec-title">
+          <Icon className="size-4 shrink-0 text-white/55" />
           {title}
         </h2>
-        <div className="space-y-3 text-sm leading-relaxed text-white/65">{children}</div>
+        <div className="space-y-3 text-sm leading-relaxed text-pretty text-white/65">{children}</div>
       </div>
     </li>
   );
@@ -112,11 +112,11 @@ export default function WidgetPage() {
     <main className="mx-auto max-w-2xl space-y-8">
       <header className="space-y-1">
         <p className="poster text-sm text-(--color-f1-text)">WIDGET</p>
-        <h1 className="text-3xl font-black tracking-tight md:text-4xl">
+        <h1 className="text-3xl font-black text-balance md:text-4xl">
           Widget บน<span className="text-(--color-f1)">มือถือ</span>
         </h1>
         <SpeedStreak className="pb-1 pt-1.5" />
-        <p className="text-sm text-white/50">
+        <p className="text-sm text-pretty text-white/50">
           นับถอยหลังซ้อม ควอลิฟาย และเรซ เวลาไทย บนหน้าจอโฮม พร้อมแจ้งเตือนก่อนแข่ง 30 นาที — ได้ทั้ง iPhone และ Android
         </p>
         <nav className="flex gap-2 pt-3" aria-label="เลือกระบบ">
@@ -127,7 +127,6 @@ export default function WidgetPage() {
 
       <section className="space-y-2">
         <WidgetPreview />
-        <p className="text-center text-xs text-white/55">ตัวอย่างจากข้อมูลจริงของสนามถัดไป — มีขนาดเล็ก กลาง ใหญ่ และบนหน้าจอล็อก · ธีมตามโหมดมืด/สว่างของเครื่อง</p>
       </section>
 
       <h2 id="iphone" className="scroll-mt-24 text-xl font-black sec-title">iPhone</h2>
@@ -170,34 +169,34 @@ export default function WidgetPage() {
       </ol>
 
       <section className="card space-y-3 p-5">
-        <h2 className="flex items-center gap-2 text-base font-bold sec-title">
-          <LockKeyhole className="h-4 w-4 text-white/55" />
+        <h2 className="flex items-center gap-2 text-base font-bold text-balance sec-title">
+          <LockKeyhole className="size-4 text-white/55" />
           หน้าจอล็อก (iPhone)
         </h2>
-        <p className="text-sm leading-relaxed text-white/65">
+        <p className="text-sm leading-relaxed text-pretty text-white/65">
           กดค้างที่หน้าจอล็อก → <Key>ปรับแต่ง</Key> → <Key>หน้าจอล็อก</Key> → แตะช่องใต้นาฬิกา → เลือก Scriptable →
           แตะ widget แล้วเลือก Script <Key>F1</Key> — มีแบบแถบ วงกลม และบรรทัดเดียวเหนือนาฬิกา
         </p>
       </section>
 
       <section className="card space-y-3 p-5">
-        <h2 className="flex items-center gap-2 text-base font-bold sec-title">
-          <SlidersHorizontal className="h-4 w-4 text-white/55" />
+        <h2 className="flex items-center gap-2 text-base font-bold text-balance sec-title">
+          <SlidersHorizontal className="size-4 text-white/55" />
           ตั้งค่าเพิ่ม iPhone (ไม่บังคับ)
         </h2>
-        <p className="text-sm leading-relaxed text-white/65">
+        <p className="text-sm leading-relaxed text-pretty text-white/65">
           กดค้างที่ widget → <Key>แก้ไขวิดเจ็ต</Key> → ช่อง <Key>Parameter</Key> พิมพ์คำตามนี้
         </p>
         <dl className="divide-y divide-white/10 text-sm">
           {OPTIONS.map(([k, v]) => (
             <div key={k} className="flex gap-3 py-2">
               <dt className="w-28 shrink-0 font-mono font-semibold text-white">{k}</dt>
-              <dd className="text-white/60">{v}</dd>
+              <dd className="text-pretty text-white/60">{v}</dd>
             </div>
           ))}
         </dl>
-        <p className="flex items-start gap-2 text-xs text-white/55">
-          <BellRing className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <p className="flex items-start gap-2 text-xs text-pretty text-white/55">
+          <BellRing className="mt-0.5 size-3.5 shrink-0" />
           ค่าเริ่มต้นแจ้งเตือน 30 นาทีก่อนควอลิฟาย สปรินต์ และเรซ (ซ้อมไม่แจ้ง) แตะแจ้งเตือนแล้วเปิดหน้าสนามนั้น
         </p>
       </section>
@@ -209,7 +208,7 @@ export default function WidgetPage() {
             href={APK_URL}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-(--color-f1) px-4 py-3 text-base font-bold text-white transition hover:brightness-110 active:scale-[0.98] sm:w-auto"
           >
-            <Download className="h-5 w-5" />
+            <Download className="size-5" />
             ดาวน์โหลดสำหรับ Android
           </a>
           <p className="text-xs text-white/55">ไฟล์ APK ราว 1 MB · Android 8 ขึ้นไป</p>
@@ -238,14 +237,14 @@ export default function WidgetPage() {
       </ol>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-bold sec-title">คำถามที่พบบ่อย</h2>
+        <h2 className="text-lg font-bold text-balance sec-title">คำถามที่พบบ่อย</h2>
         {FAQ.map(([q, a]) => (
           <details key={q} className="card group p-4">
-            <summary className="cursor-pointer list-none font-semibold marker:hidden">
+            <summary className="cursor-pointer list-none font-semibold text-balance marker:hidden [&::-webkit-details-marker]:hidden">
               <span className="mr-2 inline-block text-(--color-f1) transition group-open:rotate-90">›</span>
               {q}
             </summary>
-            <p className="mt-2 text-sm leading-relaxed text-white/60">{a}</p>
+            <p className="mt-2 text-sm leading-relaxed text-pretty text-white/60">{a}</p>
           </details>
         ))}
       </section>

@@ -30,7 +30,7 @@ export default function CopyCode({ code, label = "ก็อปโค้ด" }: {
         onClick={copy}
         className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-(--color-f1) px-4 py-3 text-base font-bold text-white transition hover:brightness-110 active:scale-[0.98] sm:w-auto"
       >
-        {state === "done" ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+        {state === "done" ? <Check className="size-5" /> : <Copy className="size-5" />}
         {state === "done" ? "ก็อปแล้ว" : label}
       </button>
       <p aria-live="polite" className="text-xs text-white/50">

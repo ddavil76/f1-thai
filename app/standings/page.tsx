@@ -53,7 +53,7 @@ export default async function StandingsPage() {
     <main className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
         <p className="poster text-sm text-(--color-f1-text)">STANDINGS</p>
-        <h1 className="text-3xl font-black tracking-tight md:text-4xl">
+        <h1 className="text-3xl font-black md:text-4xl">
           ตารางคะแนน <span className="text-(--color-f1)">F1</span>
         </h1>
         <SpeedStreak className="pb-1 pt-1.5" />
