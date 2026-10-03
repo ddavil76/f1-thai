@@ -41,7 +41,7 @@ function Step({
       </span>
       <div className="min-w-0 flex-1 space-y-2">
         <h2 className="flex items-center gap-2 text-base font-bold sec-title">
-          <Icon className="h-4 w-4 shrink-0 text-white/40" />
+          <Icon className="h-4 w-4 shrink-0 text-white/55" />
           {title}
         </h2>
         <div className="space-y-3 text-sm leading-relaxed text-white/65">{children}</div>
@@ -127,7 +127,7 @@ export default function WidgetPage() {
 
       <section className="space-y-2">
         <WidgetPreview />
-        <p className="text-center text-xs text-white/35">ตัวอย่างจากข้อมูลจริงของสนามถัดไป — มีขนาดเล็ก กลาง ใหญ่ และบนหน้าจอล็อก · ธีมตามโหมดมืด/สว่างของเครื่อง</p>
+        <p className="text-center text-xs text-white/55">ตัวอย่างจากข้อมูลจริงของสนามถัดไป — มีขนาดเล็ก กลาง ใหญ่ และบนหน้าจอล็อก · ธีมตามโหมดมืด/สว่างของเครื่อง</p>
       </section>
 
       <h2 id="iphone" className="scroll-mt-24 text-xl font-black sec-title">iPhone</h2>
@@ -171,7 +171,7 @@ export default function WidgetPage() {
 
       <section className="card space-y-3 p-5">
         <h2 className="flex items-center gap-2 text-base font-bold sec-title">
-          <LockKeyhole className="h-4 w-4 text-white/40" />
+          <LockKeyhole className="h-4 w-4 text-white/55" />
           หน้าจอล็อก (iPhone)
         </h2>
         <p className="text-sm leading-relaxed text-white/65">
@@ -182,7 +182,7 @@ export default function WidgetPage() {
 
       <section className="card space-y-3 p-5">
         <h2 className="flex items-center gap-2 text-base font-bold sec-title">
-          <SlidersHorizontal className="h-4 w-4 text-white/40" />
+          <SlidersHorizontal className="h-4 w-4 text-white/55" />
           ตั้งค่าเพิ่ม iPhone (ไม่บังคับ)
         </h2>
         <p className="text-sm leading-relaxed text-white/65">
@@ -196,7 +196,7 @@ export default function WidgetPage() {
             </div>
           ))}
         </dl>
-        <p className="flex items-start gap-2 text-xs text-white/45">
+        <p className="flex items-start gap-2 text-xs text-white/55">
           <BellRing className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           ค่าเริ่มต้นแจ้งเตือน 30 นาทีก่อนควอลิฟาย สปรินต์ และเรซ (ซ้อมไม่แจ้ง) แตะแจ้งเตือนแล้วเปิดหน้าสนามนั้น
         </p>
@@ -212,7 +212,7 @@ export default function WidgetPage() {
             <Download className="h-5 w-5" />
             ดาวน์โหลดสำหรับ Android
           </a>
-          <p className="text-xs text-white/45">ไฟล์ APK ราว 1 MB · Android 8 ขึ้นไป</p>
+          <p className="text-xs text-white/55">ไฟล์ APK ราว 1 MB · Android 8 ขึ้นไป</p>
         </Step>
 
         <Step n={2} icon={ShieldCheck} title="เปิดไฟล์แล้วติดตั้ง">

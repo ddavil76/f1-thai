@@ -45,7 +45,7 @@ export default function TitleRace({
           <Trophy className="h-4 w-4 text-(--color-f1)" />
           ลุ้นแชมป์
         </h2>
-        <span className="text-xs text-white/40">
+        <span className="text-xs text-white/55">
           {racesLeft > 0
             ? `เหลือ ${racesLeft} สนาม · ชิงได้สูงสุด ${maxLeft} แต้ม`
             : "จบฤดูกาลแล้ว"}
@@ -64,7 +64,7 @@ export default function TitleRace({
           <>
             ยังมีสิทธิ์{" "}
             <span className="font-bold text-white">{alive.length} คน</span>
-            {out > 0 && <span className="text-white/40"> · หมดลุ้น {out} คน</span>}
+            {out > 0 && <span className="text-white/55"> · หมดลุ้น {out} คน</span>}
           </>
         )}
       </p>
@@ -86,10 +86,10 @@ export default function TitleRace({
                 {i === 0 ? (
                   <span className="font-semibold text-(--color-f1)">ผู้นำ</span>
                 ) : (
-                  <span className="tabular-nums text-white/40">−{r.gap}</span>
+                  <span className="tabular-nums text-white/55">−{r.gap}</span>
                 )}
                 {i > 0 && racesLeft > 0 && (
-                  <span className="ml-auto text-right text-[11px] tabular-nums text-white/35">
+                  <span className="ml-auto text-right text-[11px] tabular-nums text-white/55">
                     ต้องทำมากกว่าผู้นำ {need.toFixed(1)} แต้ม/สนาม
                   </span>
                 )}
@@ -115,7 +115,7 @@ export default function TitleRace({
         })}
       </div>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-white/35">
+      <p className="mt-3 text-[11px] leading-relaxed text-white/55">
         แถบทึบ = แต้มตอนนี้ · แถบจาง = แต้มสูงสุดที่ไปถึงได้ · เส้นขาว = แต้มผู้นำ
         ตอนนี้ · คิดที่ชนะทุกสนาม ({WIN} แต้ม
         {sprintsLeft > 0 ? ` + สปรินต์ ${SPRINT_WIN}` : ""})

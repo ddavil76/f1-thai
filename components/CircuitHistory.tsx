@@ -24,7 +24,7 @@ export default function CircuitHistory({ winners }: { winners: RaceWithResults[]
 
   const tile = (title: string, name: string, wins: number, ties: number) => (
     <div className="min-w-0 rounded-lg bg-white/[0.04] p-3">
-      <p className="text-[11px] text-white/40">{title}</p>
+      <p className="text-[11px] text-white/55">{title}</p>
       <p className="truncate font-bold">{name}</p>
       <p className="text-xs tabular-nums text-white/50">
         {wins} ครั้ง{ties > 0 && ` · เท่ากับอีก ${ties}`}
@@ -36,7 +36,7 @@ export default function CircuitHistory({ winners }: { winners: RaceWithResults[]
     <section className="card space-y-4 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="text-lg font-bold sec-title">ประวัติสนาม</h2>
-        <p className="text-xs text-white/40">
+        <p className="text-xs text-white/55">
           จัดมาแล้ว {h.total} ครั้ง · ตั้งแต่ปี {h.firstSeason}
         </p>
       </div>
@@ -52,17 +52,17 @@ export default function CircuitHistory({ winners }: { winners: RaceWithResults[]
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-white/40">ผู้ชนะล่าสุด</p>
+        <p className="mb-1 text-xs text-white/55">ผู้ชนะล่าสุด</p>
         <ul className="divide-y divide-white/5">
           {h.recent.map((r, i) => (
             <li key={`${r.season}-${i}`} className="flex items-center gap-3 py-2 text-sm">
-              <span className="w-10 shrink-0 tabular-nums text-white/40">{r.season}</span>
+              <span className="w-10 shrink-0 tabular-nums text-white/55">{r.season}</span>
               <span
                 className="h-3.5 w-1 shrink-0 rounded-full"
                 style={{ background: teamColor(r.constructorId) }}
               />
               <span className="min-w-0 flex-1 truncate font-medium">{r.driver}</span>
-              <span className="shrink-0 truncate text-xs text-white/45">
+              <span className="shrink-0 truncate text-xs text-white/55">
                 {teamName(r.constructorId, r.team)}
               </span>
             </li>

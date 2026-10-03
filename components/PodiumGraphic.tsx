@@ -54,7 +54,7 @@ export default async function PodiumGraphic({ top3 }: { top3: RaceResult[] }) {
               <p className="w-full truncate text-center text-xs font-semibold uppercase">
                 {r.Driver.familyName}
               </p>
-              <p className="mb-1 text-[10px] text-white/40">{r.points} pts</p>
+              <p className="mb-1 text-[10px] text-white/55">{r.points} pts</p>
               <div
                 data-pos={pos}
                 className={`podium-block podium-rise ${h} w-full rounded-t-md border-t-2`}

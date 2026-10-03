@@ -76,13 +76,13 @@ export default async function ResultsPage() {
             <p className="poster text-3xl tabular-nums">
               {winCount.size}
             </p>
-            <p className="text-xs text-white/40">ผู้ชนะไม่ซ้ำหน้า</p>
+            <p className="text-xs text-white/55">ผู้ชนะไม่ซ้ำหน้า</p>
           </div>
           <div className="p-4">
             <p className="poster truncate text-xl">
               {topWinner?.name ?? "—"}
             </p>
-            <p className="text-xs text-white/40">
+            <p className="text-xs text-white/55">
               ชนะมากสุด · {topWinner?.n ?? 0} ครั้ง
             </p>
           </div>
@@ -92,14 +92,14 @@ export default async function ResultsPage() {
                 <p className="poster text-3xl tabular-nums">
                   {streak}
                 </p>
-                <p className="text-xs text-white/40">ชนะติดต่อกันตอนนี้</p>
+                <p className="text-xs text-white/55">ชนะติดต่อกันตอนนี้</p>
               </>
             ) : (
               <>
                 <p className="poster text-3xl tabular-nums">
                   {winningTeams}
                 </p>
-                <p className="text-xs text-white/40">ทีมที่เคยชนะ</p>
+                <p className="text-xs text-white/55">ทีมที่เคยชนะ</p>
               </>
             )}
           </div>
@@ -157,7 +157,7 @@ export default async function ResultsPage() {
                       </p>
                       {win && (
                         <p className="flex items-center gap-1.5 truncate font-display text-xs font-semibold text-white/60">
-                          <Trophy className="h-3 w-3 shrink-0 text-white/40" />
+                          <Trophy className="h-3 w-3 shrink-0 text-white/55" />
                           {win.Driver.givenName.charAt(0)}. {win.Driver.familyName.toUpperCase()}
                         </p>
                       )}
@@ -171,7 +171,7 @@ export default async function ResultsPage() {
                         />
                       )}
                     </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
                   </Link>
                 </li>
               );

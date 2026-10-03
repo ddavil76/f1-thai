@@ -27,7 +27,7 @@ export default function QualifyingTable({
               key={q.Driver.driverId}
               className="flex items-center gap-3 px-4 py-2.5 sm:px-5"
             >
-              <span className="poster w-7 text-right text-lg tabular-nums text-white/45">
+              <span className="poster w-7 text-right text-lg tabular-nums text-white/55">
                 {q.position}
               </span>
               <span
@@ -50,7 +50,7 @@ export default function QualifyingTable({
                 </p>
               </div>
               {b.seg && b.seg !== "Q3" && (
-                <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40">
+                <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/55">
                   {b.seg}
                 </span>
               )}

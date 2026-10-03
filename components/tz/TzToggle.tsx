@@ -15,8 +15,8 @@ export default function TzToggle() {
 
   return (
     <div className="flex items-center gap-1.5" aria-label="เลือกเขตเวลาที่ใช้แสดงผล">
-      <Clock className="h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden="true" />
-      <span className="text-xs text-white/40">เวลา</span>
+      <Clock className="h-3.5 w-3.5 shrink-0 text-white/55" aria-hidden="true" />
+      <span className="text-xs text-white/55">เวลา</span>
       <div
         ref={ref}
         className="relative flex items-center gap-0.5 rounded-full border border-white/10 bg-white/5 p-0.5 text-xs font-medium"

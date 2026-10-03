@@ -59,7 +59,7 @@ function Panel({
     <div>
       <div className="mb-1 flex items-baseline gap-1.5 text-[11px] font-semibold text-white/50">
         {title}
-        {unit && <span className="font-normal text-white/30">{unit}</span>}
+        {unit && <span className="font-normal text-white/55">{unit}</span>}
       </div>
       <div className="relative">
         <svg viewBox={`0 0 ${VW} ${height}`} preserveAspectRatio="none" className="block w-full" style={{ height }} aria-hidden>
@@ -72,7 +72,7 @@ function Panel({
           )}
         </svg>
         {ticks?.map(([y, label]) => (
-          <span key={y} className="pointer-events-none absolute left-1 -translate-y-1/2 font-mono text-[9px] text-white/30" style={{ top: y }}>
+          <span key={y} className="pointer-events-none absolute left-1 -translate-y-1/2 font-mono text-[9px] text-white/55" style={{ top: y }}>
             {label}
           </span>
         ))}
@@ -157,7 +157,7 @@ export default function TraceCharts({
       <div className="sticky top-16 z-10 min-h-[3.25rem] rounded-xl border border-white/10 bg-[#141418]/95 px-3 py-2 text-xs backdrop-blur" aria-live="polite">
         {read && i != null ? (
           <div className="space-y-1">
-            <div className="flex justify-between text-white/45">
+            <div className="flex justify-between text-white/55">
               <span>ระยะ {read.km} กม.</span>
               <span className="font-semibold text-white/80">
                 {Math.abs(read.d) < 0.0005 ? "เท่ากัน" : `${read.d > 0 ? a.code : b.code} นำ ${Math.abs(read.d).toFixed(3)} วิ`}
@@ -175,7 +175,7 @@ export default function TraceCharts({
             ))}
           </div>
         ) : (
-          <p className="pt-2 text-white/40">แตะหรือลากบนกราฟเพื่อดูค่าแต่ละจุด</p>
+          <p className="pt-2 text-white/55">แตะหรือลากบนกราฟเพื่อดูค่าแต่ละจุด</p>
         )}
       </div>
 
@@ -235,12 +235,12 @@ export default function TraceCharts({
           <polyline points={lines.gearB} fill="none" stroke={b.colour} strokeWidth={2} strokeDasharray={B_DASH} vectorEffect="non-scaling-stroke" />
         </Panel>
 
-        <div className="flex justify-between font-mono text-[10px] text-white/30">
+        <div className="flex justify-between font-mono text-[10px] text-white/55">
           {Array.from({ length: 6 }, (_, k) => (
             <span key={k}>{((lengthKm * k) / 5).toFixed(1)}</span>
           ))}
         </div>
-        <p className="-mt-2 text-center text-[10px] text-white/30">ระยะทางในรอบ (กม.)</p>
+        <p className="-mt-2 text-center text-[10px] text-white/55">ระยะทางในรอบ (กม.)</p>
       </div>
     </section>
   );

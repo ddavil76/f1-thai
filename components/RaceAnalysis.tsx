@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import type { TrackPath } from "@/lib/circuits";
 import type { LapPick } from "@/lib/replay";
 import type { TelemetrySession } from "@/lib/telemetry-sessions";
@@ -54,6 +54,8 @@ export default function RaceAnalysis({
   const [opened, setOpened] = useState<Set<Tab>>(() => new Set());
   const [preset, setPreset] = useState<(LapPreset & { nonce: number }) | null>(null);
   const [jump, setJump] = useState<ReplayJump | null>(null);
+  const uid = useId();
+  const tabRefs = useRef(new Map<Tab, HTMLButtonElement>());
 
   const go = (t: Tab) => {
     setPicked(t);
@@ -82,16 +84,47 @@ export default function RaceAnalysis({
     ["race", "ทั้งการแข่ง", !!replay],
     ["lap", "เทียบรอบ", !!telemetry],
   ];
+  const tabId = (t: Tab) => `${uid}-tab-${t}`;
+  const panelId = (t: Tab) => `${uid}-panel-${t}`;
+
+  // แพตเทิร์น tabs ของ WAI-ARIA (เหมือน SectionTabs): ลูกศรซ้าย/ขวาวนรอบ · Home/End · ข้ามแท็บที่กดไม่ได้
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const open = tabs.filter(([, , ok]) => ok).map(([k]) => k);
+    const i = open.indexOf(tab);
+    const to =
+      e.key === "ArrowLeft" ? (i - 1 + open.length) % open.length
+      : e.key === "ArrowRight" ? (i + 1) % open.length
+      : e.key === "Home" ? 0
+      : e.key === "End" ? open.length - 1
+      : -1;
+    if (to < 0 || open.length < 2) return;
+    e.preventDefault();
+    go(open[to]);
+    tabRefs.current.get(open[to])?.focus();
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-full bg-white/5 p-1 text-sm" role="tablist" aria-label="มุมมอง">
+      <div
+        className="flex gap-1 rounded-full bg-white/5 p-1 text-sm"
+        role="tablist"
+        aria-label="มุมมอง"
+        onKeyDown={onKeyDown}
+      >
         {tabs.map(([k, label, ok]) => (
           <button
             key={k}
+            ref={(el) => {
+              if (el) tabRefs.current.set(k, el);
+              else tabRefs.current.delete(k);
+            }}
+            id={tabId(k)}
             type="button"
             role="tab"
             aria-selected={tab === k}
+            // แผงของแท็บที่ยังไม่เคยเปิดยังไม่อยู่ใน DOM — อ้าง id ที่ไม่มีจริงไม่ได้
+            aria-controls={isOpen(k) && ok ? panelId(k) : undefined}
+            tabIndex={tab === k ? 0 : -1}
             disabled={!ok}
             onClick={() => go(k)}
             className={`flex-1 rounded-full px-4 py-2 font-bold transition disabled:cursor-not-allowed disabled:opacity-35 ${
@@ -104,7 +137,7 @@ export default function RaceAnalysis({
       </div>
 
       {replay && isOpen("race") && (
-        <div hidden={tab !== "race"}>
+        <div id={panelId("race")} role="tabpanel" aria-labelledby={tabId("race")} hidden={tab !== "race"}>
           <ReplayLoader
             season={replay.season}
             raceStart={replay.raceStart}
@@ -119,7 +152,13 @@ export default function RaceAnalysis({
       {!replay && tab === "race" && <p className="card p-6 text-sm text-white/60">สนามนี้ยังไม่ได้แข่ง</p>}
 
       {telemetry && isOpen("lap") && (
-        <div hidden={tab !== "lap"} className="space-y-4">
+        <div
+          id={panelId("lap")}
+          role="tabpanel"
+          aria-labelledby={tabId("lap")}
+          hidden={tab !== "lap"}
+          className="space-y-4"
+        >
           <TelemetryCompare
             key={preset?.nonce ?? 0}
             season={telemetry.season}
@@ -130,7 +169,7 @@ export default function RaceAnalysis({
             active={tab === "lap"}
             onShowInReplay={onShowInReplay}
           />
-          <p className="text-xs text-white/35">
+          <p className="text-xs text-white/55">
             ข้อมูลรถ ~3–4 ครั้งต่อวินาที เบรกมีแค่เหยียบ/ไม่เหยียบ · ระยะทางคำนวณจากความเร็ว
             จึงอาจคลาดจากความยาวสนามจริงเล็กน้อย
           </p>

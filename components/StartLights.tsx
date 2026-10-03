@@ -27,7 +27,7 @@ export default function StartLights({
       {label && (
         <p className="text-center text-sm text-white/60">
           {label}
-          {sub && <span className="mt-0.5 block text-xs text-white/35">{sub}</span>}
+          {sub && <span className="mt-0.5 block text-xs text-white/55">{sub}</span>}
         </p>
       )}
     </div>

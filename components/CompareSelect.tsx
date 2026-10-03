@@ -50,7 +50,7 @@ export default function CompareSelect({
       }`}
     >
       {select(a, "นักขับคนที่ 1", (id) => go(id, id === b ? a : b))}
-      <span className="text-xs font-black text-white/40">VS</span>
+      <span className="text-xs font-black text-white/55">VS</span>
       {select(b, "นักขับคนที่ 2", (id) => go(id === a ? b : a, id))}
     </div>
   );

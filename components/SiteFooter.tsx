@@ -25,7 +25,7 @@ export default function SiteFooter({
   children?: ReactNode;
 }) {
   return (
-    <footer className={`space-y-2 text-center text-xs text-white/30 ${className}`}>
+    <footer className={`space-y-2 text-center text-xs text-white/55 ${className}`}>
       <p>{source ? `${SOURCES[source]} · ${DISCLAIMER}` : DISCLAIMER}</p>
       {children}
     </footer>

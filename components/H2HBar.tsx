@@ -17,7 +17,7 @@ export default function H2HBar({
     <div>
       <div className="mb-1 flex justify-between text-xs">
         <span className="font-semibold tabular-nums text-white/80">{a}</span>
-        <span className="text-white/40">{label}</span>
+        <span className="text-white/55">{label}</span>
         <span className="font-semibold tabular-nums text-white/80">{b}</span>
       </div>
       <div className="flex h-1.5 overflow-hidden rounded-full bg-white/10">

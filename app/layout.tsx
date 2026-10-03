@@ -56,6 +56,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#08080a",
   colorScheme: "dark",
+  // เปิดจากไอคอนหน้าจอโฮม iPhone (แถบสถานะโปร่ง) เนื้อหาเต็มจอ — หัว/เมนูล่างเว้นขอบ safe area เอง
+  viewportFit: "cover",
 };
 
 // สีหลักของเว็บเป็นแดง F1 คงที่ (ตั้งใน globals.css) — สีทีมผู้ชนะไปอยู่เฉพาะส่วนที่เป็น
@@ -67,8 +69,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased">
         <LaunchIntro />
         <div className="scroll-progress" aria-hidden="true" />
-        <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-md">
-          <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3.5">
+        <header className="sticky top-0 z-40 border-b border-white/10 bg-black/60 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+          <div className="mx-auto flex max-w-5xl items-center gap-3 py-3.5 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
             <Link href="/" className="poster text-xl leading-none">
               F1 <span className="text-(--color-f1)">WEEK RACE</span>
             </Link>
@@ -79,7 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
 
-        <div className="mx-auto min-h-[60vh] max-w-5xl px-4 pb-28 pt-6 md:pb-12">
+        <div className="mx-auto min-h-[60vh] max-w-5xl pb-28 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-6 md:pb-12">
           <PageTransition>{children}</PageTransition>
         </div>
 

@@ -51,7 +51,7 @@ export default function ChampionshipChart({
   return (
     <section className="card p-5">
       <h2 className="text-lg font-bold sec-title">แชมป์เปี้ยนชิพ</h2>
-      <p className="mb-3 text-xs text-white/40">แต้มสะสม · Top {series.length}</p>
+      <p className="mb-3 text-xs text-white/55">แต้มสะสม · Top {series.length}</p>
 
       <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1">
         {series.map((s, i) => (

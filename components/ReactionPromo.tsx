@@ -18,11 +18,11 @@ export default function ReactionPromo() {
       </span>
       <span className="min-w-0 flex-1 text-sm">
         <span className="font-semibold">คุณจะออกตัวทันไหม?</span>
-        <span className="ml-2 text-white/45">
+        <span className="ml-2 text-white/55">
           ลองวัดเวลาตอบสนองแบบนักแข่ง
         </span>
       </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-white/55" />
     </Link>
   );
 }

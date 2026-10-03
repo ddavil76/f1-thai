@@ -14,20 +14,20 @@ export default function RacePitStops({ summary }: { summary: RacePitSummary }) {
               key={`${s.driverId}-${s.stop}`}
               className="flex items-center gap-3 px-4 py-2.5 text-sm sm:px-5"
             >
-              <span className="w-5 shrink-0 text-right tabular-nums text-white/40">{i + 1}</span>
+              <span className="w-5 shrink-0 text-right tabular-nums text-white/55">{i + 1}</span>
               <span
                 className="h-4 w-1 shrink-0 rounded-full"
                 style={{ background: teamColor(s.constructorId) }}
               />
               <span className="min-w-0 flex-1 truncate">
                 <span className="font-medium">{s.driver}</span>
-                <span className="ml-2 text-xs text-white/40">
+                <span className="ml-2 text-xs text-white/55">
                   {teamName(s.constructorId, s.team)} · รอบ {s.lap}
                 </span>
               </span>
               <span className="shrink-0 font-bold tabular-nums">
                 {fmtSec(s.seconds)}
-                <span className="ml-0.5 text-xs font-normal text-white/40">วิ</span>
+                <span className="ml-0.5 text-xs font-normal text-white/55">วิ</span>
               </span>
             </li>
           ))}
@@ -39,7 +39,7 @@ export default function RacePitStops({ summary }: { summary: RacePitSummary }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm tabular-nums">
             <thead>
-              <tr className="border-b border-white/5 text-[11px] text-white/40">
+              <tr className="border-b border-white/5 text-[11px] text-white/55">
                 <th className="px-4 py-2.5 text-left font-medium sm:px-5">ทีม</th>
                 <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">จำนวน</th>
                 <th className="px-2 py-2.5 text-right font-medium">เร็วสุด</th>
@@ -72,7 +72,7 @@ export default function RacePitStops({ summary }: { summary: RacePitSummary }) {
         </div>
       </section>
 
-      <p className="px-1 text-xs text-white/40">
+      <p className="px-1 text-xs text-white/55">
         เวลาในพิทเลนตั้งแต่เข้าจนออก ไม่ใช่เวลาจอดเปลี่ยนยาง
         {summary.excluded > 0 &&
           ` · ตัด ${summary.excluded} ครั้งที่ช้าผิดปกติออก เช่นจอดรอช่วงธงแดง`}

@@ -16,7 +16,7 @@ export default function Error({
 
   return (
     <div className="card flex flex-col items-center gap-4 p-10 text-center">
-      <TriangleAlert className="h-9 w-9 text-white/40" strokeWidth={1.5} />
+      <TriangleAlert className="h-9 w-9 text-white/55" strokeWidth={1.5} />
       <div className="space-y-1">
         <h2 className="text-lg font-bold">โหลดข้อมูลไม่สำเร็จ</h2>
         <p className="text-sm text-white/50">

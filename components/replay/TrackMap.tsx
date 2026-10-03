@@ -37,10 +37,15 @@ export default function TrackMap({
     setSamples(arr);
   }, [pathEl, track.d]);
 
-  // rAF: interpolate จาก timeRef → dots
+  // rAF: interpolate จาก timeRef → dots · re-render เฉพาะตอนเวลาเปลี่ยน (หยุดเล่น/แท็บซ่อน = ไม่วาดซ้ำ)
   useEffect(() => {
+    let lastT = Number.NaN;
     const loop = () => {
-      setDots(dotsAt(frames, timeRef.current ?? 0));
+      const t = timeRef.current ?? 0;
+      if (t !== lastT) {
+        lastT = t;
+        setDots(dotsAt(frames, t));
+      }
       raf.current = requestAnimationFrame(loop);
     };
     raf.current = requestAnimationFrame(loop);

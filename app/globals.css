@@ -42,7 +42,7 @@
 
   /* ---- Ambient background — ดำแบบกราฟิกถ่ายทอด F1 มีแสงแดงจาง ๆ ที่มุม
      กับเส้นเฉียงบาง ๆ แบบเส้นความเร็ว · สีทีมไม่มาอยู่ตรงนี้ (ดูที่ .winner-glow)
-     ใช้ transform (GPU) ไม่ใช่ background-position → ไม่ repaint ทั้งจอทุกเฟรม */
+     นิ่ง ไม่ขยับ — เคยลอยไปมาตลอด แต่เป็นเลเยอร์ใหญ่กว่าจอที่ต้องคำนวณทุกเฟรม เปลืองแบตบนมือถือ */
   body::before {
     content: "";
     position: fixed;
@@ -71,21 +71,6 @@
       ),
       linear-gradient(160deg, #0e0d10, var(--color-bg) 55%);
     background-repeat: no-repeat;
-    animation: bg-drift 40s ease-in-out infinite;
-    will-change: transform;
-  }
-
-  @keyframes bg-drift {
-    0%,
-    100% {
-      transform: translate3d(0, 0, 0) scale(1);
-    }
-    33% {
-      transform: translate3d(3%, -2.6%, 0) scale(1.04);
-    }
-    66% {
-      transform: translate3d(-2.6%, 2%, 0) scale(1.03);
-    }
   }
 
   /* ฟิล์มเกรน — เลเยอร์บนสุด ไม่รับ event */
@@ -95,8 +80,8 @@
     inset: 0;
     z-index: 100;
     pointer-events: none;
-    opacity: 0.045;
-    mix-blend-mode: overlay;
+    /* ไม่ใช้ mix-blend-mode — เลเยอร์เต็มจอที่ blend ทับทุกอย่างต้องผสมสีใหม่ทุกครั้งที่เลื่อนหน้า */
+    opacity: 0.03;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     background-size: 140px 140px;
   }
@@ -615,9 +600,12 @@ html[data-intro="seen"] .launch-intro {
 .racing-dot {
   offset-rotate: 0deg;
   offset-distance: 0%;
-  filter: drop-shadow(0 0 2px var(--color-f1))
-    drop-shadow(0 0 5px var(--color-f1));
+  filter: drop-shadow(0 0 3px var(--color-f1));
   animation: racing-lap 9s linear 1.6s infinite;
+}
+/* พ้นจอ → หยุดวิ่ง (components/RacingLine.tsx ใส่ data-offscreen) */
+[data-offscreen] .racing-dot {
+  animation-play-state: paused;
 }
 @supports not (offset-distance: 0%) {
   .racing-dot {
@@ -636,9 +624,6 @@ html[data-intro="seen"] .launch-intro {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body::before {
-    animation: none;
-  }
   /* intro เป็นการเคลื่อนไหวล้วน ไม่มีข้อมูล — ข้ามไปเลย */
   .launch-intro {
     display: none;

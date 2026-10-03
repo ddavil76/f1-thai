@@ -123,7 +123,7 @@ export default async function RacePage({ params }: Params) {
       >
         <Link
           href="/calendar"
-          className="inline-flex items-center gap-1 text-sm text-white/40 transition hover:text-white/70"
+          className="inline-flex items-center gap-1 text-sm text-white/55 transition hover:text-white/70"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           ปฏิทินทั้งฤดูกาล
@@ -229,11 +229,11 @@ export default async function RacePage({ params }: Params) {
           <PlayCircle className="h-5 w-5 shrink-0 text-(--color-f1)" />
           <span className="flex-1 text-sm font-semibold">
             ดูรีเพลย์ไทม์มิ่ง
-            <span className="ml-2 font-normal text-white/45">
+            <span className="ml-2 font-normal text-white/55">
               ตำแหน่ง · ยาง · เวลาต่อรอบ แบบเล่นย้อนหลัง
             </span>
           </span>
-          <ArrowLeft className="h-4 w-4 rotate-180 text-white/30" />
+          <ArrowLeft className="h-4 w-4 rotate-180 text-white/55" />
         </Link>
       )}
       {telemetryOpen && (
@@ -244,9 +244,9 @@ export default async function RacePage({ params }: Params) {
           <Activity className="h-5 w-5 shrink-0 text-(--color-f1)" />
           <span className="flex-1 text-sm font-semibold">
             เทียบเทเลเมทรี
-            <span className="ml-2 font-normal text-white/45">ความเร็ว · คันเร่ง · เบรก · เกียร์ ของสองคน</span>
+            <span className="ml-2 font-normal text-white/55">ความเร็ว · คันเร่ง · เบรก · เกียร์ ของสองคน</span>
           </span>
-          <ArrowLeft className="h-4 w-4 rotate-180 text-white/30" />
+          <ArrowLeft className="h-4 w-4 rotate-180 text-white/55" />
         </Link>
       )}
       {!hasResults && raceStart && <ResultsRefresher startIso={raceStart.toISOString()} />}

@@ -67,7 +67,7 @@ function CompareBars({ ms }: { ms: number }) {
             </span>
             <span
               className={`display text-right text-xs tabular-nums ${
-                r.you ? "font-bold text-white" : "text-white/45"
+                r.you ? "font-bold text-white" : "text-white/55"
               }`}
             >
               {secs(r.ms)}
@@ -390,10 +390,10 @@ export default function ReactionGame() {
                 }`}
               >
                 {secs(rt)}
-                <span className="ml-1 text-lg font-bold text-white/40">วิ</span>
+                <span className="ml-1 text-lg font-bold text-white/55">วิ</span>
               </p>
               <p className={`mt-1 text-sm font-semibold ${g.tone}`}>{g.label}</p>
-              <p className="mt-2 text-xs text-white/40">แตะเพื่อเล่นอีกครั้ง</p>
+              <p className="mt-2 text-xs text-white/55">แตะเพื่อเล่นอีกครั้ง</p>
             </div>
           )}
         </div>
@@ -403,7 +403,7 @@ export default function ReactionGame() {
           type="button"
           onClick={toggleMute}
           aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}
-          className="absolute right-3 top-3 z-10 rounded-full bg-white/5 p-1.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white/70"
+          className="absolute right-3 top-3 z-10 rounded-full bg-white/5 p-1.5 text-white/55 transition-colors hover:bg-white/10 hover:text-white/70"
         >
           {muted ? (
             <VolumeX className="h-4 w-4" />
@@ -426,7 +426,7 @@ export default function ReactionGame() {
             </span>
           </span>
           {avg5 != null && (
-            <span className="text-white/40">
+            <span className="text-white/55">
               เฉลี่ย 5 ครั้ง{" "}
               <span className="display font-semibold text-white/70">
                 {secs(avg5)} วิ
@@ -438,7 +438,7 @@ export default function ReactionGame() {
           <button
             type="button"
             onClick={clearStats}
-            className="flex shrink-0 items-center gap-1 text-white/40 transition hover:text-white/70"
+            className="flex shrink-0 items-center gap-1 text-white/55 transition hover:text-white/70"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             ล้างสถิติ
@@ -448,7 +448,7 @@ export default function ReactionGame() {
 
       <History times={history} />
 
-      <p className="px-1 text-xs leading-relaxed text-white/40">
+      <p className="px-1 text-xs leading-relaxed text-white/55">
         เวลาตอบสนองเฉลี่ยของคนทั่วไปราว 0.25 วินาที · นักแข่ง F1 ออกตัวได้เร็วราว
         0.2 วินาที · ต่ำกว่า 0.1 วินาทีถือว่าเดาจังหวะไฟ
       </p>

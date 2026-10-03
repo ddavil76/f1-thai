@@ -123,7 +123,7 @@ export default function WidgetPreview() {
                   className="absolute inset-0 h-full w-full object-cover object-left"
                 />
                 <span
-                  className={`absolute right-2.5 top-1.5 text-[7px] ${dark ? "text-white/35" : "text-[#1b1b22]/35"}`}
+                  className={`absolute right-2.5 top-1.5 text-[7px] ${dark ? "text-white/55" : "text-[#1b1b22]/35"}`}
                 >
                   ↻{hm(new Date(data.generatedAt))}
                 </span>
@@ -144,7 +144,7 @@ export default function WidgetPreview() {
             aria-pressed={dark === v}
             onClick={() => setDark(v as boolean)}
             className={`rounded-full px-3 py-1 font-bold transition ${
-              dark === v ? "bg-white/15 text-white" : "text-white/45 hover:text-white"
+              dark === v ? "bg-white/15 text-white" : "text-white/55 hover:text-white"
             }`}
           >
             {label}

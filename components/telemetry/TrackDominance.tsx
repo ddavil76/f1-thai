@@ -179,7 +179,7 @@ export default function TrackDominance({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/60">
           <Legend colour={a.colour} label={`${a.code} เร็วกว่า ${winsA} ช่วง`} />
           <Legend colour={b.colour} label={`${b.code} เร็วกว่า ${sectors.length - winsA} ช่วง`} />
-          <span className="text-white/35">แบ่งรอบเป็น {sectors.length} ช่วงเท่า ๆ กัน</span>
+          <span className="text-white/55">แบ่งรอบเป็น {sectors.length} ช่วงเท่า ๆ กัน</span>
         </div>
       ) : (
         <div className="flex items-center gap-2 text-xs text-white/60">

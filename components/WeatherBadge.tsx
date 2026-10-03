@@ -18,7 +18,7 @@ export default function WeatherBadge({ weather }: { weather: RaceWeather }) {
     <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm">
       <Icon className="h-4 w-4 text-white/70" />
       <span className="text-white/80">{label}</span>
-      <span className="text-white/40">·</span>
+      <span className="text-white/55">·</span>
       <span className="tabular-nums text-white/70">
         {weather.tMax}° / {weather.tMin}°
       </span>

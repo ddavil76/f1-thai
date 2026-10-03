@@ -99,7 +99,7 @@ export default async function ComparePage({ searchParams }: Props) {
   const tone = (mine: number | null, other: number | null, better: "high" | "low") => {
     if (mine == null || other == null || mine === other) return "text-white/70";
     const wins = better === "high" ? mine > other : mine < other;
-    return wins ? "font-bold text-white" : "text-white/40";
+    return wins ? "font-bold text-white" : "text-white/55";
   };
 
   const side = (s: DriverStanding, color: string) => {
@@ -157,7 +157,7 @@ export default async function ComparePage({ searchParams }: Props) {
       <section className="card space-y-3 p-5">
         <div>
           <h2 className="text-lg font-bold sec-title">ปะทะกันตรง ๆ</h2>
-          <p className="text-xs text-white/40">นับเฉพาะสนามที่ลงแข่งทั้งคู่</p>
+          <p className="text-xs text-white/55">นับเฉพาะสนามที่ลงแข่งทั้งคู่</p>
         </div>
         {quali[0] + quali[1] > 0 && (
           <H2HBar label="ควอลิฟายนำ" a={quali[0]} b={quali[1]} aColor={aColor} bColor={bColor} />
@@ -187,14 +187,14 @@ export default async function ComparePage({ searchParams }: Props) {
               <span className={`text-center ${tone(s.a, s.b, s.better)}`}>
                 {s.a == null ? "–" : (s.fmt?.(s.a) ?? s.a)}
               </span>
-              <span className="text-center text-xs text-white/45">{s.label}</span>
+              <span className="text-center text-xs text-white/55">{s.label}</span>
               <span className={`text-center ${tone(s.b, s.a, s.better)}`}>
                 {s.b == null ? "–" : (s.fmt?.(s.b) ?? s.b)}
               </span>
             </li>
           ))}
         </ul>
-        <p className="border-t border-white/5 px-4 py-2.5 text-[11px] text-white/35 sm:px-5">
+        <p className="border-t border-white/5 px-4 py-2.5 text-[11px] text-white/55 sm:px-5">
           นับเฉพาะเรซหลัก ไม่รวมสปรินต์ · แต้มสะสมด้านบนรวมสปรินต์แล้ว
         </p>
       </section>
@@ -213,18 +213,18 @@ export default async function ComparePage({ searchParams }: Props) {
                   href={`/race/${r.round}`}
                   className="grid grid-cols-[1.5rem_1fr_3rem_3rem] items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.04] sm:px-5"
                 >
-                  <span className="text-right tabular-nums text-white/40">{r.round}</span>
+                  <span className="text-right tabular-nums text-white/55">{r.round}</span>
                   <span className="truncate">{r.raceName}</span>
                   <span
                     className={`text-right tabular-nums ${
-                      r.winner === "a" ? "font-bold text-white" : "text-white/45"
+                      r.winner === "a" ? "font-bold text-white" : "text-white/55"
                     }`}
                   >
                     {finishLabel(r.a)}
                   </span>
                   <span
                     className={`text-right tabular-nums ${
-                      r.winner === "b" ? "font-bold text-white" : "text-white/45"
+                      r.winner === "b" ? "font-bold text-white" : "text-white/55"
                     }`}
                   >
                     {finishLabel(r.b)}

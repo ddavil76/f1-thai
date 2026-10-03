@@ -10,7 +10,7 @@ export default function HeaderNav() {
   const { ref, style } = useSlidingPill<HTMLElement>(pathname);
 
   return (
-    <nav ref={ref} className="relative hidden items-center gap-1 md:flex">
+    <nav ref={ref} aria-label="เมนูหลัก" className="relative hidden items-center gap-1 md:flex">
       {style && (
         <span
           className="absolute inset-y-1 rounded-full bg-(--color-f1) transition-all duration-300 ease-[cubic-bezier(.3,.9,.3,1)]"

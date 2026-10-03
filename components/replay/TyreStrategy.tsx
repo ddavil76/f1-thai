@@ -45,7 +45,7 @@ export default function TyreStrategy({
     <section className="card overflow-x-auto p-4">
       <div className="mb-1 flex flex-wrap items-baseline gap-x-3">
         <h2 className="text-lg font-bold sec-title">กลยุทธ์ยาง</h2>
-        <span className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/45">
+        <span className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/55">
           {used.map((c) => (
             <span key={c} className="flex items-center gap-1">
               <span
@@ -57,7 +57,7 @@ export default function TyreStrategy({
           ))}
         </span>
       </div>
-      <p className="mb-3 text-xs text-white/35">
+      <p className="mb-3 text-xs text-white/55">
         เลขในแถบ = จำนวนรอบของยางชุดนั้น
       </p>
 
@@ -67,7 +67,7 @@ export default function TyreStrategy({
           const d = drivers[r.num];
           return (
             <div key={r.num} className="flex items-center gap-2">
-              <span className="w-6 text-right text-[11px] tabular-nums text-white/35">
+              <span className="w-6 text-right text-[11px] tabular-nums text-white/55">
                 {r.pos}
               </span>
               <span className="flex w-14 shrink-0 items-center gap-1.5">
@@ -107,7 +107,7 @@ export default function TyreStrategy({
       </div>
 
       {/* แกนรอบ */}
-      <div className="ml-[calc(1.5rem+0.5rem+3.5rem+0.5rem)] mt-1.5 flex min-w-[380px] justify-between text-[10px] tabular-nums text-white/30">
+      <div className="ml-[calc(1.5rem+0.5rem+3.5rem+0.5rem)] mt-1.5 flex min-w-[380px] justify-between text-[10px] tabular-nums text-white/55">
         {ticks.map((t) => (
           <span key={t}>{t}</span>
         ))}
