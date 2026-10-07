@@ -10,7 +10,19 @@ export function Meter({ value, max, color, label }: { value: number; max: number
   return (
     <span className="flex flex-1 items-center gap-0.5" role="img" aria-label={`${label} ${value}/${max}`}>
       {Array.from({ length: max }, (_, i) => (
-        <span key={i} className="h-2 flex-1 rounded-sm" style={{ background: i < value ? color : "rgba(255,255,255,0.12)" }} />
+        // ช่องที่เต็มครึ่งเดียว (ERS ชาร์จทีละครึ่ง) ระบายครึ่งซ้าย
+        <span
+          key={i}
+          className="h-2 flex-1 rounded-sm"
+          style={{
+            background:
+              i + 1 <= value
+                ? color
+                : i < value
+                  ? `linear-gradient(90deg, ${color} 50%, rgba(255,255,255,0.12) 50%)`
+                  : "rgba(255,255,255,0.12)",
+          }}
+        />
       ))}
     </span>
   );

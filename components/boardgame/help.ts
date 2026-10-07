@@ -1,5 +1,5 @@
 import {
-  BACK_CELLS, BASE_MOVE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
+  BACK_CELLS, BASE_MOVE, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
   DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WORN_MOVE, type Rules,
 } from "@/lib/boardgame/engine";
 
@@ -29,7 +29,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "ers":
       return {
         title: "ERS",
-        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น ไพ่ MOVE รูปสายฟ้าชาร์จคืน 1 ขั้นถ้าตานั้นไม่ได้ใช้`,
+        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ MOVE รูปสายฟ้า +1${ours ? ` · เดิน BASE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS) · ไพ่ PITWALL ชาร์จแบต +1`,
       };
     case "pass":
       return { title: "เหรียญแซง", text: `+1 ช่อง และลอดผ่านจุดที่รถขวางเต็มทางได้ 1 จุด ใช้ได้คันละ ${TOKEN_USES} ครั้ง` };

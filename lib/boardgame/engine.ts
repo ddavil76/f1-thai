@@ -31,6 +31,8 @@ export const WORN_MOVE = 3;
 export const PIT_SPEED = 3;
 export const ERS_BONUS = 2;
 export const ERS_MAX = 3;
+/** กติกาของเรา: เดิน BASE โดยไม่ใช้ ERS ชาร์จคืนเท่านี้ (ERS เป็นขั้นละครึ่งได้ ใช้ได้เมื่อมีอย่างน้อย 1) */
+export const ERS_BASE_CHARGE = 0.5;
 /** รางยางสึกมีกี่ขั้น — สุดรางแล้วเจอไพ่สึกอีก = ยางพัง */
 export const WEAR_MAX = 6;
 /** เหรียญ ATTACK / BLOCK / SLIPSTREAM ใช้ได้กี่ครั้งต่อคัน */
@@ -179,6 +181,8 @@ export type TurnLog = {
   /** ATTACK ใส่ใคร */
   attacked: number | null;
   block: boolean;
+  /** ERS ที่ชาร์จคืนตานี้ (0 = ไม่ได้ชาร์จ) */
+  charged: number;
   /** ใช้เหรียญแซง */
   pass: boolean;
   /** ยางสึกเพิ่มกี่ขั้น */
@@ -670,7 +674,7 @@ const replace = (s: GameState, d: Driver): GameState => ({
 });
 
 const emptyLog = (kind: MoveKind): Omit<TurnLog, "finished" | "driver" | "ai"> => ({
-  kind, card: null, moved: 0, corner: false, blocked: false, ers: false, recharge: false,
+  kind, card: null, moved: 0, corner: false, blocked: false, ers: false, recharge: false, charged: 0,
   attacked: null, block: false, pass: false, wear: 0, nowWorn: false, events: [],
 });
 
@@ -1026,7 +1030,7 @@ function resolve(
   const events: GameEvent[] = [];
   const log = { ...emptyLog(kind), card: cardId, events };
   const free = !lim.slow && !lim.limp;
-  const ers = !!extras.ers && free && d.ers > 0 && kind !== "slip";
+  const ers = !!extras.ers && free && d.ers >= 1 && kind !== "slip";
   if (ers) {
     d = { ...d, ers: d.ers - 1 };
     log.ers = true;
@@ -1064,7 +1068,14 @@ function resolve(
     }
   }
   if (fx?.ers && !ers && d.ers < ERS_MAX) {
-    d = { ...d, ers: d.ers + 1 };
+    log.charged = Math.min(1, ERS_MAX - d.ers);
+    d = { ...d, ers: Math.min(ERS_MAX, d.ers + 1) };
+    log.recharge = true;
+  }
+  // กติกาของเรา: เดิน BASE ไม่ใช้ ERS = เก็บพลังคืนครึ่งขั้น
+  if (s.rules === "ours" && kind === "base" && !ers && d.ers < ERS_MAX) {
+    log.charged = Math.min(ERS_BASE_CHARGE, ERS_MAX - d.ers);
+    d = { ...d, ers: d.ers + log.charged };
     log.recharge = true;
   }
   if (extras.block && free && d.tokens.block > 0) {
@@ -1278,7 +1289,7 @@ export function playPitwall(s: GameState, index: number, rng: Rng, set?: Compoun
       x = { ...x, tokens: { ...x.tokens, [card.kind]: x.tokens[card.kind] + 1 } };
       break;
     case "charge":
-      x = { ...x, ers: x.ers + 1 };
+      x = { ...x, ers: Math.min(ERS_MAX, x.ers + 1) };
       break;
     case "tires":
       x = { ...x, wear: Math.max(0, x.wear - COMPOUNDS[x.compound].wear) };

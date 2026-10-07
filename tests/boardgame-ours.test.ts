@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_DECK, ACTION_OURS, BACK_CELLS, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
+  ACTION_DECK, ACTION_OURS, BACK_CELLS, ERS_BASE_CHARGE, ERS_MAX, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
   PITWALL_DECK, PITWALL_OURS, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX,
   activeDriver, canPitwall, choose, commit, moveFor, newGame, options, playPitwall, travel,
   type ActionKind, type CarSpec, type GameState, type IncidentFace, type Lane, type Rng, type Track,
@@ -57,6 +57,22 @@ describe("กติกาของเรา", () => {
     const s = topMove(at(game(), [[0, 1], [20, 0]]), PLAIN);
     expect(options(s).card).toBe(true);
     expect(choose(s, { kind: "card" }, never).pending?.value).toBe(MOVE_DECK[PLAIN].y - OFFLINE_PENALTY);
+  });
+
+  it("เดิน BASE โดยไม่ใช้ ERS ชาร์จคืน +0.5 · ต้องมีอย่างน้อย 1 ขั้นถึงใช้ได้", () => {
+    const low = (ers: number) => ({ ...at(game(), [[0, 0], [30, 0]]), drivers: at(game(), [[0, 0], [30, 0]]).drivers.map((d, i) => (i === 0 ? { ...d, ers } : d)) });
+    let s = commit(choose(low(1), { kind: "base" }, never), {}, never);
+    expect(s.drivers[0].ers).toBe(1 + ERS_BASE_CHARGE);
+    expect(s.feed[0].charged).toBe(ERS_BASE_CHARGE);
+    // ใช้ ERS ตานั้น = ไม่ได้ชาร์จ
+    s = commit(choose(low(1), { kind: "base" }, never), { ers: true }, never);
+    expect(s.drivers[0].ers).toBe(0);
+    // มีแค่ครึ่งขั้น ใช้ไม่ได้ เดินปกติแล้วชาร์จต่อ
+    s = commit(choose(low(0.5), { kind: "base" }, never), { ers: true }, never);
+    expect(s.drivers[0]).toMatchObject({ progress: BASE_MOVE, ers: 1 });
+    // เต็มแล้วไม่ล้น
+    s = commit(choose(low(ERS_MAX), { kind: "base" }, never), {}, never);
+    expect(s.drivers[0].ers).toBe(ERS_MAX);
   });
 
   it("ERS ในโซน DRS ได้ +3", () => {

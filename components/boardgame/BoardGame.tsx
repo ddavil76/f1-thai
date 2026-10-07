@@ -14,7 +14,7 @@ import { BACK_TEXT, helpText, type HelpKey } from "@/components/boardgame/help";
 import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
-  ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
+  ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
   DAMP, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
   NEUTRAL_ROUNDS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
   activeDriver, aiStep, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
@@ -291,7 +291,7 @@ function logText(s: GameState, l: TurnLog) {
   if (l.blocked) bits.push("ติดรถ");
   if (l.wear) bits.push(`ยางสึก ${l.wear}`);
   if (l.nowWorn) bits.push("ยางพัง!");
-  if (l.recharge) bits.push("ชาร์จ ERS");
+  if (l.charged) bits.push(`ชาร์จ ERS +${l.charged}`);
   if (l.finished) bits.push(`เข้าเส้นชัย P${s.drivers[l.driver].finished}`);
   return bits.join(" · ");
 }
@@ -571,7 +571,7 @@ export default function BoardGame({ board }: { board: Board }) {
   // พรีวิวขั้นที่ 2: จะไปถึงไหน และ ATTACK ได้ไหม
   let preview: ReturnType<typeof travel> | null = null;
   let canAttack = false;
-  const useErs = ers && free && !!d && d.ers > 0;
+  const useErs = ers && free && !!d && d.ers >= 1;
   const usePass = ours && pass && free && !!d && d.tokens.pass > 0;
   let goal = 0;
   if (d && p) {
@@ -859,7 +859,7 @@ export default function BoardGame({ board }: { board: Board }) {
                       {o.worn ? (
                         <HandCard i={0} tone="yellow" kicker={d.damage ? "เสียหาย" : "ยางพัง"} big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
                       ) : (
-                        <HandCard i={0} tone="dark" kicker="BASE" big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : `${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง`} onClick={() => pick({ kind: "base" })} />
+                        <HandCard i={0} tone="dark" kicker="BASE" big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : ours && d.ers < ERS_MAX ? `${BASE_MOVE} ช่องชัวร์ · ERS +${ERS_BASE_CHARGE}` : `${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง`} onClick={() => pick({ kind: "base" })} />
                       )}
                       {o.push && <HandCard i={1} tone="orange" kicker="PUSH" big={<span className="text-2xl">»»</span>} foot="วิ่งสุด ยางสึก" onClick={() => pick({ kind: "push" })} />}
                       {o.pace && d.mode?.kind === "pace" && (
@@ -917,6 +917,7 @@ export default function BoardGame({ board }: { board: Board }) {
                         `ไพ่ ${p.value}`,
                         p.kind !== "drs" && d.bonus > 0 ? `ทีมเวิร์ก +${d.bonus}` : "",
                         useErs ? `ERS +${ersAdd}` : "",
+                        ours && p.kind === "base" && !useErs && d.ers < ERS_MAX ? `ชาร์จ ERS +${ERS_BASE_CHARGE}` : "",
                         usePass ? "แซง +1" : "",
                         atk ? "ATTACK" : "",
                       ]
@@ -934,12 +935,12 @@ export default function BoardGame({ board }: { board: Board }) {
                 </div>
                 {ours ? (
                   <div className="grid grid-cols-2 gap-2">
-                    <Extra on={useErs} disabled={!free || d.ers <= 0 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
+                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
                     <Extra on={usePass} disabled={!free || d.tokens.pass <= 0 || playing} onClick={() => setPass((v) => !v)} title={`แซง +1 (${d.tokens.pass})`} foot="ลอดผ่านรถที่ขวาง 1 จุด" />
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    <Extra on={useErs} disabled={!free || d.ers <= 0 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ERS_BONUS}`} foot={`เหลือ ${d.ers}/${ERS_MAX}`} />
+                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ERS_BONUS}`} foot={`เหลือ ${d.ers}/${ERS_MAX}`} />
                     <Extra on={atk} disabled={!canAttack || playing} onClick={() => setAttack((v) => !v)} title={`ATTACK ${d.tokens.attack}`} foot={canAttack ? "ดันคันหน้าออก" : "ต้องจบติดท้าย"} />
                     <Extra on={block && canBlock} disabled={!canBlock || playing} onClick={() => setBlock((v) => !v)} title={`BLOCK ${d.tokens.block}`} foot="คันถัดไปแซงไม่ได้" />
                   </div>
@@ -1117,7 +1118,7 @@ function RulesList({ rules }: { rules: Rules }) {
           <b>BASE {BASE_MOVE} ช่อง</b> ชัวร์ ไม่สึกยาง · หรือ <b>เปิดไพ่ MOVE</b> ได้ระยะสุ่ม (ดูช่วงบนไพ่) เร็วกว่าแต่บางใบทำยางสึก — อยู่นอกเส้นแข่งระยะ −{OFFLINE_PENALTY}
         </RuleBlock>
         <RuleBlock title="เห็นระยะแล้วเสริมได้">
-          <b>ERS</b> +{ERS_BONUS} ช่อง (ทางตรง DRS +{ERS_DRS_BONUS}) มี {ERS_MAX} ขั้น · <b>เหรียญแซง</b> +1 ช่องและลอดผ่านรถที่ขวาง คันละ {TOKEN_USES} ครั้ง
+          <b>ERS</b> +{ERS_BONUS} ช่อง (ทางตรง DRS +{ERS_DRS_BONUS}) มี {ERS_MAX} ขั้น — เดิน BASE โดยไม่ใช้ ERS ชาร์จคืน +{ERS_BASE_CHARGE} ขั้น · <b>เหรียญแซง</b> +1 ช่องและลอดผ่านรถที่ขวาง คันละ {TOKEN_USES} ครั้ง
         </RuleBlock>
         <RuleBlock title="โค้งและการจราจร">
           เข้าโค้ง (แดง) ต้องหยุดในโค้งก่อน · ช่องหนึ่งมี 2 เลน เต็มแล้วผ่านไม่ได้
