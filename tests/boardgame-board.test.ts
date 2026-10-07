@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CELLS_PER_LAP, buildBoard, parsePolyline, resampleLoop } from "@/lib/boardgame/board";
+import { CELLS_PER_LAP, buildBoard, findCorners, parsePolyline, resampleLoop } from "@/lib/boardgame/board";
 import { CIRCUIT_TRACKS } from "@/lib/circuits";
 
 describe("resampleLoop", () => {
@@ -35,5 +35,34 @@ describe("buildBoard", () => {
 
   it("สนามที่ไม่มีข้อมูล = null", () => {
     expect(buildBoard("nowhere", "x")).toBeNull();
+  });
+});
+
+describe("findCorners", () => {
+  it("ทุกสนามมีโค้ง 1–4 โค้ง ไม่ทับเส้นสตาร์ท และไม่กินเกินครึ่งรอบ", () => {
+    for (const id of Object.keys(CIRCUIT_TRACKS)) {
+      const { corners } = buildBoard(id, id)!;
+      expect(corners.length, id).toBeGreaterThanOrEqual(1);
+      expect(corners.length, id).toBeLessThanOrEqual(4);
+      let cells = 0;
+      for (const z of corners) {
+        const len = z.start <= z.end ? z.end - z.start + 1 : CELLS_PER_LAP - z.start + z.end + 1;
+        cells += len;
+        const inZone = (c: number) => (z.start <= z.end ? c >= z.start && c <= z.end : c >= z.start || c <= z.end);
+        expect(inZone(0), `${id} ทับเส้นสตาร์ท`).toBe(false);
+      }
+      expect(cells, id).toBeLessThanOrEqual(CELLS_PER_LAP / 2);
+    }
+  });
+
+  it("สี่เหลี่ยม = 4 มุมตรงตำแหน่ง", () => {
+    // เริ่มกลางด้านล่าง ระยะช่อง 2.5 → มุมตรงช่อง 2, 6, 10, 14 ของ 16 ช่อง
+    const sq = resampleLoop(parsePolyline("M5,0 L10,0 L10,10 L0,10 L0,0 L5,0"), 16);
+    expect(findCorners(sq)).toEqual([
+      { start: 2, end: 2 },
+      { start: 6, end: 6 },
+      { start: 10, end: 10 },
+      { start: 14, end: 14 },
+    ]);
   });
 });

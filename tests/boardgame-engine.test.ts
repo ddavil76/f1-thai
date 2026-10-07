@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   CARD_EVENTS, CRUISE_MOVE, DECK_LIST, HAND_SIZE, PIT_COST, SC_SPEED_CAP, SPEED_CARDS,
-  TYRE_SLOTS, TYRES, WORN_MOVE,
-  activePlayer, applyEvent, canPlay, canSwap, columnAvg, forecastAt, makeWeatherPlan, newGame,
+  OFFLINE_PENALTY, TYRE_SLOTS, TYRES, WORN_MOVE,
+  activePlayer, applyEvent, cornerAt, settle, travel, canPlay, canSwap, columnAvg, forecastAt, makeWeatherPlan, newGame,
   pitCost, playTurn, shiftSky, shuffle, speedValue, spinChance, standings, validTyres,
   weatherEffect, weatherFlipped,
-  type Action, type GameState, type Mode, type Rng, type Tyre, type Weather, type WeatherPlan,
+  type Action, type CarSpec, type GameState, type Player, type Mode, type Rng, type Tyre, type Weather, type WeatherPlan,
 } from "@/lib/boardgame/engine";
 
 /** rng ที่คืนค่าตามลำดับที่กำหนด แล้ววนซ้ำ */
@@ -37,13 +37,22 @@ const dryPlan = (): WeatherPlan => ({
   fcWrong: Array<boolean>(30).fill(false),
 });
 
-/** เกมใหม่อากาศแห้งตลอด และกำหนดมือผู้เล่นทุกคนเอง (สำรับที่เหลือไว้จั่วเติม) */
+const humans = (...names: string[]): CarSpec[] =>
+  names.map((name, i) => ({ name, num: i + 1, ai: false, tyres: TYRES_SET[i % 2] }));
+
+/** สนามทดสอบ: รอบเดียวยาว `cells` ช่อง ไม่มีโค้ง */
+const straight = (cells: number) => ({ lapCells: cells, corners: [] });
+
+/**
+ * เกมใหม่ 2 คน (A อยู่เส้นแข่ง B อยู่เลนนอก ช่องเดียวกัน) อากาศแห้งตลอด
+ * และกำหนดมือผู้เล่นทุกคนเอง (สำรับที่เหลือไว้จั่วเติม)
+ */
 function game(
   total = 30,
   hand: Action[] = ["boost", "pit", "save"],
   plan: WeatherPlan = dryPlan(),
 ): GameState {
-  const s = newGame(["A", "B"], total, TYRES_SET, plan, () => 0.5);
+  const s = newGame(humans("A", "B"), straight(total), 1, plan, () => 0.5, [0, 1]);
   return { ...s, players: s.players.map((p) => ({ ...p, hand: [...hand] })) };
 }
 
@@ -81,7 +90,7 @@ const setPlayer = (s: GameState, id: number, patch: object): GameState => ({
 
 describe("เริ่มเกม", () => {
   it("แจกมือครบ 3 ใบ สำรับรวมมือตรงกับ DECK_LIST และยางใบแรกคือยางที่ใช้", () => {
-    const s = newGame(["A", "B"], 30, TYRES_SET, dryPlan(), Math.random);
+    const s = newGame(humans("A", "B"), straight(30), 1, dryPlan(), Math.random, [0, 1]);
     for (const p of s.players) {
       expect(p.hand).toHaveLength(HAND_SIZE);
       expect(p.hand.length + p.deck.length).toBe(
@@ -572,9 +581,9 @@ describe("การ์ดปรับฟ้า", () => {
 
 describe("ลำดับเดินตามอันดับ และผู้ชนะ", () => {
   it("จบรอบแล้วเรียงใหม่: คนนำเดินก่อน เสมอกันตามลำดับเดิม", () => {
-    let s = fix(game(), 7);
+    let s = fix(game(), 0);
     s = playTurn(s, cruise(), never); // A = 3
-    s = playTurn(s, push(), seq(...QUIET)); // B พลิกไพ่ 7: กลาง 5
+    s = playTurn(s, push(), seq(...QUIET)); // B (เลนนอก) พลิกไพ่ 0: กลาง 7 − 2 = 5
     expect(s.round).toBe(2);
     expect(s.order).toEqual([1, 0]);
     expect(activePlayer(s).id).toBe(1);
@@ -582,7 +591,7 @@ describe("ลำดับเดินตามอันดับ และผู
   });
 
   it("ขวางทางตกที่คนที่เดินต่อจากเราตามลำดับอันดับ ไม่ใช่เลขผู้เล่น", () => {
-    let s = fix(game(30, ["block", "boost", "save"]), 7);
+    let s = fix(game(30, ["block", "boost", "save"]), 0);
     s = playTurn(s, cruise(), never);
     s = playTurn(s, push(), seq(...QUIET)); // รอบ 2: B นำ เดินก่อน
     const out = playTurn(s, cruise("block"), never); // B ขวางคนที่เดินต่อ = A
@@ -654,5 +663,122 @@ describe("ธงเหลือง และเหตุการณ์ต้น
     expect(out.players.map((p) => p.life)).toEqual([TYRES.medium.life, TYRES.medium.life]);
     expect(out.players.map((p) => p.progress)).toEqual([20, 13]);
     expect(applyEvent(game(), "red_flag").players.map((p) => p.progress)).toEqual([0, 0]);
+  });
+});
+
+describe("สนาม 2 เลน", () => {
+  /** วางรถตามตำแหน่ง/เลนที่กำหนด (รถทุกคันเป็นผู้เล่น ไม่มี AI) */
+  const field = (cells: number, corners: { start: number; end: number }[], at: [number, 0 | 1][]) => {
+    const s = newGame(
+      humans(...at.map((_, i) => `C${i}`)),
+      { lapCells: cells, corners },
+      3,
+      dryPlan(),
+      () => 0.5,
+      at.map((_, i) => i),
+    );
+    return { ...s, players: s.players.map((p, i) => ({ ...p, progress: at[i][0], lane: at[i][1] })) };
+  };
+  const go = (s: GameState, id: number, n: number) => travel(s, s.players, s.players[id], n);
+
+  it("กริดแถวละ 2 คัน: แถวหน้าอยู่เส้นสตาร์ท คันแรกของแถวอยู่เส้นแข่ง แถวหลังถอยทีละช่อง", () => {
+    const s = newGame(humans("A", "B", "C", "D", "E"), straight(24), 3, dryPlan(), () => 0.5, [4, 3, 2, 1, 0]);
+    const at = (id: number) => [s.players[id].progress, s.players[id].lane];
+    expect(at(4)).toEqual([0, 0]);
+    expect(at(3)).toEqual([0, 1]);
+    expect(at(2)).toEqual([-1, 0]);
+    expect(at(1)).toEqual([-1, 1]);
+    expect(at(0)).toEqual([-2, 0]);
+    expect(s.total).toBe(72);
+  });
+
+  it("เข้าโค้งต้องหยุดที่ช่องสุดท้ายของโค้ง", () => {
+    const s = field(24, [{ start: 5, end: 6 }], [[2, 0]]);
+    expect(go(s, 0, 8)).toMatchObject({ progress: 6, corner: true });
+    expect(go(s, 0, 3)).toMatchObject({ progress: 5, corner: false }); // ยังไม่ถึงปลายโค้ง
+  });
+
+  it("ยืนอยู่ในโค้งแล้วออกได้ตามปกติ", () => {
+    expect(go(field(24, [{ start: 5, end: 6 }], [[5, 0]]), 0, 6)).toMatchObject({ progress: 11, corner: false });
+    expect(go(field(24, [{ start: 5, end: 6 }], [[6, 0]]), 0, 3)).toMatchObject({ progress: 9, corner: false });
+  });
+
+  it("โค้งที่คร่อมเส้นชัยก็นับ และนับต่อในรอบถัดไป", () => {
+    const s = field(24, [{ start: 23, end: 1 }], [[20, 0]]);
+    expect(cornerAt(s.track, 24)).toBe(0);
+    expect(go(s, 0, 10)).toMatchObject({ progress: 25, corner: true });
+  });
+
+  it("ช่องที่รถเต็มสองเลนผ่านไม่ได้ ต้องหยุดหลัง", () => {
+    const s = field(30, [], [[1, 0], [4, 0], [4, 1]]);
+    expect(go(s, 0, 6)).toMatchObject({ progress: 3, lane: 0, blocked: true });
+  });
+
+  it("ลงจอดเส้นแข่งก่อน ถ้ามีรถอยู่ไปเลนนอก ถ้าเต็มทั้งคู่ถอยหนึ่งช่อง", () => {
+    expect(go(field(30, [], [[0, 1], [5, 0]]), 0, 5)).toMatchObject({ progress: 5, lane: 1 });
+    expect(go(field(30, [], [[0, 1], [5, 1]]), 0, 5)).toMatchObject({ progress: 5, lane: 0 });
+    const full = field(30, [], [[0, 0], [5, 0], [5, 1]]);
+    expect(go(full, 0, 5)).toMatchObject({ progress: 4, blocked: true });
+  });
+
+  it("ผ่านรถคันเดียวในเลนเดียวกันได้ (หลบไปอีกเลน)", () => {
+    expect(go(field(30, [], [[0, 0], [2, 0]]), 0, 4)).toMatchObject({ progress: 4, blocked: false });
+  });
+
+  it("เร่งจากเลนนอกได้ค่าน้อยลง", () => {
+    const s = setPlayer(fix(game(), 3), 0, { lane: 1 });
+    expect(playTurn(s, push(), never).players[0].progress).toBe(val(3, "medium") - OFFLINE_PENALTY);
+  });
+
+  it("settle: รถที่ทับกันถอยไปช่องหลัง คันหน้าได้ที่ก่อน", () => {
+    const base = game().players[0];
+    const cars: Player[] = [0, 1, 2].map((id) => ({ ...base, id, progress: 5, lane: 0 }));
+    const out = settle(cars);
+    expect(out.map((c) => [c.progress, c.lane])).toEqual([[5, 0], [5, 1], [4, 0]]);
+  });
+
+  it("อันดับเสมอช่องเดียวกัน: เส้นแข่งนำเลนนอก", () => {
+    const s = field(30, [], [[5, 1], [5, 0]]);
+    expect(standings(s).map((p) => p.id)).toEqual([1, 0]);
+  });
+});
+
+describe("รถ AI", () => {
+  const cars = (): CarSpec[] => [
+    { name: "คน", num: 7, ai: false, tyres: TYRES_SET[0] },
+    { name: "บอท", num: 22, ai: true },
+  ];
+
+  it("AI ที่อยู่หน้าผู้เล่นในกริดเดินไปก่อนเลยตั้งแต่เริ่ม แล้วรอผู้เล่น", () => {
+    const s = newGame(cars(), straight(60), 1, dryPlan(), () => 0.5, [1, 0]);
+    expect(activePlayer(s).ai).toBe(false);
+    expect(s.feed).toHaveLength(1);
+    expect(s.feed[0]).toMatchObject({ player: 1, ai: true });
+    expect(s.players[1].progress).toBeGreaterThan(0);
+  });
+
+  it("ผู้เล่นเดินแล้ว AI ที่ต่อคิวเดินตามเอง ไม่ต้องกดอะไร", () => {
+    let s = newGame(cars(), straight(60), 1, dryPlan(), () => 0.5, [0, 1]);
+    s = fix(s, 7);
+    s = playTurn(s, cruise(), seq(...QUIET));
+    expect(s.feed.map((l) => l.ai)).toEqual([false, true]);
+    expect(s.players[1].progress).toBe(val(7, "medium") - OFFLINE_PENALTY); // AI เลนนอก แถวกลาง
+    expect(s.round).toBe(2);
+  });
+
+  it("AI ไม่สึกยาง และไม่มีการ์ดในมือ", () => {
+    let s = newGame(cars(), straight(60), 1, dryPlan(), () => 0.5, [0, 1]);
+    s = playTurn(fix(s, 0), cruise(), seq(...QUIET));
+    expect(s.players[1].hand).toEqual([]);
+    expect(s.players[1].life).toBeGreaterThan(50);
+  });
+
+  it("AI ข้ามเส้นชัยก่อน = AI ชนะ พร้อมอันดับทั้งสนาม", () => {
+    let s = newGame(cars(), straight(6), 1, dryPlan(), () => 0.5, [0, 1]);
+    s = fix(s, 0); // AI พลิกไพ่ 0: กลาง 7 − 2 = 5 … ยังไม่ถึง 6
+    s = setPlayer(s, 1, { progress: 3 });
+    s = playTurn(s, cruise(), never); // คน 0 → 3, AI 3 → 8 ชนะ
+    expect(s.winner).toBe(1);
+    expect(s.finish).toEqual([1, 0]);
   });
 });

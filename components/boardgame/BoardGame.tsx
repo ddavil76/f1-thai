@@ -5,27 +5,38 @@ import {
   CloudDrizzle, CloudRain, Droplets, Flag, Gauge, RotateCcw, Sun, TriangleAlert, X, Zap,
 } from "lucide-react";
 import OsmCredit from "@/components/OsmCredit";
-import type { Board } from "@/lib/boardgame/board";
+import type { Board, Pt } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
-  ACTIONS, CARD_EVENTS, COL_LABEL, CRUISE_MOVE, EVENTS, MAX_PER_COMPOUND, PIT_COST, SURE_AHEAD, TYRES, TYRE_SLOTS,
+  ACTIONS, CARD_EVENTS, OFFLINE_PENALTY, cornerAt, lapCell, COL_LABEL, CRUISE_MOVE, EVENTS, MAX_PER_COMPOUND, PIT_COST, SURE_AHEAD, TYRES, TYRE_SLOTS,
   SPEED_CARDS, WEATHER, WORN_MOVE, YELLOW_TO_SC, activePlayer, canPlay, canSwap, columnAvg,
   forecastAt, isWorn, makeWeatherPlan, mustCruise, newGame, pitCost, playTurn, standings, validTyres, weatherEffect,
   weatherNow,
-  type Action, type Col, type GameState, type Mode, type SkyShift, type Tyre, type Weather,
+  type Action, type CarSpec, type Col, type GameState, type Player, type Mode, type SkyShift, type Tyre, type Weather,
   type WeatherPlan,
 } from "@/lib/boardgame/engine";
 
 const LAPS = 3;
-const TOTAL = CELLS_PER_LAP * LAPS;
 const COMPOUNDS = Object.keys(TYRES) as Tyre[];
 const COLS: Col[] = ["soft", "medium", "hard"];
 
 /** ผู้เล่นสมมติ — ไม่ใช้ชื่อทีม/นักขับจริง สีแดงกับขาวให้ตัดกันบนพื้นดำ */
 const SEATS = [
-  { name: "เมเทียร์ เรซซิ่ง", color: "#E10600", ink: "#fff" },
-  { name: "ไอซ์ไบรท์ เรซซิ่ง", color: "#DEDEDE", ink: "#08080A" },
+  { name: "เมเทียร์ เรซซิ่ง", num: 7, color: "#E10600", ink: "#fff" },
+  { name: "ไอซ์ไบรท์ เรซซิ่ง", num: 21, color: "#DEDEDE", ink: "#08080A" },
 ] as const;
+
+/** รถ AI ให้กริดเต็ม 8 คัน — ทีมและเลขรถสมมติทั้งหมด สีเทาเพื่อให้รถผู้เล่นเด่น */
+const AI_CARS = [
+  { name: "ไลท์สปีด", num: 3 },
+  { name: "ทาสคาน", num: 11 },
+  { name: "โอไรออน", num: 19 },
+  { name: "บลูเฟิร์น", num: 24 },
+  { name: "ซันเดอร์", num: 38 },
+  { name: "คอปเปอร์ฮอว์ก", num: 63 },
+];
+const AI_LOOK = { color: "#4a4a55", ink: "#DEDEDE" };
+const look = (p: Player) => (p.ai ? AI_LOOK : SEATS[p.id]);
 
 /**
  * แผนอากาศที่ยังไม่เริ่มเกม เก็บไว้นอก React เพื่อให้ฝั่งเซิร์ฟเวอร์ไม่ต้องสุ่ม (ผลคงที่ต่อ build)
@@ -46,71 +57,102 @@ function resetPlan() {
   planListeners.forEach((l) => l());
 }
 
-const lapOf = (progress: number) => Math.min(LAPS, Math.floor(progress / CELLS_PER_LAP) + 1);
+const lapOf = (progress: number) =>
+  Math.min(LAPS, Math.max(1, Math.floor(progress / CELLS_PER_LAP) + 1));
+
+/** ตำแหน่งบนจอของเลน: ขยับออกจากแนวกลางสนามตั้งฉากกับทิศวิ่ง */
+function lanePoints(cells: Pt[], off: number) {
+  const n = cells.length;
+  return cells.map((c, i) => {
+    const a = cells[(i - 1 + n) % n];
+    const b = cells[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    return {
+      lanes: [
+        { x: c.x - nx * off, y: c.y - ny * off },
+        { x: c.x + nx * off, y: c.y + ny * off },
+      ] as const,
+      label: { x: c.x + nx * off * 3, y: c.y + ny * off * 3 },
+      edge: { x: c.x + nx * off * 2, y: c.y + ny * off * 2 },
+    };
+  });
+}
 
 function BoardView({ board, state }: { board: Board; state: GameState }) {
-  const pad = 7;
-  const r = 2.1;
+  const pad = 8;
+  const off = 1.5;
+  const geo = lanePoints(board.cells, off);
+  const inCorner = (i: number) => cornerAt(state.track, i) >= 0;
+  const racing = geo.map((g) => `${g.lanes[0].x},${g.lanes[0].y}`).join(" ");
   return (
     <div className="card-poster relative rounded-2xl border border-white/10 p-3">
       <svg
         viewBox={`${-pad} ${-pad} ${board.w + pad * 2} ${board.h + pad * 2}`}
-        className="mx-auto block max-h-[22rem] w-full"
+        className="mx-auto block max-h-[26rem] w-full"
         role="img"
-        aria-label={`กระดานสนาม${board.name} ${CELLS_PER_LAP} ช่องต่อรอบ`}
+        aria-label={`กระดานสนาม${board.name} ${CELLS_PER_LAP} ช่องต่อรอบ 2 เลน มีรถ ${state.players.length} คัน`}
       >
-        <path d={board.d} fill="none" stroke="#1F1F24" strokeWidth={r * 3.2} strokeLinejoin="round" strokeLinecap="round" />
-        <path d={board.d} fill="none" stroke="#3a3a42" strokeWidth={0.5} strokeLinejoin="round" />
-        {board.cells.map((c, i) => (
+        <path d={board.d} fill="none" stroke="#2a2a31" strokeWidth={off * 4.4} strokeLinejoin="round" strokeLinecap="round" />
+        {/* เส้นแข่ง */}
+        <polygon points={racing} fill="none" stroke="#E10600" strokeOpacity={0.35} strokeWidth={0.35} strokeDasharray="1.2 1" />
+        {/* ขอบโค้ง: แถบแดงขาวด้านนอก */}
+        {geo.map((g, i) =>
+          inCorner(i) ? (
+            <circle key={`k${i}`} cx={g.edge.x} cy={g.edge.y} r={0.9} fill="#E10600" stroke="#fff" strokeWidth={0.35} />
+          ) : null,
+        )}
+        {geo.map((g, i) => (
           <g key={i}>
-            <circle
-              cx={c.x}
-              cy={c.y}
-              r={r * 1.05}
-              fill={i === 0 ? "#fff" : "#08080A"}
-              stroke={i === 0 ? "#E10600" : "#5a5a64"}
-              strokeWidth={i === 0 ? 0.8 : 0.4}
-            />
-            {/* เลขช่องในรอบ: 0 = เส้นสตาร์ท/เส้นชัย */}
-            <text
-              x={c.x}
-              y={c.y}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontSize={r * 1.15}
-              fontWeight={700}
-              fill={i === 0 ? "#E10600" : "#b4b4bc"}
-              className="tabular-nums"
-            >
-              {i === 0 ? "S" : i}
-            </text>
-          </g>
-        ))}
-        {state.players.map((p) => {
-          const cell = board.cells[p.progress % CELLS_PER_LAP];
-          // เลื่อนเล็กน้อยกันรถซ้อนกันพอดีเมื่ออยู่ช่องเดียวกัน
-          const off = (p.id - (state.players.length - 1) / 2) * r * 1.1;
-          const seat = SEATS[p.id];
-          return (
-            <g
-              key={p.id}
-              className="transition-transform duration-500 ease-out motion-reduce:transition-none"
-              style={{ transform: `translate(${cell.x + off}px, ${cell.y - off}px)` }}
-            >
-              <circle r={r * 0.7} fill={seat.color} stroke="#08080A" strokeWidth={0.6} />
+            {g.lanes.map((l, k) => (
+              <circle key={k} cx={l.x} cy={l.y} r={0.45} fill={i === 0 ? "#fff" : "#5a5a64"} />
+            ))}
+            {(i === 0 || i % 2 === 0) && (
               <text
+                x={g.label.x}
+                y={g.label.y}
                 textAnchor="middle"
                 dominantBaseline="central"
-                fontSize={r * 0.95}
-                fontWeight={800}
-                fill={seat.ink}
+                fontSize={1.9}
+                fontWeight={700}
+                fill={i === 0 ? "#E10600" : "#8a8a94"}
               >
-                {p.id + 1}
+                {i === 0 ? "S" : i}
               </text>
-            </g>
-          );
-        })}
+            )}
+          </g>
+        ))}
+        {[...state.players]
+          .sort((a, b) => Number(a.ai) - Number(b.ai))
+          .reverse()
+          .map((p) => {
+            const pos = geo[lapCell(state.track, p.progress)].lanes[p.lane];
+            const c = look(p);
+            const r = p.ai ? 1.15 : 1.45;
+            return (
+              <g
+                key={p.id}
+                className="transition-transform duration-500 ease-out motion-reduce:transition-none"
+                style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+              >
+                <circle r={r} fill={c.color} stroke={p.ai ? "#08080A" : "#fff"} strokeWidth={p.ai ? 0.3 : 0.45} />
+                <text textAnchor="middle" dominantBaseline="central" fontSize={r * 1.05} fontWeight={800} fill={c.ink}>
+                  {p.num}
+                </text>
+              </g>
+            );
+          })}
       </svg>
+      <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/60">
+        <span>
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-(--color-f1)" aria-hidden />
+          โค้ง (ต้องหยุดในโค้ง)
+        </span>
+        <span>เส้นประแดง = เส้นแข่ง</span>
+      </p>
       <OsmCredit className="bottom-2 right-2" />
     </div>
   );
@@ -433,7 +475,18 @@ export default function BoardGame({ board }: { board: Board }) {
           <TyreSetup
             plan={plan}
             onDone={(tyres) =>
-              setState(newGame(SEATS.map((s) => s.name), TOTAL, tyres, plan, Math.random))
+              setState(
+                newGame(
+                  [
+                    ...SEATS.map((seat, i): CarSpec => ({ name: seat.name, num: seat.num, ai: false, tyres: tyres[i] })),
+                    ...AI_CARS.map((car): CarSpec => ({ ...car, ai: true })),
+                  ],
+                  { lapCells: CELLS_PER_LAP, corners: board.corners },
+                  LAPS,
+                  plan,
+                  Math.random,
+                ),
+              )
             }
           />
         ) : (
@@ -445,7 +498,8 @@ export default function BoardGame({ board }: { board: Board }) {
   }
 
   const me = activePlayer(state);
-  const seat = SEATS[me.id];
+  const seat = look(me);
+  const order = standings(state);
   const worn = isWorn(me);
   /** ยางพังหรือเบรกร้อน = เทิร์นนี้ขับคุมเท่านั้น */
   const forced = mustCruise(me);
@@ -522,29 +576,40 @@ export default function BoardGame({ board }: { board: Board }) {
     <div className="space-y-4">
       <BoardView board={board} state={state} />
 
-      <section className="grid grid-cols-2 gap-3" aria-label="อันดับ">
-        {standings(state).map((p, rank) => (
-          <div key={p.id} className="card flex items-center gap-3 p-3">
-            <span
-              className="poster flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm"
-              style={{ background: SEATS[p.id].color, color: SEATS[p.id].ink }}
-              aria-hidden
-            >
-              {p.id + 1}
-            </span>
-            <div className="min-w-0 text-xs">
-              <p className="truncate font-bold text-white">
-                P{rank + 1} · {p.name}
-              </p>
-              <p className="tabular-nums text-white/60">
-                รอบ {lapOf(p.progress)}/{LAPS} · ช่อง {p.progress}/{TOTAL}
-              </p>
-              <p className="tabular-nums text-white/60">
-                ยาง{TYRES[p.tyres[0]].label} {p.life}/{TYRES[p.tyres[0]].life}
-              </p>
-            </div>
-          </div>
-        ))}
+      <section className="card p-3" aria-label="อันดับ">
+        <ol className="space-y-1 text-xs">
+          {order.map((p, rank) => {
+            const c = look(p);
+            const gap = order[0].progress - p.progress;
+            return (
+              <li
+                key={p.id}
+                className={`flex items-center gap-2 rounded-lg px-2 py-1 ${p.ai ? "" : "bg-white/8"}`}
+              >
+                <span className="poster w-6 text-right tabular-nums text-white/70">P{rank + 1}</span>
+                <span
+                  className="flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[11px] font-black tabular-nums"
+                  style={{ background: c.color, color: c.ink, outline: p.ai ? undefined : "1.5px solid #fff" }}
+                  aria-hidden
+                >
+                  {p.num}
+                </span>
+                <span className={`min-w-0 flex-1 truncate ${p.ai ? "text-white/70" : "font-bold text-white"}`}>
+                  {p.name}
+                  {p.ai && <span className="ml-1 text-[10px] text-white/45">AI</span>}
+                </span>
+                {!p.ai && (
+                  <span className="tabular-nums text-white/60">
+                    {TYRES[p.tyres[0]].label} {p.life}/{TYRES[p.tyres[0]].life}
+                  </span>
+                )}
+                <span className="w-14 text-right tabular-nums text-white/60">
+                  {rank === 0 ? `รอบ ${lapOf(p.progress)}/${LAPS}` : `+${gap} ช่อง`}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
       </section>
 
       {!over && (
@@ -577,8 +642,19 @@ export default function BoardGame({ board }: { board: Board }) {
       {over ? (
         <section className="card-poster space-y-3 rounded-2xl border border-white/10 p-5 text-center" role="status">
           <Flag className="mx-auto h-6 w-6 text-(--color-f1-text)" aria-hidden />
-          <p className="poster text-2xl">{state.players[state.winner!].name} ชนะ!</p>
-          <p className="text-sm text-white/60">แข่งครบ {state.round} รอบเทิร์น</p>
+          <p className="poster text-2xl">
+            #{state.players[state.winner!].num} {state.players[state.winner!].name} ชนะ!
+          </p>
+          <ol className="mx-auto max-w-xs space-y-0.5 text-left text-sm">
+            {(state.finish ?? []).map((id, i) => {
+              const p = state.players[id];
+              return (
+                <li key={id} className={p.ai ? "text-white/60" : "font-bold text-white"}>
+                  <span className="inline-block w-8 tabular-nums">P{i + 1}</span>#{p.num} {p.name}
+                </li>
+              );
+            })}
+          </ol>
           <button
             type="button"
             onClick={restart}
@@ -603,9 +679,14 @@ export default function BoardGame({ board }: { board: Board }) {
               <span className="font-medium text-yellow-400">โดนขวางทาง −{me.debuff} ช่อง</span>
             )}
           </p>
-          <p className="text-xs text-white/55">
-            ลำดับเดินรอบนี้ (คนนำเดินก่อน):{" "}
-            {state.order.map((id) => `P${standings(state).findIndex((p) => p.id === id) + 1}`).join(" → ")}
+          <p className="text-xs text-white/60">
+            รถ #{me.num} อันดับ P{order.findIndex((p) => p.id === me.id) + 1} ·{" "}
+            {me.lane === 0 ? (
+              <span className="font-bold text-white">อยู่บนเส้นแข่ง</span>
+            ) : (
+              <span className="font-bold text-yellow-400">อยู่เลนนอก — เร่งได้ −{OFFLINE_PENALTY}</span>
+            )}
+            {cornerAt(state.track, me.progress) >= 0 && " · อยู่ในโค้ง ออกได้เลย"}
           </p>
 
           {worn && (
@@ -809,8 +890,30 @@ export default function BoardGame({ board }: { board: Board }) {
           )}
           {log.action ? ` · ใช้ “${ACTIONS[log.action].label}”` : ""} · เดิน{" "}
           <span className="font-bold tabular-nums text-white">{log.moved}</span> ช่อง
+          {log.corner && <span className="text-white/60"> · หยุดในโค้ง</span>}
+          {log.blocked && <span className="text-white/60"> · ติดรถข้างหน้า</span>}
           {log.spun && <span className="font-bold text-yellow-400"> · หมุนในฝน! ธงเหลืองรอบหน้า</span>}
         </p>
+      )}
+
+      {state.feed.some((l) => l.ai) && (
+        <section className="card p-3" aria-label="รถคันอื่นเดิน">
+          <p className="mb-1.5 text-xs font-medium text-white/55">รถ AI ที่เดินไปแล้ว</p>
+          <ul className="space-y-0.5 text-xs text-white/70">
+            {state.feed
+              .filter((l) => l.ai)
+              .map((l, i) => {
+                const p = state.players[l.player];
+                return (
+                  <li key={i} className="tabular-nums">
+                    #{p.num} {p.name} {l.mode === "cruise" ? "ขับคุม" : "เร่ง"} เดิน {l.moved} ช่อง
+                    {l.corner ? " · หยุดในโค้ง" : ""}
+                    {l.blocked ? " · ติดรถข้างหน้า" : ""}
+                  </li>
+                );
+              })}
+          </ul>
+        </section>
       )}
 
       <Rules />
@@ -824,7 +927,15 @@ function Rules() {
       <summary className="cursor-pointer font-bold text-white">วิธีเล่น (1 นาที)</summary>
       <ol className="mt-3 list-decimal space-y-1.5 pl-5">
         <li>
-          ใครข้ามเส้นชัยก่อนชนะทันที — ครบ {LAPS} รอบ ({TOTAL} ช่อง) แต่ละรอบเทิร์นคนนำเดินก่อน คนตามหลังเดินทีหลัง
+          แข่งกับรถ AI อีก {AI_CARS.length} คัน ใครข้ามเส้นชัยก่อนชนะทันที (ครบ {LAPS} รอบ) แต่ละรอบเทิร์นคนนำเดินก่อน
+          รถ AI เดินเองต่อจากคุณ
+        </li>
+        <li>
+          สนามมี 2 เลน: เส้นแข่ง (เส้นประแดง) กับเลนนอก — เร่งจากเลนนอกได้ −{OFFLINE_PENALTY} ช่อง
+          ช่องหนึ่งจุรถได้ 2 คัน ถ้าเต็มทั้งสองเลนแซงผ่านไม่ได้ ต้องหยุดหลัง และลงจอดเส้นแข่งก่อนถ้าว่าง
+        </li>
+        <li>
+          โค้ง (จุดแดงขอบสนาม) คำนวณจากรูปสนามจริง: ถ้าเดินเข้าโค้งต้องหยุดอยู่ในโค้งก่อน แล้วออกได้ในตาถัดไป
         </li>
         <li>
           ก่อนแข่ง ดูพยากรณ์อากาศแล้วเลือกการ์ดยาง {TYRE_SLOTS} ใบ ใบแรกใช้ออกตัว อีก {TYRE_SLOTS - 1} ใบเป็นสำรองไว้เข้าพิท

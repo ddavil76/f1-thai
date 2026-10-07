@@ -9,9 +9,15 @@
  *            ไพ่มีสัญลักษณ์: สึก (ยางเสื่อม), หยดน้ำ (ความเสี่ยงหมุนในฝน), ทีม/เหตุการณ์ (ผลพิเศษ)
  * ยางหมดอายุ = "ยางพัง": ขับคุมได้เท่าที่ลดทอน ใช้การ์ดไม่ได้ ต้องเข้าพิท
  * ผู้เล่นเดินตามอันดับ (คนนำก่อน) ใครข้ามเส้นชัยก่อนชนะทันที
+ * สนามมี 2 เลน: เส้นแข่ง (lane 0) กับเลนนอก (lane 1) — เร่งจากเลนนอกได้ค่าน้อยลง
+ * ช่องหนึ่งจุรถได้ 2 คัน (คนละเลน) ถ้าเต็มทั้งสองเลนแซงผ่านไม่ได้ ต้องหยุดหลัง
+ * โค้ง: ถ้าเดินเข้าโค้ง ต้องหยุดอยู่ในโค้งก่อน แล้วค่อยออกในตาถัดไป
+ * รถ AI เดินเองตามกฎตายตัว (ไพ่เร่งแถวกลาง ไม่คิดเรื่องยาง)
  * อากาศถูกกำหนดไว้ตั้งแต่เริ่มเกมและพยากรณ์ล่วงหน้าได้ (เทิร์นไกล ๆ ไม่แม่น)
  * ธงเหลืองเตือนว่ารอบหน้าอาจมีเซฟตี้คาร์ — ช่วงนั้นเข้าพิทฟรี แต่ผ่านรอบนั้นไปแล้วต้องเสียเวลาเต็ม
  */
+
+import type { Zone } from "./board";
 
 export type Rng = () => number;
 
@@ -172,6 +178,8 @@ export const CRUISE_MOVE = 3;
 export const WORN_MOVE = 2;
 /** เสียเวลาเข้าพิทกี่ช่อง (เซฟตี้คาร์ = ฟรี) */
 export const PIT_COST = 2;
+/** เร่งจากเลนนอกได้ค่าน้อยลงเท่านี้ */
+export const OFFLINE_PENALTY = 2;
 /** ไพ่เร่งมีค่าสูงสุดเท่านี้ในรอบเซฟตี้คาร์ */
 export const SC_SPEED_CAP = 5;
 /** โอกาสเกิดธงแดงต้นรอบ */
@@ -231,9 +239,20 @@ export function forecastAt(plan: WeatherPlan, round: number, ahead: number): For
   return { weather: off[actual], sure };
 }
 
+/** ข้อมูลสนามที่กติกาต้องใช้: จำนวนช่องต่อรอบ และโค้ง */
+export type Track = { lapCells: number; corners: Zone[] };
+
+export type Lane = 0 | 1;
+
 export type Player = {
   id: number;
   name: string;
+  /** เลขรถ */
+  num: number;
+  /** รถ AI เดินเอง */
+  ai: boolean;
+  /** 0 = เส้นแข่ง, 1 = เลนนอก */
+  lane: Lane;
   /** ตำแหน่งสะสมเป็นจำนวนช่อง (0 = เส้นสตาร์ท) */
   progress: number;
   /** ยางที่ใส่ไว้ตอนเริ่ม — ใบแรกคือใบที่ใช้อยู่ ที่เหลือเป็นยางสำรอง */
@@ -254,6 +273,13 @@ export type Player = {
 
 export type TurnLog = {
   player: number;
+  ai: boolean;
+  /** ตำแหน่งก่อนเดิน */
+  from: number;
+  /** ถูกรถขวางจนเดินไม่ครบ */
+  blocked: boolean;
+  /** ต้องหยุดในโค้ง */
+  corner: boolean;
   /** ไพ่เร่งที่ใช้ (ลำดับใน SPEED_CARDS) — null เมื่อขับคุม */
   card: number | null;
   action: Action | null;
@@ -268,6 +294,7 @@ export type TurnLog = {
 };
 
 export type GameState = WeatherPlan & {
+  track: Track;
   players: Player[];
   /** ช่องที่ต้องไปให้ถึง = ช่องต่อรอบ × จำนวนรอบ */
   total: number;
@@ -283,7 +310,12 @@ export type GameState = WeatherPlan & {
   /** มีเหตุผิดปกติในรอบนี้ (หมุน/ขับพลาด) — ทำให้รอบหน้าขึ้นธงเหลือง */
   incident: boolean;
   winner: number | null;
+  /** อันดับสุดท้ายตอนจบเรซ (id เรียงตามอันดับ) */
+  finish: number[] | null;
+  /** เทิร์นของผู้เล่นคนล่าสุด */
   lastTurn: TurnLog | null;
+  /** ทุกการเดินตั้งแต่ผู้เล่นตัดสินใจครั้งล่าสุด (รวมรถ AI ที่เดินตามมา) */
+  feed: TurnLog[];
 };
 
 export const weatherNow = (s: GameState): Weather => s.weather[s.round - 1] ?? "dry";
@@ -359,48 +391,151 @@ function drawSpeed(
   return { id: d[0], deck: d.slice(1), discard: x };
 }
 
+/** สเปกรถตอนเริ่มเกม — รถ AI ไม่ต้องเลือกยาง */
+export type CarSpec = { name: string; num: number; ai: boolean; tyres?: Tyre[] };
+
+/** ยางของรถ AI: ใช้ค่าแถวกลางเสมอ ไม่สึก ไม่ต้องเข้าพิท */
+const AI_TYRES: Tyre[] = ["medium"];
+const AI_LIFE = 99;
+
+/**
+ * เริ่มเกม: จัดกริดแถวละ 2 คัน (คันแรกของแถวอยู่เส้นแข่ง) แถวหน้าอยู่เส้นสตาร์ท แถวหลังถอยไปทีละช่อง
+ * `grid` = ลำดับกริด (id) ถ้าไม่ส่งจะสุ่ม แล้วให้รถ AI ที่อยู่หน้าผู้เล่นเดินไปก่อนเลย
+ */
 export function newGame(
-  names: string[],
-  total: number,
-  tyres: Tyre[][],
+  cars: CarSpec[],
+  track: Track,
+  laps: number,
   plan: WeatherPlan,
   rng: Rng,
+  grid?: number[],
 ): GameState {
   const deckCards = (Object.keys(DECK_LIST) as Action[]).flatMap((a) =>
     Array<Action>(DECK_LIST[a]).fill(a),
   );
   const speedIds = SPEED_CARDS.map((_, i) => i);
-  return {
+  const order = grid ?? shuffle(cars.map((_, id) => id), rng);
+  const players = cars.map((car, id) => {
+    const slot = order.indexOf(id);
+    const tyres = car.ai ? AI_TYRES : (car.tyres ?? AI_TYRES);
+    return refill(
+      {
+        id,
+        name: car.name,
+        num: car.num,
+        ai: car.ai,
+        lane: (slot % 2) as Lane,
+        progress: -Math.floor(slot / 2) || 0, // กัน -0
+        tyres,
+        life: car.ai ? AI_LIFE : TYRES[tyres[0]].life,
+        hand: [],
+        deck: car.ai ? [] : shuffle(deckCards, rng),
+        discard: [],
+        speedDeck: shuffle(speedIds, rng),
+        speedDiscard: [],
+        debuff: 0,
+        limp: false,
+      },
+      rng,
+    );
+  });
+  const state: GameState = {
     ...plan,
-    players: names.map((name, id) =>
-      refill(
-        {
-          id,
-          name,
-          progress: 0,
-          tyres: tyres[id],
-          life: TYRES[tyres[id][0]].life,
-          hand: [],
-          deck: shuffle(deckCards, rng),
-          discard: [],
-          speedDeck: shuffle(speedIds, rng),
-          speedDiscard: [],
-          debuff: 0,
-          limp: false,
-        },
-        rng,
-      ),
-    ),
-    total,
+    track,
+    players,
+    total: track.lapCells * laps,
     round: 1,
-    order: names.map((_, id) => id),
+    order,
     turn: 0,
     event: null,
     yellow: false,
     incident: false,
     winner: null,
+    finish: null,
     lastTurn: null,
+    feed: [],
   };
+  return runAI(state, rng);
+}
+
+/** ช่องในรอบของตำแหน่งสะสม */
+export const lapCell = (t: Track, p: number) => ((p % t.lapCells) + t.lapCells) % t.lapCells;
+
+/** อยู่ในโค้งไหน (ลำดับใน corners) หรือ -1 */
+export function cornerAt(t: Track, p: number): number {
+  const c = lapCell(t, p);
+  return t.corners.findIndex((z) =>
+    z.start <= z.end ? c >= z.start && c <= z.end : c >= z.start || c <= z.end,
+  );
+}
+
+/** เลนที่ถูกรถคันอื่นใช้อยู่ ณ ตำแหน่งนั้น */
+function takenLanes(players: Player[], self: number, p: number): Set<Lane> {
+  return new Set(players.filter((o) => o.id !== self && o.progress === p).map((o) => o.lane));
+}
+
+/**
+ * เดินไปข้างหน้า `n` ช่องจริงบนสนาม:
+ * 1) ถ้าทางเข้าโค้งใหม่ ต้องหยุดที่ช่องสุดท้ายของโค้งนั้น (ออกจากโค้งที่ยืนอยู่ได้ตามปกติ)
+ * 2) ช่องที่รถเต็มทั้งสองเลนผ่านไม่ได้ — หยุดหลังช่องนั้น
+ * 3) ลงจอดเส้นแข่งก่อนถ้าว่าง ไม่งั้นเลนนอก ถ้าเต็มทั้งคู่ถอยมาช่องก่อนหน้า
+ */
+export function travel(
+  s: GameState, players: Player[], car: Player, n: number,
+): { progress: number; lane: Lane; blocked: boolean; corner: boolean } {
+  const t = s.track;
+  let target = car.progress + Math.max(0, n);
+  let corner = false;
+  const startZone = cornerAt(t, car.progress);
+  for (let p = car.progress + 1; p < target; p++) {
+    const z = cornerAt(t, p);
+    if (z >= 0 && z !== startZone && cornerAt(t, p + 1) !== z) {
+      target = p;
+      corner = true;
+      break;
+    }
+  }
+  let reach = car.progress;
+  let blocked = false;
+  for (let p = car.progress + 1; p <= target; p++) {
+    if (takenLanes(players, car.id, p).size >= 2) {
+      blocked = true;
+      break;
+    }
+    reach = p;
+  }
+  while (reach > car.progress) {
+    const taken = takenLanes(players, car.id, reach);
+    if (!taken.has(0)) return { progress: reach, lane: 0, blocked, corner };
+    if (!taken.has(1)) return { progress: reach, lane: 1, blocked, corner };
+    reach--;
+    blocked = true;
+  }
+  return { progress: car.progress, lane: car.lane, blocked, corner };
+}
+
+/** จัดรถไม่ให้ทับกันหลังเหตุการณ์ที่ย้ายตำแหน่ง (คันหน้าได้ที่ก่อน คันที่ชนถอยไปช่องหลัง) */
+export function settle(players: Player[]): Player[] {
+  const sorted = [...players].sort(
+    (a, b) => b.progress - a.progress || a.lane - b.lane || a.id - b.id,
+  );
+  const taken = new Map<number, Set<Lane>>();
+  const placed = new Map<number, Player>();
+  for (const car of sorted) {
+    let p = car.progress;
+    for (;;) {
+      const used = taken.get(p) ?? new Set<Lane>();
+      const lane: Lane | null = !used.has(car.lane) ? car.lane : !used.has(0) ? 0 : !used.has(1) ? 1 : null;
+      if (lane !== null) {
+        used.add(lane);
+        taken.set(p, used);
+        placed.set(car.id, { ...car, progress: p, lane });
+        break;
+      }
+      p--;
+    }
+  }
+  return players.map((c) => placed.get(c.id)!);
 }
 
 /**
@@ -423,7 +558,7 @@ export const pitCost = (s: GameState) => (s.event === "safety_car" ? 0 : PIT_COS
 /** ผู้เล่นเรียงตามตำแหน่ง (ผู้นำก่อน) — เสมอกันให้ลำดับเดิม */
 export function standings(state: GameState): Player[] {
   return [...state.players].sort(
-    (a, b) => b.progress - a.progress || a.id - b.id,
+    (a, b) => b.progress - a.progress || a.lane - b.lane || a.id - b.id,
   );
 }
 
@@ -457,11 +592,12 @@ export type TurnChoice = {
   swap?: number | null;
 };
 
-/** เล่น 1 เทิร์น — เลือกไม่ถูกกติกาจะคืน state เดิม */
+/** เล่น 1 เทิร์นของผู้เล่น (แล้วรถ AI ที่ต่อคิวเดินตามจนถึงคนถัดไป) — เลือกไม่ถูกกติกาจะคืน state เดิม */
 export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameState {
   if (state.winner !== null) return state;
   const { action } = choice;
   const first = activePlayer(state);
+  if (first.ai) return state;
 
   // สลับยางด่วน (ถ้ามี) เกิดก่อนเดิน — ยางเดิมถูกทิ้ง ยางใหม่ได้อายุเต็ม
   let me = first;
@@ -495,13 +631,13 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
   let speedDeck = me.speedDeck;
   let speedDiscard = me.speedDiscard;
   let spun = false;
-  let moved: number;
+  let want: number;
   let decay = 0;
 
   if (action === "pit") {
-    moved = Math.max(1, CRUISE_MOVE - cost - me.debuff);
+    want = Math.max(1, CRUISE_MOVE - cost - me.debuff);
   } else if (mode === "cruise") {
-    moved = Math.max(1, (worn ? WORN_MOVE : CRUISE_MOVE) + follow - me.debuff);
+    want = Math.max(1, (worn ? WORN_MOVE : CRUISE_MOVE) + follow - me.debuff);
   } else {
     // พลิกไพ่เร่ง (พลิกสองใบแล้วเลือกใบที่ค่ามากกว่า)
     const drawn: number[] = [];
@@ -521,14 +657,17 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
       : speedValue(c, tyres[0]);
     spun = isWet(weather) && c.risk >= SPIN_AT[weather][tyres[0]];
     const bonus = action === "boost" ? 3 : action === "save" ? -1 : follow;
-    moved = spun
+    const offline = me.lane === 1 ? OFFLINE_PENALTY : 0;
+    want = spun
       ? 1
-      : Math.max(1, value + MOVE_MOD[weather][tyres[0]] + bonus - me.debuff);
+      : Math.max(1, value + MOVE_MOD[weather][tyres[0]] + bonus - offline - me.debuff);
     // ฝนไม่ทำให้ยางสึก — ในแห้ง: ไพ่สึก +1, ดันสุด +1, ยางฝนในแห้งร้อนเกิน +1 (ประหยัดยางไม่สึก)
     if (weather === "dry" && action !== "save") {
       decay = (c.wear ? 1 : 0) + (action === "boost" ? 1 : 0) + (isRainTyre(tyres[0]) ? 1 : 0);
     }
   }
+
+  const go = travel(state, state.players, me, want);
 
   // เข้าพิทตอนยางพังไม่ต้องใช้การ์ด
   const usesCard = action !== null && !(action === "pit" && worn);
@@ -541,7 +680,8 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
   let played = refill(
     {
       ...me,
-      progress: me.progress + moved,
+      progress: go.progress,
+      lane: go.lane,
       tyres,
       life: Math.max(0, life - decay),
       hand,
@@ -557,48 +697,111 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
   // สัญลักษณ์พิเศษบนไพ่เร่ง
   let cardEvent: CardEvent | null = null;
   let incident = state.incident || spun;
+  let others = state.players;
   if (card !== null) {
     const icon = SPEED_CARDS[card].icon;
     if (icon === "team") played = refill(played, rng, played.hand.length + 1);
     if (icon === "event") {
       cardEvent = CARD_EVENT_LIST[Math.floor(rng() * CARD_EVENT_LIST.length)];
-      if (cardEvent === "lockup") played = { ...played, progress: Math.max(0, played.progress - 2) };
-      else if (cardEvent === "wearmore") played = { ...played, life: Math.max(0, played.life - 1) };
-      else if (cardEvent === "tailwind") played = { ...played, progress: played.progress + 2 };
-      else if (cardEvent === "radio") played = refill(played, rng, played.hand.length + 1);
+      if (cardEvent === "lockup") {
+        // ถอยหลังแล้วจัดรถใหม่ไม่ให้ทับคันข้างหลัง
+        const moved = settle(
+          others.map((p) => (p.id === me.id ? { ...played, progress: Math.max(me.progress, played.progress - 2) } : p)),
+        );
+        played = moved.find((p) => p.id === me.id)!;
+        others = moved;
+      } else if (cardEvent === "wearmore") played = { ...played, life: Math.max(0, played.life - 1) };
+      else if (cardEvent === "tailwind") {
+        const extra = travel(state, others.map((p) => (p.id === me.id ? played : p)), played, 2);
+        played = { ...played, progress: extra.progress, lane: extra.lane };
+      } else if (cardEvent === "radio") played = refill(played, rng, played.hand.length + 1);
       else if (cardEvent === "brakes") played = { ...played, limp: true };
       else incident = true;
     }
   }
 
   const victim = hasFollower(state) ? state.order[state.turn + 1] : -1;
-  const players = state.players.map((p) => {
+  const players = others.map((p) => {
     if (p.id === me.id) return played;
     if (action === "block" && p.id === victim) return { ...p, debuff: p.debuff + 2 };
     return p;
   });
 
-  let next: GameState = {
-    ...state,
-    players,
-    incident,
-    lastTurn: { player: me.id, card, action, mode, moved, worn, spun, cardEvent },
+  const log: TurnLog = {
+    player: me.id, ai: false, from: me.progress, blocked: go.blocked, corner: go.corner,
+    card, action, mode, moved: played.progress - me.progress, worn, spun, cardEvent,
   };
+  let next: GameState = { ...state, players, incident, lastTurn: log, feed: [log] };
   if (action === "sky") next = shiftSky(next, choice.sky ?? "earlier");
+  return runAI(advance(next, played, rng), rng);
+}
 
+/** หลังรถคันหนึ่งเดินเสร็จ: ตัดสินผู้ชนะ หรือส่งตาต่อ/จบรอบ */
+function advance(state: GameState, mover: Player, rng: Rng): GameState {
   // ใครข้ามเส้นชัยก่อนชนะทันที — คนที่เหลือไม่ได้เดินต่อ
-  if (played.progress >= state.total) {
-    return { ...next, winner: me.id, event: null, yellow: false };
+  if (mover.progress >= state.total) {
+    return {
+      ...state,
+      winner: mover.id,
+      finish: standings(state).map((p) => p.id),
+      event: null,
+      yellow: false,
+    };
   }
   return state.turn === state.order.length - 1
-    ? endRound(next, rng)
-    : { ...next, turn: state.turn + 1 };
+    ? endRound(state, rng)
+    : { ...state, turn: state.turn + 1 };
+}
+
+/**
+ * รถ AI หนึ่งเทิร์น: พลิกไพ่เร่งใช้ค่าแถวกลาง ไม่คิดเรื่องยางและการ์ด
+ * เลนนอกได้ค่าน้อยลงเหมือนผู้เล่น เบรกร้อนก็ต้องขับคุม
+ */
+function aiTurn(state: GameState, rng: Rng): GameState {
+  const me = activePlayer(state);
+  let card: number | null = null;
+  let speedDeck = me.speedDeck;
+  let speedDiscard = me.speedDiscard;
+  let want: number;
+  if (me.limp) {
+    want = Math.max(1, CRUISE_MOVE - me.debuff);
+  } else {
+    const d = drawSpeed(speedDeck, speedDiscard, rng);
+    card = d.id;
+    speedDeck = d.deck;
+    speedDiscard = [...d.discard, d.id];
+    const raw = SPEED_CARDS[card].v[COL_INDEX.medium];
+    const value = state.event === "safety_car" ? Math.min(raw, SC_SPEED_CAP) : raw;
+    want = Math.max(1, value - (me.lane === 1 ? OFFLINE_PENALTY : 0) - me.debuff);
+  }
+  const go = travel(state, state.players, me, want);
+  const moved: Player = {
+    ...me, progress: go.progress, lane: go.lane, speedDeck, speedDiscard, debuff: 0, limp: false,
+  };
+  const log: TurnLog = {
+    player: me.id, ai: true, from: me.progress, blocked: go.blocked, corner: go.corner,
+    card, action: null, mode: card === null ? "cruise" : "push",
+    moved: go.progress - me.progress, worn: false, spun: false, cardEvent: null,
+  };
+  const next: GameState = {
+    ...state,
+    players: state.players.map((p) => (p.id === me.id ? moved : p)),
+    feed: [...state.feed, log],
+  };
+  return advance(next, moved, rng);
+}
+
+/** ให้รถ AI ที่ต่อคิวอยู่เดินไปจนถึงตาผู้เล่น (หรือจบเกม) */
+export function runAI(state: GameState, rng: Rng): GameState {
+  let s = state;
+  while (s.winner === null && activePlayer(s).ai) s = aiTurn(s, rng);
+  return s;
 }
 
 /**
  * จบรอบ: ขึ้นรอบใหม่ จัดลำดับเดินใหม่ตามอันดับ
  * ธงเหลือง → รอบหน้าเป็นเซฟตี้คาร์ด้วยโอกาส YELLOW_TO_SC, ไม่มีธงเหลือง → อาจเกิดธงแดง
- * ถ้ารอบหน้าไม่มีเหตุการณ์ และมีคนหมุนหรือสุ่มติด จะขึ้นธงเหลืองเตือนรอบถัดไป
+ * ถ้ารอบหน้าไม่มีเหตุการณ์ และมีเหตุผิดปกติหรือสุ่มติด จะขึ้นธงเหลืองเตือนรอบถัดไป
  */
 function endRound(state: GameState, rng: Rng): GameState {
   let event: EventKind | null = null;
@@ -625,9 +828,9 @@ export function applyEvent(state: GameState, event: EventKind): GameState {
     const last = Math.min(...players.map((p) => p.progress));
     players = players.map((p) => ({
       ...p,
-      life: TYRES[p.tyres[0]].life,
+      life: p.ai ? p.life : TYRES[p.tyres[0]].life,
       progress: p.progress === last && last !== leader ? p.progress + 3 : p.progress,
     }));
   }
-  return { ...state, players, event };
+  return { ...state, players: settle(players), event };
 }
