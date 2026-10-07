@@ -2,16 +2,18 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
-  CloudDrizzle, CloudRain, Dices, Flag, RotateCcw, Sun, TriangleAlert, X,
+  CloudDrizzle, CloudRain, Dices, Flag, Gauge, RotateCcw, Sun, TriangleAlert, X,
 } from "lucide-react";
 import OsmCredit from "@/components/OsmCredit";
 import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
-  ACTIONS, EVENTS, MAX_PER_COMPOUND, PIT_COST, SURE_AHEAD, TYRES, TYRE_SLOTS, WEATHER,
-  YELLOW_TO_SC, canPlay, forecastAt, makeWeatherPlan, newGame, pitCost, playTurn, standings,
-  validTyres, weatherEffect, weatherNow,
-  type Action, type GameState, type Tyre, type Weather, type WeatherPlan,
+  ACTIONS, CRUISE_MOVE, EVENTS, MAX_PER_COMPOUND, PIT_COST, SURE_AHEAD, TYRES, TYRE_SLOTS,
+  WEATHER, WORN_MOVE, YELLOW_TO_SC, activePlayer, canPlay, canSwap, forecastAt, isWorn,
+  makeWeatherPlan, newGame, pitCost, playTurn, standings, validTyres, weatherEffect,
+  weatherNow,
+  type Action, type GameState, type Mode, type SkyShift, type Tyre, type Weather,
+  type WeatherPlan,
 } from "@/lib/boardgame/engine";
 
 const LAPS = 3;
@@ -286,7 +288,7 @@ function TyreSetup({
         ))}
       </div>
       <p className="text-xs text-white/55">
-        ตัวเลขบนการ์ด = โบนัสก้าว · อายุ (เทิร์น) · ยางแต่ละชนิดเลือกได้ไม่เกิน {MAX_PER_COMPOUND} ใบ
+        ตัวเลขบนการ์ด = โบนัสก้าวตอนเร่ง · อายุ (จำนวนเทิร์นที่เร่งได้) · ยางแต่ละชนิดเลือกได้ไม่เกิน {MAX_PER_COMPOUND} ใบ
       </p>
 
       <div>
@@ -331,12 +333,14 @@ function TyreSetup({
 }
 
 function ActionCard({
-  action, selected, disabled, onClick,
+  action, selected, disabled, onClick, note,
 }: {
   action: Action;
   selected: boolean;
   disabled: boolean;
   onClick: () => void;
+  /** ข้อความกำกับพิเศษ เช่นการเข้าพิทฉุกเฉินที่ไม่ต้องใช้การ์ด */
+  note?: string;
 }) {
   const a = ACTIONS[action];
   return (
@@ -352,6 +356,7 @@ function ActionCard({
       }`}
     >
       <span className="poster text-sm">{a.label}</span>
+      {note && <span className="text-[10px] font-bold text-yellow-400">{note}</span>}
       <span className="mt-1 text-xs leading-snug text-white/65">{a.desc}</span>
     </button>
   );
@@ -368,6 +373,10 @@ export default function BoardGame({ board }: { board: Board }) {
   const plan = useSyncExternalStore(subscribePlan, getPlan, getServerPlan);
   /** ยางสำรองที่จะเปลี่ยนไปใช้เมื่อเล่นการ์ดเข้าพิท (ลำดับใน me.tyres) */
   const [pitTo, setPitTo] = useState(1);
+  const [mode, setMode] = useState<Mode>("push");
+  const [sky, setSky] = useState<SkyShift>("earlier");
+  /** สลับยางด่วน (ลำดับยางสำรอง) ในรอบที่อากาศพลิก */
+  const [swap, setSwap] = useState<number | null>(null);
 
   useEffect(() => {
     if (!rolling) return;
@@ -412,22 +421,59 @@ export default function BoardGame({ board }: { board: Board }) {
     );
   }
 
-  const me = state.players[state.turn];
+  const me = activePlayer(state);
   const seat = SEATS[me.id];
-  const worn = me.life <= 0;
+  const worn = isWorn(me);
   const over = state.winner !== null;
   const log = state.lastTurn;
+  /** โหมดจริง: ยางพังหรือเข้าพิทบังคับขับคุม */
+  const effMode: Mode = worn || action === "pit" ? "cruise" : mode;
+  const weather = weatherNow(state);
+  const swapSpots = me.tyres.map((_, i) => canSwap(state, me, i));
+  const canSwapNow = swapSpots.some(Boolean);
+
+  /** ในมือ + การ์ดเข้าพิทฉุกเฉินเมื่อยางพังและไม่มีการ์ดพิท (ไม่ต้องใช้การ์ด) */
+  const hand: { card: Action; emergency: boolean }[] = me.hand.map((card) => ({
+    card,
+    emergency: false,
+  }));
+  if (worn && me.tyres.length > 1 && !me.hand.includes("pit")) {
+    hand.push({ card: "pit", emergency: true });
+  }
+
+  function pickAction(next: Action | null) {
+    setAction(next);
+    // เข้าพิทกับสลับยางด่วนใช้ด้วยกันไม่ได้
+    if (next === "pit") setSwap(null);
+  }
+
+  function pickMode(next: Mode) {
+    setMode(next);
+    // การ์ดที่ใช้ได้เฉพาะตอนเร่ง ต้องถอดออกเมื่อสลับไปขับคุม
+    if (next === "cruise" && (action === "boost" || action === "save" || action === "reroll")) {
+      setAction(null);
+    }
+  }
+
+  function clickTyre(i: number) {
+    if (i < 1) return;
+    if (action === "pit") setPitTo(i);
+    else if (swapSpots[i]) setSwap((cur) => (cur === i ? null : i));
+  }
 
   function roll() {
     if (rolling || !state) return;
-    const next = playTurn(state, action, Math.random, pitTo);
+    const next = playTurn(state, { mode, action, pitTo, sky, swap }, Math.random);
+    if (next === state) return; // ไม่ถูกกติกา (ปุ่มควรกันไว้แล้ว)
     setAction(null);
     setPitTo(1);
+    setSwap(null);
+    setSky("earlier");
     const calm =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (calm) {
-      setFace(next.lastTurn?.die ?? null);
+    // ขับคุมไม่มีเต๋า — ไม่ต้องกลิ้ง
+    if (calm || next.lastTurn?.die == null) {
       setState(next);
     } else {
       setRolling({ next, settled: false });
@@ -439,6 +485,9 @@ export default function BoardGame({ board }: { board: Board }) {
     resetPlan();
     setAction(null);
     setPitTo(1);
+    setSwap(null);
+    setSky("earlier");
+    setMode("push");
     setFace(null);
   }
 
@@ -522,32 +571,68 @@ export default function BoardGame({ board }: { board: Board }) {
             >
               ตา {me.name}
             </span>
-            <span className="tabular-nums text-white/55">รอบเทิร์นที่ {state.round}</span>
-            {worn && <span className="font-medium text-yellow-400">ยางหมดอายุ −2 ช่อง</span>}
+            <span className="tabular-nums text-white/55">
+              รอบเทิร์นที่ {state.round} · เดินที่ {state.turn + 1}/{state.order.length}
+            </span>
             {me.debuff > 0 && (
               <span className="font-medium text-yellow-400">โดนขวางทาง −{me.debuff} ช่อง</span>
             )}
           </p>
+          <p className="text-xs text-white/55">
+            ลำดับเดินรอบนี้ (คนนำเดินก่อน):{" "}
+            {state.order.map((id) => `P${standings(state).findIndex((p) => p.id === id) + 1}`).join(" → ")}
+          </p>
+
+          {worn && (
+            <p
+              role="status"
+              className="rounded-xl border border-yellow-400/50 bg-yellow-400/10 px-3 py-2 text-sm text-white/85"
+            >
+              <span className="poster text-yellow-400">ยางพัง!</span> ขับได้แค่ {WORN_MOVE} ช่อง ใช้การ์ดไม่ได้
+              นอกจากเข้าพิท (ไม่ต้องมีการ์ด)
+            </p>
+          )}
+
+          {canSwapNow && (
+            <p
+              role="status"
+              className="rounded-xl border border-sky-400/50 bg-sky-400/10 px-3 py-2 text-sm text-white/85"
+            >
+              <span className="poster text-sky-300">อากาศเปลี่ยน!</span> ยางสำรองที่เหมาะกับสภาพใหม่
+              สลับด่วนได้ฟรี 1 ครั้งโดยไม่ต้องเข้าพิท (ยางเดิมถูกทิ้ง) — แตะยางสำรองที่มีป้าย “สลับด่วน”
+            </p>
+          )}
 
           <div>
             <p className="mb-2 text-xs font-medium text-white/55">ยางของคุณ (ใบที่ใช้อยู่ + สำรอง)</p>
             <div className="grid grid-cols-4 gap-2">
               {me.tyres.map((t, i) => {
-                const fx = weatherEffect(weatherNow(state), t).move;
+                const fx = weatherEffect(weather, t);
                 const picking = action === "pit" && i >= 1;
+                const swapping = !picking && swapSpots[i];
                 return (
                   <TyreCard
                     key={i}
                     tyre={t}
-                    active={i === 0 || (picking && pitTo === i)}
-                    label={i === 0 ? "ใช้อยู่" : picking ? `เปลี่ยนเป็น ${i}` : `สำรอง ${i}`}
+                    active={i === 0 || (picking && pitTo === i) || (swapping && swap === i)}
+                    label={
+                      i === 0
+                        ? "ใช้อยู่"
+                        : picking
+                          ? `เปลี่ยนเป็น ${i}`
+                          : swapping
+                            ? "สลับด่วน"
+                            : `สำรอง ${i}`
+                    }
                     life={i === 0 ? me.life : undefined}
                     hint={
-                      fx === 0
-                        ? null
-                        : { text: `${fx > 0 ? "+" : ""}${fx} ตามอากาศ`, good: fx > 0 }
+                      fx.spin > 0
+                        ? { text: `เร่งเสี่ยงหมุน ${Math.round(fx.spin * 100)}%`, good: false }
+                        : fx.move === 0
+                          ? null
+                          : { text: `${fx.move > 0 ? "+" : ""}${fx.move} ตอนเร่ง`, good: fx.move > 0 }
                     }
-                    onClick={picking ? () => setPitTo(i) : undefined}
+                    onClick={picking || swapping ? () => clickTyre(i) : undefined}
                   />
                 );
               })}
@@ -565,20 +650,88 @@ export default function BoardGame({ board }: { board: Board }) {
           </div>
 
           <div>
+            <p className="mb-2 text-xs font-medium text-white/55">เลือกจังหวะเทิร์นนี้</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                aria-pressed={effMode === "cruise"}
+                disabled={worn || action === "pit"}
+                onClick={() => pickMode("cruise")}
+                className={`rounded-xl border-2 p-3 text-left transition-colors disabled:cursor-not-allowed ${
+                  effMode === "cruise"
+                    ? "border-(--color-f1) bg-(--color-f1)/15"
+                    : "border-white/15 bg-white/5 hover:border-white/35"
+                }`}
+              >
+                <span className="poster flex items-center gap-1.5 text-sm">
+                  <Gauge className="h-4 w-4" aria-hidden /> ขับคุม
+                </span>
+                <span className="mt-1 block text-xs leading-snug text-white/65">
+                  เดิน {worn ? WORN_MOVE : CRUISE_MOVE} ช่องคงที่ ไม่ทอยเต๋า ยางไม่สึก
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={effMode === "push"}
+                disabled={worn || action === "pit"}
+                onClick={() => pickMode("push")}
+                className={`rounded-xl border-2 p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  effMode === "push"
+                    ? "border-(--color-f1) bg-(--color-f1)/15"
+                    : "border-white/15 bg-white/5 hover:border-white/35"
+                }`}
+              >
+                <span className="poster flex items-center gap-1.5 text-sm">
+                  <Dices className="h-4 w-4" aria-hidden /> เร่ง
+                </span>
+                <span className="mt-1 block text-xs leading-snug text-white/65">
+                  เต๋า + โบนัสยาง ยางสึก 1 เทิร์น (ฝนไม่สึกแต่เสี่ยงหมุน)
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div>
             <p className="mb-2 text-xs font-medium text-white/55">
               การ์ดในมือ — เลือกเล่นได้ 1 ใบ (ไม่เล่นก็ได้) · สำรับเหลือ {me.deck.length} ใบ
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {me.hand.map((c, i) => (
+              {hand.map(({ card, emergency }, i) => (
                 <ActionCard
-                  key={`${c}-${i}`}
-                  action={c}
-                  selected={action === c && me.hand.indexOf(c) === i}
-                  disabled={!canPlay(me, c)}
-                  onClick={() => setAction((cur) => (cur === c ? null : c))}
+                  key={`${card}-${i}`}
+                  action={card}
+                  note={emergency ? "ฉุกเฉิน ไม่ใช้การ์ด" : undefined}
+                  selected={action === card && hand.findIndex((h) => h.card === card) === i}
+                  disabled={!canPlay(state, me, card, worn ? "cruise" : mode)}
+                  onClick={() => pickAction(action === card ? null : card)}
                 />
               ))}
             </div>
+            {action === "sky" && (
+              <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label="ทิศทางการปรับฟ้า">
+                {(
+                  [
+                    ["earlier", "ลัดฟ้า", "อากาศถัดไปมาเร็วขึ้น 1 รอบ"],
+                    ["later", "ยืดฟ้า", "อากาศตอนนี้อยู่ต่ออีก 1 รอบ"],
+                  ] as const
+                ).map(([k, label, desc]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    aria-pressed={sky === k}
+                    onClick={() => setSky(k)}
+                    className={`rounded-xl border-2 p-2.5 text-left text-xs transition-colors ${
+                      sky === k
+                        ? "border-sky-400 bg-sky-400/15"
+                        : "border-white/15 bg-white/5 hover:border-white/35"
+                    }`}
+                  >
+                    <span className="block text-sm font-bold">{label}</span>
+                    <span className="text-white/65">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4">
@@ -589,12 +742,22 @@ export default function BoardGame({ board }: { board: Board }) {
               disabled={rolling !== null}
               className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Dices className="h-5 w-5 shrink-0" aria-hidden />
+              {effMode === "push" ? (
+                <Dices className="h-5 w-5 shrink-0" aria-hidden />
+              ) : (
+                <Gauge className="h-5 w-5 shrink-0" aria-hidden />
+              )}
               {rolling
                 ? "กำลังทอย…"
-                : action
-                  ? `เล่น “${ACTIONS[action].label}” แล้วทอยเต๋า`
-                  : "ไม่เล่นการ์ด ทอยเต๋าเลย"}
+                : effMode === "push"
+                  ? action
+                    ? `เล่น “${ACTIONS[action].label}” แล้วเร่ง ทอยเต๋า`
+                    : "เร่ง ทอยเต๋า"
+                  : action
+                    ? `เล่น “${ACTIONS[action].label}” แล้วขับ`
+                    : worn
+                      ? "ขับต่อ (ยางพัง)"
+                      : "ขับคุม"}
             </button>
           </div>
         </section>
@@ -602,10 +765,17 @@ export default function BoardGame({ board }: { board: Board }) {
 
       {log && (
         <p className="text-center text-sm text-white/65" aria-live="polite">
-          {state.players[log.player].name} ทอยได้{" "}
-          <span className="font-bold tabular-nums text-white">{log.die}</span>
+          {state.players[log.player].name}{" "}
+          {log.die === null ? (
+            log.worn ? "ขับต่อด้วยยางพัง" : "ขับคุม"
+          ) : (
+            <>
+              ทอยได้ <span className="font-bold tabular-nums text-white">{log.die}</span>
+            </>
+          )}
           {log.action ? ` · ใช้ “${ACTIONS[log.action].label}”` : ""} · เดิน{" "}
           <span className="font-bold tabular-nums text-white">{log.moved}</span> ช่อง
+          {log.spun && <span className="font-bold text-yellow-400"> · หมุนในฝน! ธงเหลืองรอบหน้า</span>}
         </p>
       )}
 
@@ -620,28 +790,36 @@ function Rules() {
       <summary className="cursor-pointer font-bold text-white">วิธีเล่น (1 นาที)</summary>
       <ol className="mt-3 list-decimal space-y-1.5 pl-5">
         <li>
-          ใครพารถไปครบ {LAPS} รอบ ({TOTAL} ช่อง) ก่อนชนะ — จบเมื่อทุกคนเล่นครบรอบเทิร์นนั้น
+          ใครข้ามเส้นชัยก่อนชนะทันที — ครบ {LAPS} รอบ ({TOTAL} ช่อง) แต่ละรอบเทิร์นคนนำเดินก่อน คนตามหลังเดินทีหลัง
         </li>
         <li>
           ก่อนแข่ง ดูพยากรณ์อากาศแล้วเลือกการ์ดยาง {TYRE_SLOTS} ใบ ใบแรกใช้ออกตัว อีก {TYRE_SLOTS - 1} ใบเป็นสำรองไว้เข้าพิท
-          ยางนิ่มเดินไกลแต่หมดอายุเร็ว ยางแข็งเดินช้าแต่ทน
         </li>
         <li>
-          ฝนตกตามพยากรณ์ ยางสลิกเสียเปรียบมาก — ใช้ยางอินเตอร์กับฝนเบา เว็ทกับฝนหนัก
-          พยากรณ์ 2 รอบแรกแม่นเสมอ ไกลกว่านั้น (เส้นประ) อาจคลาดเคลื่อน
+          ทุกเทิร์นเลือกจังหวะ: <b>ขับคุม</b> เดิน {CRUISE_MOVE} ช่องคงที่ ไม่ทอยเต๋า ยางไม่สึก หรือ <b>เร่ง</b>{" "}
+          เดินเท่าเต๋า + โบนัสยาง แต่ยางสึก 1 เทิร์น ยางนิ่มแรงแต่หมดเร็ว ยางแข็งช้าแต่ทน
         </li>
         <li>
-          ในมือมีการ์ด action 3 ใบ แต่ละเทิร์นเล่นได้ 1 ใบ (หรือไม่เล่นก็ได้) แล้วทอยเต๋า แล้วจั่วเติมให้ครบ 3 ใบ
+          ยางสึกถึง 0 = <b>ยางพัง</b>: ขับได้แค่ {WORN_MOVE} ช่อง ใช้การ์ดไม่ได้ ต้องเข้าพิทเท่านั้น
+          (เข้าพิทฉุกเฉินได้โดยไม่ต้องมีการ์ด เสียเวลา {PIT_COST} ช่อง)
         </li>
         <li>
-          ก้าว = เต๋า + โบนัสยาง + โบนัสการ์ด + ผลของอากาศต่อยาง ยางหมดอายุแล้วก้าวลด 2 ช่อง
-          — ใช้การ์ดเข้าพิทเพื่อเปลี่ยนเป็นยางสำรองที่เลือก (เสียเวลา {PIT_COST} ช่อง)
+          ในมือมีการ์ด action 3 ใบ เทิร์นละเล่นได้ 1 ใบ (ไม่เล่นก็ได้) แล้วจั่วเติมให้ครบ — การ์ดบางใบใช้ได้เฉพาะตอนเร่ง
+          การ์ด “ปรับฟ้า” ขยับตารางอากาศ: ลัดฟ้าให้อากาศถัดไปมาเร็วขึ้น หรือยืดฟ้าให้อากาศตอนนี้อยู่ต่อ
         </li>
         <li>
-          เห็นธงเหลืองแปลว่ารอบหน้าอาจเกิดเซฟตี้คาร์: ช่องว่างจากผู้นำลดครึ่ง เต๋าสูงสุด 3
+          ฝนตกตามพยากรณ์ (2 รอบแรกแม่นเสมอ ไกลกว่านั้นเส้นประอาจคลาดเคลื่อน) ในฝนยางไม่สึก
+          แต่ถ้าเร่งด้วยยางที่ไม่เหมาะมีโอกาสหมุน — หมุนแล้วเดินแค่ 1 ช่องและรอบหน้าขึ้นธงเหลือง
+          ยางอินเตอร์เหมาะกับฝนเบา เว็ทเหมาะกับฝนหนัก ส่วนขับคุมปลอดภัยเสมอ
+        </li>
+        <li>
+          รอบที่อากาศพลิกระหว่างแห้งกับฝน ทุกทีมสลับเป็นยางสำรองที่เหมาะกับอากาศใหม่ได้ฟรี 1 ครั้งโดยไม่ต้องเข้าพิท
+        </li>
+        <li>
+          เห็นธงเหลืองแปลว่ารอบหน้าอาจเกิดเซฟตี้คาร์: ช่องว่างจากผู้นำลดครึ่ง เต๋าตอนเร่งสูงสุด 3
           และเข้าพิทฟรีเฉพาะรอบนั้น ถ้ารอไว้แล้วพลาดต้องเสียเวลาเต็ม
         </li>
-        <li>บางครั้งเกิดธงแดง: ทุกคนได้ยางใหม่ และคันท้ายสุดได้ +3 ช่อง</li>
+        <li>บางครั้งเกิดธงแดง: ทุกคนได้ยางที่ใช้อยู่กลับมาใหม่ และคันท้ายสุดได้ +3 ช่อง</li>
       </ol>
     </details>
   );

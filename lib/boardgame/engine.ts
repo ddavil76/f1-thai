@@ -3,8 +3,11 @@
  * ความสุ่มทั้งหมดผ่าน `rng` ที่ส่งเข้ามา เพื่อให้เทสต์ซ้ำได้
  *
  * ก่อนแข่ง: ดูพยากรณ์อากาศ แล้วแต่ละคนเลือกการ์ดยาง 4 ใบ (ใบแรกใช้ออกตัว ที่เหลือเป็นยางสำรอง)
- * แต่ละเทิร์น: เล่นการ์ด action ได้ 1 ใบ (หรือไม่เล่นก็ได้) แล้วทอยเต๋า แล้วจั่วเติมให้ครบ 3 ใบ
- *   ก้าว = เต๋า + โบนัสยาง + โบนัสการ์ด + ผลของอากาศต่อยาง (− 2 ถ้ายางหมดอายุ), อย่างน้อย 1
+ * แต่ละเทิร์นเลือก 1 ใน 2 แบบ:
+ *   ขับคุม — เดินคงที่ ไม่ทอยเต๋า ยางไม่สึก
+ *   เร่ง   — เต๋า + โบนัสยาง (+ การ์ด) ยางสึก 1 เทิร์น ในฝนยางไม่สึกแต่ถ้ายางไม่เหมาะมีโอกาสหมุน
+ * ยางหมดอายุ = "ยางพัง": ขับคุมได้เท่าที่ลดทอน ใช้การ์ดไม่ได้ ต้องเข้าพิท
+ * ผู้เล่นเดินตามอันดับ (คนนำก่อน) ใครข้ามเส้นชัยก่อนชนะทันที
  * อากาศถูกกำหนดไว้ตั้งแต่เริ่มเกมและพยากรณ์ล่วงหน้าได้ (เทิร์นไกล ๆ ไม่แม่น)
  * ธงเหลืองเตือนว่ารอบหน้าอาจมีเซฟตี้คาร์ — ช่วงนั้นเข้าพิทฟรี แต่ผ่านรอบนั้นไปแล้วต้องเสียเวลาเต็ม
  */
@@ -12,11 +15,14 @@
 export type Rng = () => number;
 
 export type Tyre = "soft" | "medium" | "hard" | "inter" | "wet";
-export type Action = "boost" | "slipstream" | "pit" | "save" | "block" | "reroll";
+export type Action = "boost" | "slipstream" | "pit" | "save" | "block" | "reroll" | "sky";
 export type EventKind = "safety_car" | "red_flag";
 export type Weather = "dry" | "light_rain" | "heavy_rain";
+export type Mode = "cruise" | "push";
+/** ปรับตารางอากาศ: earlier = อากาศถัดไปมาเร็วขึ้น 1 รอบ, later = ยืดอากาศตอนนี้ออกไปอีก 1 รอบ */
+export type SkyShift = "earlier" | "later";
 
-/** move = โบนัสก้าวต่อเทิร์น, life = ใช้ได้กี่เทิร์นก่อนหมดอายุ, best = สภาพอากาศที่เหมาะ */
+/** move = โบนัสก้าวตอนเร่ง, life = เร่งได้กี่เทิร์นก่อนยางหมดอายุ, best = สภาพอากาศที่เหมาะ */
 export const TYRES: Record<Tyre, { label: string; move: number; life: number; best: string }> = {
   soft: { label: "นิ่ม", move: 3, life: 3, best: "แห้ง" },
   medium: { label: "กลาง", move: 2, life: 5, best: "แห้ง" },
@@ -31,47 +37,46 @@ export const WEATHER: Record<Weather, { label: string }> = {
   heavy_rain: { label: "ฝนหนัก" },
 };
 
-/** ผลของอากาศต่อยางแต่ละชนิด: move = บวก/ลบก้าว, decay = อายุยางเสื่อมเพิ่มต่อเทิร์น */
-const WEATHER_MOD: Record<Weather, Record<Tyre, { move: number; decay: number }>> = {
-  dry: {
-    soft: { move: 0, decay: 0 },
-    medium: { move: 0, decay: 0 },
-    hard: { move: 0, decay: 0 },
-    inter: { move: -1, decay: 1 },
-    wet: { move: -2, decay: 1 },
-  },
-  light_rain: {
-    soft: { move: -2, decay: 1 },
-    medium: { move: -2, decay: 1 },
-    hard: { move: -2, decay: 1 },
-    inter: { move: 1, decay: 0 },
-    wet: { move: 0, decay: 0 },
-  },
-  heavy_rain: {
-    soft: { move: -3, decay: 2 },
-    medium: { move: -3, decay: 2 },
-    hard: { move: -3, decay: 2 },
-    inter: { move: -1, decay: 1 },
-    wet: { move: 1, decay: 0 },
-  },
+/** โบนัส/โทษก้าวตอนเร่ง จากยางที่เหมาะหรือไม่เหมาะกับอากาศ */
+const MOVE_MOD: Record<Weather, Record<Tyre, number>> = {
+  dry: { soft: 0, medium: 0, hard: 0, inter: -1, wet: -2 },
+  light_rain: { soft: 0, medium: 0, hard: 0, inter: 1, wet: 0 },
+  heavy_rain: { soft: 0, medium: 0, hard: 0, inter: 0, wet: 1 },
 };
 
-/** ผลของอากาศต่อยางหนึ่งใบ (ใช้แสดงคำเตือนในหน้าจอด้วย) */
-export const weatherEffect = (w: Weather, t: Tyre) => WEATHER_MOD[w][t];
+/** โอกาสหมุนตอนเร่งในฝน (ยางเรียบลื่นกว่ายางฝน) */
+const SPIN: Record<Weather, Record<Tyre, number>> = {
+  dry: { soft: 0, medium: 0, hard: 0, inter: 0, wet: 0 },
+  light_rain: { soft: 0.4, medium: 0.35, hard: 0.3, inter: 0, wet: 0 },
+  heavy_rain: { soft: 0.6, medium: 0.6, hard: 0.6, inter: 0.25, wet: 0 },
+};
+
+/** ผลของอากาศต่อยางหนึ่งใบตอนเร่ง (ใช้แสดงคำเตือนในหน้าจอด้วย) */
+export const weatherEffect = (w: Weather, t: Tyre) => ({ move: MOVE_MOD[w][t], spin: SPIN[w][t] });
+
+export const isRainTyre = (t: Tyre) => t === "inter" || t === "wet";
+const isWet = (w: Weather) => w !== "dry";
 
 export const ACTIONS: Record<Action, { label: string; desc: string }> = {
-  boost: { label: "ดันสุด", desc: "+3 ช่อง แต่ยางเสื่อมเพิ่มอีก 1 เทิร์น" },
-  slipstream: { label: "ดูดอากาศ", desc: "+2 ช่อง (+4 ถ้าคุณตามหลังอยู่)" },
-  pit: { label: "เข้าพิท", desc: "เปลี่ยนเป็นยางสำรองที่เลือก เสียเวลา 2 ช่อง (ฟรีตอนเซฟตี้คาร์)" },
-  save: { label: "ประหยัดยาง", desc: "ยางไม่เสื่อมเทิร์นนี้ แต่ −1 ช่อง" },
-  block: { label: "ขวางทาง", desc: "คู่แข่งตาถัดไปเดิน −2 ช่อง" },
-  reroll: { label: "ทอยซ้ำ", desc: "ทอยเต๋า 2 ครั้ง เอาค่าสูง" },
+  boost: { label: "ดันสุด", desc: "ใช้ตอนเร่ง: +3 ช่อง แต่ยางสึกเพิ่มอีก 1 เทิร์น" },
+  slipstream: { label: "ดูดอากาศ", desc: "+2 ช่อง (+4 ถ้าคุณตามหลังอยู่) ใช้ได้ทั้งขับคุมและเร่ง" },
+  pit: {
+    label: "เข้าพิท",
+    desc: "เปลี่ยนเป็นยางสำรองที่เลือก เสียเวลา 2 ช่อง (ฟรีตอนเซฟตี้คาร์) แล้วขับออกแบบขับคุม",
+  },
+  save: { label: "ประหยัดยาง", desc: "ใช้ตอนเร่ง: ยางไม่สึกเทิร์นนี้ แต่ −1 ช่อง" },
+  block: { label: "ขวางทาง", desc: "คนที่เดินต่อจากคุณเดิน −2 ช่อง (ต้องมีคนเดินตามหลังคุณ)" },
+  reroll: { label: "ทอยซ้ำ", desc: "ใช้ตอนเร่ง: ทอยเต๋า 2 ครั้ง เอาค่าสูง" },
+  sky: {
+    label: "ปรับฟ้า",
+    desc: "ลัดฟ้า: อากาศถัดไปมาเร็วขึ้น 1 รอบ · ยืดฟ้า: อากาศตอนนี้อยู่ต่ออีก 1 รอบ",
+  },
 };
 
 export const EVENTS: Record<EventKind, { label: string; desc: string }> = {
   safety_car: {
     label: "เซฟตี้คาร์",
-    desc: "ช่องว่างจากผู้นำเหลือครึ่งเดียว เต๋าสูงสุด 3 และเข้าพิทฟรีในรอบนี้เท่านั้น",
+    desc: "ช่องว่างจากผู้นำเหลือครึ่งเดียว เต๋าตอนเร่งสูงสุด 3 และเข้าพิทฟรีในรอบนี้เท่านั้น",
   },
   red_flag: { label: "ธงแดง", desc: "ยางที่ใช้อยู่กลับมาใหม่ คันท้ายสุดได้ +3 ช่อง" },
 };
@@ -80,6 +85,10 @@ export const HAND_SIZE = 3;
 export const TYRE_SLOTS = 4;
 /** เลือกยางแต่ละชนิดซ้ำได้ไม่เกินนี้ */
 export const MAX_PER_COMPOUND = 2;
+/** ขับคุมเดินกี่ช่อง */
+export const CRUISE_MOVE = 3;
+/** ยางพังเดินกี่ช่อง */
+export const WORN_MOVE = 2;
 /** เสียเวลาเข้าพิทกี่ช่อง (เซฟตี้คาร์ = ฟรี) */
 export const PIT_COST = 2;
 /** โอกาสเกิดธงแดงต้นรอบ */
@@ -95,9 +104,9 @@ const PLAN_ROUNDS = 30;
 /** โอกาสที่พยากรณ์ระยะไกลของแต่ละรอบผิด */
 const FORECAST_WRONG = 0.3;
 
-/** สำรับ action ของผู้เล่นแต่ละคน (12 ใบ) */
+/** สำรับ action ของผู้เล่นแต่ละคน (13 ใบ) */
 export const DECK_LIST: Record<Action, number> = {
-  boost: 3, slipstream: 2, pit: 2, save: 2, block: 2, reroll: 1,
+  boost: 3, slipstream: 2, pit: 2, save: 2, block: 2, reroll: 1, sky: 1,
 };
 
 export type WeatherPlan = {
@@ -146,7 +155,7 @@ export type Player = {
   progress: number;
   /** ยางที่ใส่ไว้ตอนเริ่ม — ใบแรกคือใบที่ใช้อยู่ ที่เหลือเป็นยางสำรอง */
   tyres: Tyre[];
-  /** อายุยางใบที่ใช้อยู่ (เทิร์นที่เหลือ) 0 = หมดอายุ */
+  /** อายุยางใบที่ใช้อยู่ (เทิร์นเร่งที่เหลือ) 0 = ยางพัง */
   life: number;
   hand: Action[];
   deck: Action[];
@@ -157,10 +166,15 @@ export type Player = {
 
 export type TurnLog = {
   player: number;
-  die: number;
+  /** ค่าเต๋าที่ได้ — null เมื่อขับคุม (ไม่ทอย) */
+  die: number | null;
   action: Action | null;
+  mode: Mode;
   moved: number;
+  /** เริ่มเทิร์นด้วยยางพัง */
   worn: boolean;
+  /** หมุนในฝน */
+  spun: boolean;
 };
 
 export type GameState = WeatherPlan & {
@@ -168,17 +182,43 @@ export type GameState = WeatherPlan & {
   /** ช่องที่ต้องไปให้ถึง = ช่องต่อรอบ × จำนวนรอบ */
   total: number;
   round: number;
-  /** ผู้เล่นที่ถึงตาเล่น (ลำดับใน players) */
+  /** ลำดับผู้เล่น (id) ที่เดินในรอบเทิร์นนี้ — คนนำก่อน */
+  order: number[];
+  /** ตำแหน่งในอาเรย์ order ของคนที่ถึงตาเล่น */
   turn: number;
   /** เหตุการณ์ของรอบนี้ (ถ้ามี) */
   event: EventKind | null;
   /** ธงเหลืองรอบนี้ — รอบหน้ามีโอกาสเป็นเซฟตี้คาร์ */
   yellow: boolean;
+  /** มีคนหมุนในรอบนี้ — ทำให้รอบหน้าขึ้นธงเหลือง */
+  incident: boolean;
   winner: number | null;
   lastTurn: TurnLog | null;
 };
 
 export const weatherNow = (s: GameState): Weather => s.weather[s.round - 1] ?? "dry";
+
+/** ผู้เล่นที่ถึงตาเล่น */
+export const activePlayer = (s: GameState): Player => s.players[s.order[s.turn]];
+
+/** ในรอบนี้มีคนเดินต่อจากคุณหรือไม่ (ใช้กับการ์ดขวางทาง) */
+const hasFollower = (s: GameState) => s.turn < s.order.length - 1;
+
+export const isWorn = (p: Player) => p.life <= 0;
+
+/** อากาศรอบนี้พลิกประเภทจากรอบก่อน (แห้ง ↔ ฝน) — ช่วงสลับยางด่วนฟรี */
+export function weatherFlipped(s: GameState): boolean {
+  if (s.round < 2) return false;
+  const prev = s.weather[s.round - 2] ?? "dry";
+  return isWet(prev) !== isWet(weatherNow(s));
+}
+
+/** สลับยางด่วน: ต้องเป็นรอบที่อากาศพลิก เลือกยางสำรองที่เหมาะกับอากาศใหม่ และยางที่ใช้อยู่ต้องไม่เหมาะ */
+export function canSwap(s: GameState, p: Player, idx: number): boolean {
+  if (!weatherFlipped(s) || idx < 1 || idx >= p.tyres.length) return false;
+  const wet = isWet(weatherNow(s));
+  return isRainTyre(p.tyres[idx]) === wet && isRainTyre(p.tyres[0]) !== wet;
+}
 
 export function shuffle<T>(items: readonly T[], rng: Rng): T[] {
   const a = [...items];
@@ -243,9 +283,11 @@ export function newGame(
     ),
     total,
     round: 1,
+    order: names.map((_, id) => id),
     turn: 0,
     event: null,
     yellow: false,
+    incident: false,
     winner: null,
     lastTurn: null,
   };
@@ -253,10 +295,18 @@ export function newGame(
 
 export const rollDie = (rng: Rng) => 1 + Math.floor(rng() * 6);
 
-export function canPlay(p: Player, a: Action | null) {
+/**
+ * เล่นการ์ดนี้ได้หรือไม่ใน `mode` ที่เลือก (mode ที่ส่งมาควรเป็นโหมดจริงหลังบังคับแล้ว)
+ * ยางพัง: เล่นได้เฉพาะเข้าพิท (ไม่ต้องมีการ์ดในมือ)
+ */
+export function canPlay(s: GameState, p: Player, a: Action | null, mode: Mode): boolean {
   if (a === null) return true;
-  if (!p.hand.includes(a)) return false;
-  return a !== "pit" || p.tyres.length > 1;
+  const worn = isWorn(p);
+  if (a === "pit") return p.tyres.length > 1 && (worn || p.hand.includes("pit"));
+  if (worn || !p.hand.includes(a)) return false;
+  if (a === "boost" || a === "save" || a === "reroll") return mode === "push";
+  if (a === "block") return hasFollower(s);
+  return true;
 }
 
 /** เข้าพิทตอนนี้เสียเวลากี่ช่อง */
@@ -269,53 +319,100 @@ export function standings(state: GameState): Player[] {
   );
 }
 
-/**
- * เล่น 1 เทิร์น — `pitTo` คือลำดับของยางสำรองที่จะเปลี่ยนไปใช้ตอนเข้าพิท (1 = ใบสำรองแรก)
- */
-export function playTurn(
-  state: GameState,
-  action: Action | null,
-  rng: Rng,
-  pitTo = 1,
-): GameState {
-  if (state.winner !== null) return state;
-  const me = state.players[state.turn];
-  if (!canPlay(me, action)) return state;
-  if (action === "pit" && !(pitTo >= 1 && pitTo < me.tyres.length)) return state;
+/** ปรับตารางอากาศของรอบถัดไปเป็นต้นไป โดยความยาวแผนคงเดิม */
+export function shiftSky(s: GameState, shift: SkyShift): GameState {
+  const weather = [...s.weather];
+  const fcWrong = [...s.fcWrong];
+  const next = s.round; // ดัชนีของรอบถัดไป
+  if (shift === "earlier") {
+    weather.splice(next, 1);
+    fcWrong.splice(next, 1);
+    weather.push("dry");
+    fcWrong.push(false);
+  } else {
+    weather.splice(next, 0, weather[s.round - 1] ?? "dry");
+    fcWrong.splice(next, 0, false);
+    weather.pop();
+    fcWrong.pop();
+  }
+  return { ...s, weather, fcWrong };
+}
 
-  let die = rollDie(rng);
-  if (action === "reroll") die = Math.max(die, rollDie(rng));
-  const rawDie = die;
-  if (state.event === "safety_car") die = Math.min(die, 3);
+export type TurnChoice = {
+  mode: Mode;
+  action: Action | null;
+  /** ยางสำรองที่เปลี่ยนไปใช้ตอนเข้าพิท (ลำดับใน tyres, ค่าเริ่มต้น 1) */
+  pitTo?: number;
+  /** ทิศทางปรับฟ้า เมื่อเล่นการ์ดปรับฟ้า (ค่าเริ่มต้น earlier) */
+  sky?: SkyShift;
+  /** สลับยางด่วน (ลำดับยางสำรอง) ในรอบที่อากาศพลิก */
+  swap?: number | null;
+};
+
+/** เล่น 1 เทิร์น — เลือกไม่ถูกกติกาจะคืน state เดิม */
+export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameState {
+  if (state.winner !== null) return state;
+  const { action } = choice;
+  const first = activePlayer(state);
+
+  // สลับยางด่วน (ถ้ามี) เกิดก่อนเดิน — ยางเดิมถูกทิ้ง ยางใหม่ได้อายุเต็ม
+  let me = first;
+  if (choice.swap != null) {
+    if (action === "pit" || !canSwap(state, first, choice.swap)) return state;
+    const i = choice.swap;
+    const tyres = [first.tyres[i], ...first.tyres.slice(1).filter((_, k) => k + 1 !== i)];
+    me = { ...first, tyres, life: TYRES[tyres[0]].life };
+  }
+
+  const worn = isWorn(me);
+  const mode: Mode = worn || action === "pit" ? "cruise" : choice.mode;
+  if (!canPlay(state, me, action, mode)) return state;
 
   let tyres = me.tyres;
   let life = me.life;
   let cost = 0;
   if (action === "pit") {
-    const next = tyres[pitTo];
-    tyres = [next, ...tyres.slice(1).filter((_, i) => i + 1 !== pitTo)];
-    life = TYRES[next].life;
+    const to = choice.pitTo ?? 1;
+    if (!(to >= 1 && to < tyres.length)) return state;
+    tyres = [tyres[to], ...tyres.slice(1).filter((_, k) => k + 1 !== to)];
+    life = TYRES[tyres[0]].life;
     cost = pitCost(state);
   }
 
-  const wx = WEATHER_MOD[weatherNow(state)][tyres[0]];
-  const worn = life <= 0;
+  const weather = weatherNow(state);
   const behind = state.players.some((p) => p.progress > me.progress);
-  let bonus = 0;
-  if (action === "boost") bonus = 3;
-  else if (action === "slipstream") bonus = behind ? 4 : 2;
-  else if (action === "save") bonus = -1;
+  const follow = action === "slipstream" ? (behind ? 4 : 2) : 0;
 
-  const moved = Math.max(
-    1,
-    die + TYRES[tyres[0]].move + wx.move + bonus - (worn ? 2 : 0) - me.debuff - cost,
-  );
-  const decay =
-    action === "save" ? 0 : 1 + (action === "boost" ? 1 : 0) + wx.decay;
+  let die: number | null = null;
+  let spun = false;
+  let moved: number;
+  let decay = 0;
 
+  if (action === "pit") {
+    moved = Math.max(1, CRUISE_MOVE - cost - me.debuff);
+  } else if (mode === "cruise") {
+    moved = Math.max(1, (worn ? WORN_MOVE : CRUISE_MOVE) + follow - me.debuff);
+  } else {
+    die = rollDie(rng);
+    if (action === "reroll") die = Math.max(die, rollDie(rng));
+    const rolled = state.event === "safety_car" ? Math.min(die, 3) : die;
+    const chance = SPIN[weather][tyres[0]];
+    spun = chance > 0 && rng() < chance;
+    const bonus = action === "boost" ? 3 : action === "save" ? -1 : follow;
+    moved = spun
+      ? 1
+      : Math.max(1, rolled + TYRES[tyres[0]].move + MOVE_MOD[weather][tyres[0]] + bonus - me.debuff);
+    // ในฝนยางไม่สึก — ในแห้งสึก 1 (+1 ถ้าดันสุด, +1 ถ้าใช้ยางฝนในแห้ง) ประหยัดยางไม่สึก
+    if (weather === "dry" && action !== "save") {
+      decay = 1 + (action === "boost" ? 1 : 0) + (isRainTyre(tyres[0]) ? 1 : 0);
+    }
+  }
+
+  // เข้าพิทตอนยางพังไม่ต้องใช้การ์ด
+  const usesCard = action !== null && !(action === "pit" && worn);
   const hand = [...me.hand];
   const discard = [...me.discard];
-  if (action) {
+  if (usesCard && action) {
     hand.splice(hand.indexOf(action), 1);
     discard.push(action);
   }
@@ -332,43 +429,46 @@ export function playTurn(
     rng,
   );
 
-  const victim = (me.id + 1) % state.players.length;
+  const victim = hasFollower(state) ? state.order[state.turn + 1] : -1;
   const players = state.players.map((p) => {
     if (p.id === me.id) return played;
     if (action === "block" && p.id === victim) return { ...p, debuff: p.debuff + 2 };
     return p;
   });
-  const next: GameState = {
+
+  let next: GameState = {
     ...state,
     players,
-    lastTurn: { player: me.id, die: rawDie, action, moved, worn },
+    incident: state.incident || spun,
+    lastTurn: { player: me.id, die, action, mode, moved, worn, spun },
   };
-  return me.id === players.length - 1 ? endRound(next, rng) : { ...next, turn: me.id + 1 };
+  if (action === "sky") next = shiftSky(next, choice.sky ?? "earlier");
+
+  // ใครข้ามเส้นชัยก่อนชนะทันที — คนที่เหลือไม่ได้เดินต่อ
+  if (played.progress >= state.total) {
+    return { ...next, winner: me.id, event: null, yellow: false };
+  }
+  return state.turn === state.order.length - 1
+    ? endRound(next, rng)
+    : { ...next, turn: state.turn + 1 };
 }
 
 /**
- * จบรอบ: ตัดสินผู้ชนะถ้ามีคนถึงเส้นชัย ไม่งั้นขึ้นรอบใหม่
+ * จบรอบ: ขึ้นรอบใหม่ จัดลำดับเดินใหม่ตามอันดับ
  * ธงเหลือง → รอบหน้าเป็นเซฟตี้คาร์ด้วยโอกาส YELLOW_TO_SC, ไม่มีธงเหลือง → อาจเกิดธงแดง
- * ถ้ารอบหน้าไม่มีเหตุการณ์ อาจมีธงเหลืองใหม่เตือนรอบถัดไป
+ * ถ้ารอบหน้าไม่มีเหตุการณ์ และมีคนหมุนหรือสุ่มติด จะขึ้นธงเหลืองเตือนรอบถัดไป
  */
 function endRound(state: GameState, rng: Rng): GameState {
-  const lead = standings(state)[0];
-  if (lead.progress >= state.total) {
-    // ทุกคนเดินครบจำนวนเทิร์นเท่ากันแล้ว — เสมอกันตัดสินด้วยอายุยางเหลือมากกว่า
-    const top = state.players.filter((p) => p.progress === lead.progress);
-    top.sort((a, b) => b.life - a.life || a.id - b.id);
-    return { ...state, winner: top[0].id, event: null, yellow: false };
-  }
-
   let event: EventKind | null = null;
   if (state.yellow) {
     if (rng() < YELLOW_TO_SC) event = "safety_car";
   } else if (rng() < RED_FLAG_CHANCE) {
     event = "red_flag";
   }
-  const yellow = event === null && rng() < YELLOW_CHANCE;
-  const base = { ...state, round: state.round + 1, turn: 0, yellow };
-  return event ? applyEvent(base, event) : { ...base, event: null };
+  const yellow = event === null && (state.incident || rng() < YELLOW_CHANCE);
+  const base: GameState = { ...state, round: state.round + 1, turn: 0, yellow, incident: false };
+  const out = event ? applyEvent(base, event) : { ...base, event: null };
+  return { ...out, order: standings(out).map((p) => p.id) };
 }
 
 export function applyEvent(state: GameState, event: EventKind): GameState {
