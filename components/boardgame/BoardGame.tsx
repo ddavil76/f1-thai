@@ -9,7 +9,7 @@ import TrackView from "@/components/boardgame/TrackView";
 import {
   ActionCard3D, Coin, DieFace, HandCard, Meter, MoveCard3D, PitwallChip, SimpleCard,
 } from "@/components/boardgame/Cards";
-import { AI_TEAMS, COMPOUND_COLOR, HUMAN_TEAMS, WET_COLOR, look, tyreOf } from "@/components/boardgame/look";
+import { COMPOUND_COLOR, NAMES_NOTE, TEAMS, WET_COLOR, look, tyreOf } from "@/components/boardgame/look";
 import { BACK_TEXT, helpText, type HelpKey } from "@/components/boardgame/help";
 import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
@@ -43,6 +43,8 @@ type Setup = {
   quali: boolean;
   weather: "dry" | "random";
   rules: Rules;
+  /** ทีม (ลำดับใน TEAMS) ของผู้เล่นแต่ละคน */
+  teams: number[];
   compounds: Compound[][];
 };
 
@@ -53,6 +55,7 @@ const QUICK: Setup = {
   quali: false,
   weather: "dry",
   rules: "ours",
+  teams: [0, 1],
   compounds: [
     ["yellow", "red"],
     ["yellow", "red"],
@@ -99,6 +102,7 @@ function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
         </button>
       </div>
 
+      <p className="text-[11px] leading-snug text-white/55">{NAMES_NOTE}</p>
       {custom && (
         <div className="space-y-4 border-t border-white/10 pt-4">
           <Group label="กติกา">
@@ -152,19 +156,35 @@ function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
               </div>
             </Group>
           </div>
-          {HUMAN_TEAMS.slice(0, s.players).map((team, ti) => (
-            <div key={ti} className="space-y-2">
-              <p className="text-sm">
-                <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: team.color, color: team.ink }}>
-                  {team.name}
-                </span>{" "}
-                <span className="text-white/55">เลือกยางออกตัว</span>
-              </p>
+          {s.teams.slice(0, s.players).map((teamIdx, ti) => {
+            const team = TEAMS[teamIdx];
+            return (
+              <div key={ti} className="space-y-2">
+                <p className="text-xs font-medium text-white/55">ผู้เล่น {ti + 1} เลือกทีม</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {TEAMS.map((t, k) => {
+                    const taken = s.teams.slice(0, s.players).some((x, j) => j !== ti && x === k);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        aria-pressed={teamIdx === k}
+                        disabled={taken}
+                        onClick={() => up({ teams: s.teams.map((x, j) => (j === ti ? k : x)) })}
+                        className={`rounded-full border-2 px-2.5 py-1 text-xs font-bold disabled:opacity-30 ${teamIdx === k ? "border-white" : "border-transparent"}`}
+                        style={{ background: t.color, color: t.ink }}
+                      >
+                        {t.name}
+                      </button>
+            );
+                })}
+              </div>
+              <p className="text-xs text-white/55">เลือกยางออกตัว</p>
               {team.drivers.map((dr, di) => (
-                <div key={di} className="grid grid-cols-[6.5rem_1fr_1fr] items-center gap-2 text-sm">
-                  <span className="flex items-center gap-1.5 font-bold">
+                <div key={di} className="grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] items-center gap-2 text-sm">
+                  <span className="flex min-w-0 items-center gap-1.5 font-bold">
                     <Car color={team.color} ink={team.ink} num={dr.num} tyre={COMPOUND_COLOR[s.compounds[ti][di]]} width={40} />
-                    {dr.name}
+                    <span className="truncate">{dr.name}</span>
                   </span>
                   {(["yellow", "red"] as Compound[]).map((k) => (
                     <Toggle
@@ -182,7 +202,8 @@ function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
                 </div>
               ))}
             </div>
-          ))}
+            );
+          })}
           <button type="button" onClick={() => onStart(s)} className="w-full rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white">
             {s.quali ? "ไปควอลิฟาย" : "ออกสตาร์ท"}
           </button>
@@ -203,16 +224,19 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 
 function buildCars(setup: Setup): { cars: CarSpec[]; teams: string[] } {
   const cars: CarSpec[] = [];
-  HUMAN_TEAMS.slice(0, setup.players).forEach((team, ti) =>
-    team.drivers.forEach((dr, di) => cars.push({ ...dr, team: ti, ai: false, compound: setup.compounds[ti][di] })),
+  const mine = setup.teams.slice(0, setup.players);
+  mine.forEach((k, ti) =>
+    TEAMS[k].drivers.forEach((dr, di) => cars.push({ ...dr, team: ti, ai: false, compound: setup.compounds[ti][di] })),
   );
-  for (const team of AI_TEAMS) {
-    for (const num of team.nums) {
+  // ทีมที่เหลือเป็นรถ AI จนครบกริด
+  for (const [k, team] of TEAMS.entries()) {
+    if (mine.includes(k)) continue;
+    for (const dr of team.drivers) {
       if (cars.length >= GRID_SIZE) break;
-      cars.push({ name: team.name, num, team: -1, ai: true });
+      cars.push({ ...dr, team: -1, ai: true });
     }
   }
-  return { cars, teams: HUMAN_TEAMS.slice(0, setup.players).map((t) => t.name) };
+  return { cars, teams: mine.map((k) => TEAMS[k].name) };
 }
 
 /* ---------- ข้อความเหตุการณ์ ---------- */
@@ -226,7 +250,7 @@ function eventText(s: GameState, e: GameEvent): string {
     case "action":
       return `${carName(s, e.driver)} เปิดไพ่ ACTION: ${ACTION_INFO[e.card].title}${e.ok ? "" : " (ไม่มีผล)"}`;
     case "pitwall":
-      return `${HUMAN_TEAMS[e.team]?.name} ได้ไพ่ PITWALL เพิ่ม`;
+      return `${s.teams[e.team]?.name} ได้ไพ่ PITWALL เพิ่ม`;
     case "spin":
       return `${carName(s, e.driver)} ลื่นหมุนออกนอกสนาม!`;
     case "incident":
@@ -723,7 +747,7 @@ export default function BoardGame({ board }: { board: Board }) {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-extrabold">
-                  ถึงตา {d.name} · {HUMAN_TEAMS[d.team]?.name}
+                  ถึงตา {d.name} · {state.teams[d.team]?.name}
                 </p>
                 <div className="flex flex-wrap gap-1 pt-0.5">
                   <Chip k={d.pit ? "pit" : d.off ? "off" : "line"} ask={ask}>
