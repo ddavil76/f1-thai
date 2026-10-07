@@ -4,8 +4,9 @@
  *
  * ก่อนแข่ง: ดูพยากรณ์อากาศ แล้วแต่ละคนเลือกการ์ดยาง 4 ใบ (ใบแรกใช้ออกตัว ที่เหลือเป็นยางสำรอง)
  * แต่ละเทิร์นเลือก 1 ใน 2 แบบ:
- *   ขับคุม — เดินคงที่ ไม่ทอยเต๋า ยางไม่สึก
- *   เร่ง   — เต๋า + โบนัสยาง (+ การ์ด) ยางสึก 1 เทิร์น ในฝนยางไม่สึกแต่ถ้ายางไม่เหมาะมีโอกาสหมุน
+ *   ขับคุม — เดินคงที่ ไม่พลิกไพ่ ยางไม่สึก
+ *   เร่ง   — พลิกไพ่เร่งใบบนสุดของกองตัวเอง ใช้ค่าตามแถวของยาง (นิ่ม/กลาง/แข็ง)
+ *            ไพ่มีสัญลักษณ์: สึก (ยางเสื่อม), หยดน้ำ (ความเสี่ยงหมุนในฝน), ทีม/เหตุการณ์ (ผลพิเศษ)
  * ยางหมดอายุ = "ยางพัง": ขับคุมได้เท่าที่ลดทอน ใช้การ์ดไม่ได้ ต้องเข้าพิท
  * ผู้เล่นเดินตามอันดับ (คนนำก่อน) ใครข้ามเส้นชัยก่อนชนะทันที
  * อากาศถูกกำหนดไว้ตั้งแต่เริ่มเกมและพยากรณ์ล่วงหน้าได้ (เทิร์นไกล ๆ ไม่แม่น)
@@ -15,6 +16,8 @@
 export type Rng = () => number;
 
 export type Tyre = "soft" | "medium" | "hard" | "inter" | "wet";
+/** แถวของค่าบนไพ่เร่งที่ยางแต่ละชนิดใช้ */
+export type Col = "soft" | "medium" | "hard";
 export type Action = "boost" | "slipstream" | "pit" | "save" | "block" | "reroll" | "sky";
 export type EventKind = "safety_car" | "red_flag";
 export type Weather = "dry" | "light_rain" | "heavy_rain";
@@ -22,14 +25,70 @@ export type Mode = "cruise" | "push";
 /** ปรับตารางอากาศ: earlier = อากาศถัดไปมาเร็วขึ้น 1 รอบ, later = ยืดอากาศตอนนี้ออกไปอีก 1 รอบ */
 export type SkyShift = "earlier" | "later";
 
-/** move = โบนัสก้าวตอนเร่ง, life = เร่งได้กี่เทิร์นก่อนยางหมดอายุ, best = สภาพอากาศที่เหมาะ */
-export const TYRES: Record<Tyre, { label: string; move: number; life: number; best: string }> = {
-  soft: { label: "นิ่ม", move: 3, life: 3, best: "แห้ง" },
-  medium: { label: "กลาง", move: 2, life: 5, best: "แห้ง" },
-  hard: { label: "แข็ง", move: 1, life: 7, best: "แห้ง" },
-  inter: { label: "อินเตอร์", move: 2, life: 5, best: "ฝนเบา" },
-  wet: { label: "เว็ท", move: 1, life: 6, best: "ฝนหนัก" },
+/**
+ * col = แถวค่าบนไพ่เร่งที่ใช้, life = ไพ่สึกกี่ใบก่อนยางหมดอายุ, best = สภาพอากาศที่เหมาะ
+ * ยางฝนใช้แถวเดียวกับยางแห้งที่ใกล้เคียง (อินเตอร์ ≈ กลาง, เว็ท ≈ แข็ง)
+ */
+export const TYRES: Record<Tyre, { label: string; col: Col; life: number; best: string }> = {
+  soft: { label: "นิ่ม", col: "soft", life: 2, best: "แห้ง" },
+  medium: { label: "กลาง", col: "medium", life: 3, best: "แห้ง" },
+  hard: { label: "แข็ง", col: "hard", life: 5, best: "แห้ง" },
+  inter: { label: "อินเตอร์", col: "medium", life: 3, best: "ฝนเบา" },
+  wet: { label: "เว็ท", col: "hard", life: 4, best: "ฝนหนัก" },
 };
+
+export const COL_LABEL: Record<Col, string> = { soft: "นิ่ม", medium: "กลาง", hard: "แข็ง" };
+const COL_INDEX: Record<Col, number> = { soft: 0, medium: 1, hard: 2 };
+
+export type SpeedIcon = "team" | "event" | null;
+
+/**
+ * ไพ่เร่ง: v = ค่าก้าวของแถวนิ่ม/กลาง/แข็ง, wear = สัญลักษณ์ยางสึก,
+ * risk = จำนวนหยดน้ำ (0–3) ยิ่งมากยิ่งหมุนง่ายตอนเร่งในฝน, icon = ผลพิเศษหลังเดิน
+ */
+export type SpeedCard = {
+  v: [number, number, number];
+  wear: boolean;
+  risk: number;
+  icon: SpeedIcon;
+};
+
+const sc = (
+  s: number, m: number, h: number, wear: 0 | 1, risk: number, icon: SpeedIcon = null,
+): SpeedCard => ({ v: [s, m, h], wear: wear === 1, risk, icon });
+
+/** สำรับไพ่เร่ง 20 ใบ (ทุกคนมีชุดเดียวกัน แต่สับคนละกอง): ไพ่แรงมักสึกง่ายและเสี่ยงหมุน */
+export const SPEED_CARDS: SpeedCard[] = [
+  sc(9, 7, 5, 1, 3),
+  sc(9, 6, 4, 1, 2),
+  sc(8, 7, 5, 1, 1, "team"),
+  sc(8, 6, 4, 1, 0),
+  sc(8, 5, 4, 0, 2, "event"),
+  sc(7, 6, 5, 1, 3),
+  sc(7, 6, 4, 0, 1),
+  sc(7, 5, 5, 1, 0),
+  sc(7, 5, 4, 0, 0, "team"),
+  sc(7, 5, 4, 1, 2),
+  sc(6, 6, 5, 0, 0),
+  sc(6, 5, 5, 1, 1, "event"),
+  sc(6, 5, 4, 0, 3),
+  sc(6, 5, 4, 1, 0),
+  sc(6, 5, 4, 0, 2),
+  sc(6, 5, 3, 0, 1, "team"),
+  sc(5, 5, 5, 0, 0),
+  sc(5, 5, 4, 1, 0, "event"),
+  sc(5, 4, 4, 0, 1),
+  sc(4, 4, 4, 0, 0),
+];
+
+/** ค่าก้าวบนไพ่สำหรับยางชนิดนี้ */
+export const speedValue = (c: SpeedCard, t: Tyre) => c.v[COL_INDEX[TYRES[t].col]];
+
+/** ค่าเฉลี่ยของแถวนั้นทั้งสำรับ — ไว้บอกผู้เล่นว่ายางแต่ละชนิดแรงแค่ไหน */
+export function columnAvg(col: Col): number {
+  const sum = SPEED_CARDS.reduce((a, c) => a + c.v[COL_INDEX[col]], 0);
+  return Math.round((sum / SPEED_CARDS.length) * 10) / 10;
+}
 
 export const WEATHER: Record<Weather, { label: string }> = {
   dry: { label: "แห้ง" },
@@ -44,21 +103,30 @@ const MOVE_MOD: Record<Weather, Record<Tyre, number>> = {
   heavy_rain: { soft: 0, medium: 0, hard: 0, inter: 0, wet: 1 },
 };
 
-/** โอกาสหมุนตอนเร่งในฝน (ยางเรียบลื่นกว่ายางฝน) */
-const SPIN: Record<Weather, Record<Tyre, number>> = {
-  dry: { soft: 0, medium: 0, hard: 0, inter: 0, wet: 0 },
-  light_rain: { soft: 0.4, medium: 0.35, hard: 0.3, inter: 0, wet: 0 },
-  heavy_rain: { soft: 0.6, medium: 0.6, hard: 0.6, inter: 0.25, wet: 0 },
+/** ตอนเร่งในฝน ถ้าไพ่มีหยดน้ำถึงเกณฑ์นี้ = หมุน (ไม่มีเกณฑ์ = ไม่หมุน) */
+const SPIN_AT: Record<Weather, Record<Tyre, number>> = {
+  dry: { soft: 99, medium: 99, hard: 99, inter: 99, wet: 99 },
+  light_rain: { soft: 2, medium: 2, hard: 2, inter: 99, wet: 99 },
+  heavy_rain: { soft: 1, medium: 1, hard: 1, inter: 3, wet: 99 },
 };
 
+/** โอกาสหมุนโดยประมาณ = สัดส่วนไพ่ในสำรับที่หยดน้ำถึงเกณฑ์ */
+export function spinChance(w: Weather, t: Tyre): number {
+  const at = SPIN_AT[w][t];
+  return SPEED_CARDS.filter((c) => c.risk >= at).length / SPEED_CARDS.length;
+}
+
 /** ผลของอากาศต่อยางหนึ่งใบตอนเร่ง (ใช้แสดงคำเตือนในหน้าจอด้วย) */
-export const weatherEffect = (w: Weather, t: Tyre) => ({ move: MOVE_MOD[w][t], spin: SPIN[w][t] });
+export const weatherEffect = (w: Weather, t: Tyre) => ({
+  move: MOVE_MOD[w][t],
+  spin: spinChance(w, t),
+});
 
 export const isRainTyre = (t: Tyre) => t === "inter" || t === "wet";
 const isWet = (w: Weather) => w !== "dry";
 
 export const ACTIONS: Record<Action, { label: string; desc: string }> = {
-  boost: { label: "ดันสุด", desc: "ใช้ตอนเร่ง: +3 ช่อง แต่ยางสึกเพิ่มอีก 1 เทิร์น" },
+  boost: { label: "ดันสุด", desc: "ใช้ตอนเร่ง: +3 ช่อง แต่ยางเสื่อมเพิ่มอีก 1 ใบ (ในแห้ง)" },
   slipstream: { label: "ดูดอากาศ", desc: "+2 ช่อง (+4 ถ้าคุณตามหลังอยู่) ใช้ได้ทั้งขับคุมและเร่ง" },
   pit: {
     label: "เข้าพิท",
@@ -66,7 +134,7 @@ export const ACTIONS: Record<Action, { label: string; desc: string }> = {
   },
   save: { label: "ประหยัดยาง", desc: "ใช้ตอนเร่ง: ยางไม่สึกเทิร์นนี้ แต่ −1 ช่อง" },
   block: { label: "ขวางทาง", desc: "คนที่เดินต่อจากคุณเดิน −2 ช่อง (ต้องมีคนเดินตามหลังคุณ)" },
-  reroll: { label: "ทอยซ้ำ", desc: "ใช้ตอนเร่ง: ทอยเต๋า 2 ครั้ง เอาค่าสูง" },
+  reroll: { label: "พลิกสองใบ", desc: "ใช้ตอนเร่ง: พลิกไพ่เร่ง 2 ใบ ใช้ใบที่ให้ค่ามากกว่า" },
   sky: {
     label: "ปรับฟ้า",
     desc: "ลัดฟ้า: อากาศถัดไปมาเร็วขึ้น 1 รอบ · ยืดฟ้า: อากาศตอนนี้อยู่ต่ออีก 1 รอบ",
@@ -76,10 +144,23 @@ export const ACTIONS: Record<Action, { label: string; desc: string }> = {
 export const EVENTS: Record<EventKind, { label: string; desc: string }> = {
   safety_car: {
     label: "เซฟตี้คาร์",
-    desc: "ช่องว่างจากผู้นำเหลือครึ่งเดียว เต๋าตอนเร่งสูงสุด 3 และเข้าพิทฟรีในรอบนี้เท่านั้น",
+    desc: "ช่องว่างจากผู้นำเหลือครึ่งเดียว ไพ่เร่งมีค่าสูงสุด 5 และเข้าพิทฟรีในรอบนี้เท่านั้น",
   },
   red_flag: { label: "ธงแดง", desc: "ยางที่ใช้อยู่กลับมาใหม่ คันท้ายสุดได้ +3 ช่อง" },
 };
+
+/** ผลพิเศษของไพ่เร่งที่มีสัญลักษณ์ "เหตุการณ์" */
+export type CardEvent = "lockup" | "wearmore" | "tailwind" | "radio" | "brakes" | "yellow";
+
+export const CARD_EVENTS: Record<CardEvent, { label: string; desc: string }> = {
+  lockup: { label: "ล็อกล้อ", desc: "ถอยหลัง 2 ช่อง" },
+  wearmore: { label: "ยางเสื่อมเร็ว", desc: "อายุยางลดอีก 1" },
+  tailwind: { label: "ลมส่ง", desc: "เดินเพิ่ม +2 ช่อง" },
+  radio: { label: "วิทยุทีม", desc: "จั่วการ์ดเพิ่ม 1 ใบ" },
+  brakes: { label: "เบรกร้อน", desc: "เทิร์นหน้าขับคุมเท่านั้น" },
+  yellow: { label: "ขับพลาด", desc: "รอบหน้าขึ้นธงเหลือง" },
+};
+const CARD_EVENT_LIST = Object.keys(CARD_EVENTS) as CardEvent[];
 
 export const HAND_SIZE = 3;
 export const TYRE_SLOTS = 4;
@@ -91,6 +172,8 @@ export const CRUISE_MOVE = 3;
 export const WORN_MOVE = 2;
 /** เสียเวลาเข้าพิทกี่ช่อง (เซฟตี้คาร์ = ฟรี) */
 export const PIT_COST = 2;
+/** ไพ่เร่งมีค่าสูงสุดเท่านี้ในรอบเซฟตี้คาร์ */
+export const SC_SPEED_CAP = 5;
 /** โอกาสเกิดธงแดงต้นรอบ */
 export const RED_FLAG_CHANCE = 0.08;
 /** โอกาสมีธงเหลืองต้นรอบ (เมื่อไม่มีเหตุการณ์อื่น) */
@@ -155,19 +238,24 @@ export type Player = {
   progress: number;
   /** ยางที่ใส่ไว้ตอนเริ่ม — ใบแรกคือใบที่ใช้อยู่ ที่เหลือเป็นยางสำรอง */
   tyres: Tyre[];
-  /** อายุยางใบที่ใช้อยู่ (เทิร์นเร่งที่เหลือ) 0 = ยางพัง */
+  /** อายุยางใบที่ใช้อยู่ (จำนวนไพ่สึกที่รับได้อีก) 0 = ยางพัง */
   life: number;
   hand: Action[];
   deck: Action[];
   discard: Action[];
+  /** กองไพ่เร่ง (เก็บเป็นลำดับในอาเรย์ SPEED_CARDS) ใบแรกคือใบที่จะพลิก */
+  speedDeck: number[];
+  speedDiscard: number[];
   /** ก้าวที่โดนหักในเทิร์นถัดไป (จากการ์ดขวางทาง) */
   debuff: number;
+  /** เบรกร้อน: เทิร์นถัดไปขับคุมเท่านั้น */
+  limp: boolean;
 };
 
 export type TurnLog = {
   player: number;
-  /** ค่าเต๋าที่ได้ — null เมื่อขับคุม (ไม่ทอย) */
-  die: number | null;
+  /** ไพ่เร่งที่ใช้ (ลำดับใน SPEED_CARDS) — null เมื่อขับคุม */
+  card: number | null;
   action: Action | null;
   mode: Mode;
   moved: number;
@@ -175,6 +263,8 @@ export type TurnLog = {
   worn: boolean;
   /** หมุนในฝน */
   spun: boolean;
+  /** ผลของสัญลักษณ์เหตุการณ์บนไพ่ (ถ้ามี) */
+  cardEvent: CardEvent | null;
 };
 
 export type GameState = WeatherPlan & {
@@ -190,7 +280,7 @@ export type GameState = WeatherPlan & {
   event: EventKind | null;
   /** ธงเหลืองรอบนี้ — รอบหน้ามีโอกาสเป็นเซฟตี้คาร์ */
   yellow: boolean;
-  /** มีคนหมุนในรอบนี้ — ทำให้รอบหน้าขึ้นธงเหลือง */
+  /** มีเหตุผิดปกติในรอบนี้ (หมุน/ขับพลาด) — ทำให้รอบหน้าขึ้นธงเหลือง */
   incident: boolean;
   winner: number | null;
   lastTurn: TurnLog | null;
@@ -205,6 +295,9 @@ export const activePlayer = (s: GameState): Player => s.players[s.order[s.turn]]
 const hasFollower = (s: GameState) => s.turn < s.order.length - 1;
 
 export const isWorn = (p: Player) => p.life <= 0;
+
+/** เทิร์นนี้บังคับขับคุมหรือไม่ (ยางพัง หรือเบรกร้อน) */
+export const mustCruise = (p: Player) => isWorn(p) || p.limp;
 
 /** อากาศรอบนี้พลิกประเภทจากรอบก่อน (แห้ง ↔ ฝน) — ช่วงสลับยางด่วนฟรี */
 export function weatherFlipped(s: GameState): boolean {
@@ -237,11 +330,11 @@ export function validTyres(tyres: Tyre[]): boolean {
   );
 }
 
-/** จั่วจากสำรับจนมือครบ — สำรับหมดก็สับกองทิ้งกลับมาเป็นสำรับใหม่ */
-function refill(p: Player, rng: Rng): Player {
+/** จั่วการ์ด action จนมือครบ (ถึง `size` ใบ) — สำรับหมดก็สับกองทิ้งกลับมาเป็นสำรับใหม่ */
+function refill(p: Player, rng: Rng, size = HAND_SIZE): Player {
   let { deck, discard } = p;
   const hand = [...p.hand];
-  while (hand.length < HAND_SIZE) {
+  while (hand.length < size) {
     if (deck.length === 0) {
       if (discard.length === 0) break;
       deck = shuffle(discard, rng);
@@ -251,6 +344,19 @@ function refill(p: Player, rng: Rng): Player {
     deck = deck.slice(1);
   }
   return { ...p, hand, deck, discard };
+}
+
+/** พลิกไพ่เร่งใบบนสุด — กองหมดก็สับกองทิ้งกลับมา */
+function drawSpeed(
+  deck: number[], discard: number[], rng: Rng,
+): { id: number; deck: number[]; discard: number[] } {
+  let d = deck;
+  let x = discard;
+  if (d.length === 0) {
+    d = shuffle(x, rng);
+    x = [];
+  }
+  return { id: d[0], deck: d.slice(1), discard: x };
 }
 
 export function newGame(
@@ -263,6 +369,7 @@ export function newGame(
   const deckCards = (Object.keys(DECK_LIST) as Action[]).flatMap((a) =>
     Array<Action>(DECK_LIST[a]).fill(a),
   );
+  const speedIds = SPEED_CARDS.map((_, i) => i);
   return {
     ...plan,
     players: names.map((name, id) =>
@@ -276,7 +383,10 @@ export function newGame(
           hand: [],
           deck: shuffle(deckCards, rng),
           discard: [],
+          speedDeck: shuffle(speedIds, rng),
+          speedDiscard: [],
           debuff: 0,
+          limp: false,
         },
         rng,
       ),
@@ -292,8 +402,6 @@ export function newGame(
     lastTurn: null,
   };
 }
-
-export const rollDie = (rng: Rng) => 1 + Math.floor(rng() * 6);
 
 /**
  * เล่นการ์ดนี้ได้หรือไม่ใน `mode` ที่เลือก (mode ที่ส่งมาควรเป็นโหมดจริงหลังบังคับแล้ว)
@@ -365,7 +473,7 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
   }
 
   const worn = isWorn(me);
-  const mode: Mode = worn || action === "pit" ? "cruise" : choice.mode;
+  const mode: Mode = mustCruise(me) || action === "pit" ? "cruise" : choice.mode;
   if (!canPlay(state, me, action, mode)) return state;
 
   let tyres = me.tyres;
@@ -383,7 +491,9 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
   const behind = state.players.some((p) => p.progress > me.progress);
   const follow = action === "slipstream" ? (behind ? 4 : 2) : 0;
 
-  let die: number | null = null;
+  let card: number | null = null;
+  let speedDeck = me.speedDeck;
+  let speedDiscard = me.speedDiscard;
   let spun = false;
   let moved: number;
   let decay = 0;
@@ -393,18 +503,30 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
   } else if (mode === "cruise") {
     moved = Math.max(1, (worn ? WORN_MOVE : CRUISE_MOVE) + follow - me.debuff);
   } else {
-    die = rollDie(rng);
-    if (action === "reroll") die = Math.max(die, rollDie(rng));
-    const rolled = state.event === "safety_car" ? Math.min(die, 3) : die;
-    const chance = SPIN[weather][tyres[0]];
-    spun = chance > 0 && rng() < chance;
+    // พลิกไพ่เร่ง (พลิกสองใบแล้วเลือกใบที่ค่ามากกว่า)
+    const drawn: number[] = [];
+    for (let k = 0; k < (action === "reroll" ? 2 : 1); k++) {
+      const d = drawSpeed(speedDeck, speedDiscard, rng);
+      drawn.push(d.id);
+      speedDeck = d.deck;
+      speedDiscard = d.discard;
+    }
+    card = drawn.reduce((best, id) =>
+      speedValue(SPEED_CARDS[id], tyres[0]) > speedValue(SPEED_CARDS[best], tyres[0]) ? id : best,
+    );
+    speedDiscard = [...speedDiscard, ...drawn];
+    const c = SPEED_CARDS[card];
+    const value = state.event === "safety_car"
+      ? Math.min(speedValue(c, tyres[0]), SC_SPEED_CAP)
+      : speedValue(c, tyres[0]);
+    spun = isWet(weather) && c.risk >= SPIN_AT[weather][tyres[0]];
     const bonus = action === "boost" ? 3 : action === "save" ? -1 : follow;
     moved = spun
       ? 1
-      : Math.max(1, rolled + TYRES[tyres[0]].move + MOVE_MOD[weather][tyres[0]] + bonus - me.debuff);
-    // ในฝนยางไม่สึก — ในแห้งสึก 1 (+1 ถ้าดันสุด, +1 ถ้าใช้ยางฝนในแห้ง) ประหยัดยางไม่สึก
+      : Math.max(1, value + MOVE_MOD[weather][tyres[0]] + bonus - me.debuff);
+    // ฝนไม่ทำให้ยางสึก — ในแห้ง: ไพ่สึก +1, ดันสุด +1, ยางฝนในแห้งร้อนเกิน +1 (ประหยัดยางไม่สึก)
     if (weather === "dry" && action !== "save") {
-      decay = 1 + (action === "boost" ? 1 : 0) + (isRainTyre(tyres[0]) ? 1 : 0);
+      decay = (c.wear ? 1 : 0) + (action === "boost" ? 1 : 0) + (isRainTyre(tyres[0]) ? 1 : 0);
     }
   }
 
@@ -416,7 +538,7 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
     hand.splice(hand.indexOf(action), 1);
     discard.push(action);
   }
-  const played = refill(
+  let played = refill(
     {
       ...me,
       progress: me.progress + moved,
@@ -424,10 +546,30 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
       life: Math.max(0, life - decay),
       hand,
       discard,
+      speedDeck,
+      speedDiscard,
       debuff: 0,
+      limp: false,
     },
     rng,
   );
+
+  // สัญลักษณ์พิเศษบนไพ่เร่ง
+  let cardEvent: CardEvent | null = null;
+  let incident = state.incident || spun;
+  if (card !== null) {
+    const icon = SPEED_CARDS[card].icon;
+    if (icon === "team") played = refill(played, rng, played.hand.length + 1);
+    if (icon === "event") {
+      cardEvent = CARD_EVENT_LIST[Math.floor(rng() * CARD_EVENT_LIST.length)];
+      if (cardEvent === "lockup") played = { ...played, progress: Math.max(0, played.progress - 2) };
+      else if (cardEvent === "wearmore") played = { ...played, life: Math.max(0, played.life - 1) };
+      else if (cardEvent === "tailwind") played = { ...played, progress: played.progress + 2 };
+      else if (cardEvent === "radio") played = refill(played, rng, played.hand.length + 1);
+      else if (cardEvent === "brakes") played = { ...played, limp: true };
+      else incident = true;
+    }
+  }
 
   const victim = hasFollower(state) ? state.order[state.turn + 1] : -1;
   const players = state.players.map((p) => {
@@ -439,8 +581,8 @@ export function playTurn(state: GameState, choice: TurnChoice, rng: Rng): GameSt
   let next: GameState = {
     ...state,
     players,
-    incident: state.incident || spun,
-    lastTurn: { player: me.id, die, action, mode, moved, worn, spun },
+    incident,
+    lastTurn: { player: me.id, card, action, mode, moved, worn, spun, cardEvent },
   };
   if (action === "sky") next = shiftSky(next, choice.sky ?? "earlier");
 

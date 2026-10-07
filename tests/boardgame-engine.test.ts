@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  CRUISE_MOVE, DECK_LIST, HAND_SIZE, PIT_COST, TYRE_SLOTS, WORN_MOVE,
-  activePlayer, applyEvent, canPlay, canSwap, forecastAt, makeWeatherPlan, newGame, pitCost,
-  playTurn, shiftSky, shuffle, standings, validTyres, weatherEffect, weatherFlipped,
+  CARD_EVENTS, CRUISE_MOVE, DECK_LIST, HAND_SIZE, PIT_COST, SC_SPEED_CAP, SPEED_CARDS,
+  TYRE_SLOTS, TYRES, WORN_MOVE,
+  activePlayer, applyEvent, canPlay, canSwap, columnAvg, forecastAt, makeWeatherPlan, newGame,
+  pitCost, playTurn, shiftSky, shuffle, speedValue, spinChance, standings, validTyres,
+  weatherEffect, weatherFlipped,
   type Action, type GameState, type Mode, type Rng, type Tyre, type Weather, type WeatherPlan,
 } from "@/lib/boardgame/engine";
 
@@ -15,12 +17,17 @@ const seq = (...v: number[]): Rng => {
 const never: Rng = () => {
   throw new Error("rng ไม่ควรถูกเรียก");
 };
-// ผลเต๋า 1..6 จาก rng: ค่า (d-1)/6 + นิดหน่อย
-const die = (d: number) => (d - 1) / 6 + 0.01;
 // จบรอบแบบเงียบ: ไม่มีธงแดง (>= RED_FLAG_CHANCE) และไม่มีธงเหลือง (>= YELLOW_CHANCE)
 const QUIET = [0.99, 0.99];
 
-const TYRES: Tyre[][] = [
+/**
+ * ไพ่เร่งที่ใช้ในเทสต์ (ลำดับใน SPEED_CARDS): [นิ่ม, กลาง, แข็ง] สึก/หยดน้ำ/ไอคอน
+ *  0: [9,7,5] สึก น้ำ3      3: [8,6,4] สึก น้ำ0     4: [8,5,4] ไม่สึก น้ำ2 เหตุการณ์
+ *  1: [9,6,4] สึก น้ำ2      6: [7,6,4] ไม่สึก น้ำ1  7: [7,5,5] สึก น้ำ0
+ *  2: [8,7,5] สึก น้ำ1 ทีม  12: [6,5,4] ไม่สึก น้ำ3  16: [5,5,5] ไม่สึก น้ำ0
+ */
+
+const TYRES_SET: Tyre[][] = [
   ["medium", "soft", "hard", "wet"],
   ["medium", "soft", "hard", "wet"],
 ];
@@ -36,9 +43,20 @@ function game(
   hand: Action[] = ["boost", "pit", "save"],
   plan: WeatherPlan = dryPlan(),
 ): GameState {
-  const s = newGame(["A", "B"], total, TYRES, plan, () => 0.5);
+  const s = newGame(["A", "B"], total, TYRES_SET, plan, () => 0.5);
   return { ...s, players: s.players.map((p) => ({ ...p, hand: [...hand] })) };
 }
+
+/** กำหนดไพ่เร่งที่จะพลิกต่อไปของทุกคน (ตามลำดับ) ที่เหลือเรียงต่อท้าย */
+const fix = (s: GameState, ...ids: number[]): GameState => {
+  const rest = SPEED_CARDS.map((_, i) => i).filter((i) => !ids.includes(i));
+  return {
+    ...s,
+    players: s.players.map((p) => ({ ...p, speedDeck: [...ids, ...rest], speedDiscard: [] })),
+  };
+};
+
+const val = (id: number, t: Tyre) => speedValue(SPEED_CARDS[id], t);
 
 const withWeather = (s: GameState, w: Weather): GameState => ({
   ...s,
@@ -63,13 +81,15 @@ const setPlayer = (s: GameState, id: number, patch: object): GameState => ({
 
 describe("เริ่มเกม", () => {
   it("แจกมือครบ 3 ใบ สำรับรวมมือตรงกับ DECK_LIST และยางใบแรกคือยางที่ใช้", () => {
-    const s = newGame(["A", "B"], 30, TYRES, dryPlan(), Math.random);
+    const s = newGame(["A", "B"], 30, TYRES_SET, dryPlan(), Math.random);
     for (const p of s.players) {
       expect(p.hand).toHaveLength(HAND_SIZE);
       expect(p.hand.length + p.deck.length).toBe(
         Object.values(DECK_LIST).reduce((a, b) => a + b, 0),
       );
-      expect(p.life).toBe(5); // medium
+      expect(p.life).toBe(TYRES.medium.life);
+      expect(p.speedDeck).toHaveLength(SPEED_CARDS.length);
+      expect([...p.speedDeck].sort((a, b) => a - b)).toEqual(SPEED_CARDS.map((_, i) => i));
     }
     expect(s.order).toEqual([0, 1]);
   });
@@ -86,6 +106,45 @@ describe("เริ่มเกม", () => {
     expect(validTyres(["soft", "soft", "hard", "wet"])).toBe(true);
     expect(validTyres(["soft", "soft", "soft", "wet"])).toBe(false);
     expect(validTyres(["soft", "hard", "wet"])).toBe(false);
+  });
+});
+
+describe("สำรับไพ่เร่ง", () => {
+  it("ค่าเฉลี่ยของแถว นิ่ม > กลาง > แข็ง และอยู่ในช่วงที่ออกแบบ", () => {
+    const [s, m, h] = [columnAvg("soft"), columnAvg("medium"), columnAvg("hard")];
+    expect(s).toBeGreaterThan(m);
+    expect(m).toBeGreaterThan(h);
+    expect(s).toBeGreaterThanOrEqual(6.3);
+    expect(s).toBeLessThanOrEqual(6.9);
+    expect(m).toBeGreaterThanOrEqual(5.1);
+    expect(m).toBeLessThanOrEqual(5.7);
+    expect(h).toBeGreaterThanOrEqual(4.1);
+    expect(h).toBeLessThanOrEqual(4.7);
+  });
+
+  it("ทุกไพ่: ค่านิ่ม ≥ กลาง ≥ แข็ง, หยดน้ำ 0–3, สึกไม่เกินครึ่งสำรับ", () => {
+    for (const c of SPEED_CARDS) {
+      expect(c.v[0]).toBeGreaterThanOrEqual(c.v[1]);
+      expect(c.v[1]).toBeGreaterThanOrEqual(c.v[2]);
+      expect(c.risk).toBeGreaterThanOrEqual(0);
+      expect(c.risk).toBeLessThanOrEqual(3);
+    }
+    expect(SPEED_CARDS.filter((c) => c.wear).length).toBeLessThanOrEqual(SPEED_CARDS.length / 2);
+  });
+
+  it("โอกาสหมุนตามหยดน้ำ: ฝนหนักยางเรียบ ~60%, ฝนเบา ~35%, ยางฝนที่ตรงอากาศ 0", () => {
+    expect(spinChance("heavy_rain", "soft")).toBeCloseTo(0.6, 2);
+    expect(spinChance("light_rain", "medium")).toBeCloseTo(0.35, 2);
+    expect(spinChance("heavy_rain", "inter")).toBeCloseTo(0.15, 2);
+    expect(spinChance("light_rain", "inter")).toBe(0);
+    expect(spinChance("heavy_rain", "wet")).toBe(0);
+    expect(spinChance("dry", "soft")).toBe(0);
+  });
+
+  it("weatherEffect บอกก้าวและโอกาสหมุน", () => {
+    expect(weatherEffect("light_rain", "inter")).toEqual({ move: 1, spin: 0 });
+    expect(weatherEffect("dry", "medium")).toEqual({ move: 0, spin: 0 });
+    expect(weatherEffect("dry", "wet").move).toBe(-2);
   });
 });
 
@@ -114,22 +173,48 @@ describe("แผนอากาศและพยากรณ์", () => {
 });
 
 describe("ขับคุม และ เร่ง", () => {
-  it("ขับคุม: เดินคงที่ ไม่ทอยเต๋า ยางไม่สึก", () => {
-    const s = playTurn(game(), cruise(), never);
-    expect(s.players[0].progress).toBe(CRUISE_MOVE);
-    expect(s.players[0].life).toBe(5);
-    expect(s.lastTurn?.die).toBeNull();
+  it("ขับคุม: เดินคงที่ ไม่พลิกไพ่เร่ง ยางไม่สึก", () => {
+    const s = fix(game(), 7);
+    const out = playTurn(s, cruise(), never);
+    expect(out.players[0].progress).toBe(CRUISE_MOVE);
+    expect(out.players[0].life).toBe(TYRES.medium.life);
+    expect(out.players[0].speedDeck).toEqual(s.players[0].speedDeck);
+    expect(out.lastTurn?.card).toBeNull();
   });
 
-  it("เร่ง: เต๋า + โบนัสยาง และยางสึก 1", () => {
-    const s = playTurn(game(), push(), seq(die(4)));
-    expect(s.players[0].progress).toBe(4 + 2);
-    expect(s.players[0].life).toBe(4);
-    expect(s.lastTurn?.die).toBe(4);
+  it("เร่ง: ใช้ค่าไพ่ตามแถวของยาง และไพ่ไปกองทิ้ง", () => {
+    const out = playTurn(fix(game(), 3), push(), never);
+    expect(out.players[0].progress).toBe(val(3, "medium")); // 6
+    expect(out.lastTurn?.card).toBe(3);
+    expect(out.players[0].speedDiscard).toEqual([3]);
+    expect(out.players[0].speedDeck[0]).not.toBe(3);
+  });
+
+  it("แต่ละยางใช้แถวของตัวเอง: นิ่ม/กลาง/แข็ง และอินเตอร์ = กลาง, เว็ท = แข็ง", () => {
+    const base = fix(game(), 0);
+    for (const [t, expected] of [
+      ["soft", 9],
+      ["medium", 7],
+      ["hard", 5],
+    ] as const) {
+      const s = setPlayer(base, 0, { tyres: [t, "hard"], life: 9 });
+      expect(playTurn(s, push(), never).players[0].progress).toBe(expected);
+    }
+    const inter = setPlayer(withWeather(base, "light_rain"), 0, { tyres: ["inter", "hard"], life: 9 });
+    expect(playTurn(inter, push(), never).players[0].progress).toBe(7 + 1); // แถวกลาง + โบนัสฝนเบา
+    const wet = setPlayer(withWeather(base, "heavy_rain"), 0, { tyres: ["wet", "hard"], life: 9 });
+    expect(playTurn(wet, push(), never).players[0].progress).toBe(5 + 1); // แถวแข็ง + โบนัสฝนหนัก
+  });
+
+  it("ยางสึกเฉพาะไพ่ที่มีสัญลักษณ์สึก", () => {
+    const worn = playTurn(fix(game(), 7), push(), never); // ไพ่ 7 มีสัญลักษณ์สึก
+    expect(worn.players[0].life).toBe(TYRES.medium.life - 1);
+    const clean = playTurn(fix(game(), 6), push(), never); // ไพ่ 6 ไม่มี
+    expect(clean.players[0].life).toBe(TYRES.medium.life);
   });
 
   it("เล่นการ์ดแล้วการ์ดไปกองทิ้ง และจั่วเติมให้ครบ 3 ใบ", () => {
-    const s = playTurn(game(), push("save"), seq(die(3)));
+    const s = playTurn(fix(game(), 7), push("save"), never);
     const me = s.players[0];
     expect(me.hand).toHaveLength(HAND_SIZE);
     expect(me.discard).toEqual(["save"]);
@@ -137,35 +222,35 @@ describe("ขับคุม และ เร่ง", () => {
 
   it("การ์ดที่ไม่มีในมือ หรือใช้ผิดโหมด = เล่นไม่ได้ state ไม่เปลี่ยน", () => {
     const s = game(30, ["boost", "save", "reroll"]);
-    expect(playTurn(s, push("block"), seq(die(3)))).toBe(s);
+    expect(playTurn(s, push("block"), never)).toBe(s);
     expect(playTurn(s, cruise("boost"), never)).toBe(s);
     expect(playTurn(s, cruise("save"), never)).toBe(s);
     expect(playTurn(s, cruise("reroll"), never)).toBe(s);
   });
 
-  it("ดันสุด +3 ช่อง ยางสึกเพิ่ม 1 / ประหยัดยาง −1 ช่อง ยางไม่สึก", () => {
-    const boost = playTurn(game(), push("boost"), seq(die(2)));
-    expect(boost.players[0].progress).toBe(2 + 2 + 3);
-    expect(boost.players[0].life).toBe(3);
-    const save = playTurn(game(), push("save"), seq(die(2)));
-    expect(save.players[0].progress).toBe(2 + 2 - 1);
-    expect(save.players[0].life).toBe(5);
+  it("ดันสุด +3 ช่อง ยางเสื่อมเพิ่ม 1 / ประหยัดยาง −1 ช่อง ยางไม่สึก", () => {
+    const boost = playTurn(fix(game(), 6), push("boost"), never); // ไพ่ 6 ไม่สึก
+    expect(boost.players[0].progress).toBe(val(6, "medium") + 3);
+    expect(boost.players[0].life).toBe(TYRES.medium.life - 1);
+    const save = playTurn(fix(game(), 7), push("save"), never); // ไพ่ 7 สึก แต่ประหยัดยาง
+    expect(save.players[0].progress).toBe(val(7, "medium") - 1);
+    expect(save.players[0].life).toBe(TYRES.medium.life);
   });
 
   it("ดูดอากาศ: ใช้ได้ทั้งสองโหมด +2 ปกติ, +4 เมื่อตามหลัง", () => {
-    const lead = game(30, ["slipstream", "boost", "save"]);
+    const lead = fix(game(30, ["slipstream", "boost", "save"]), 6);
     expect(playTurn(lead, cruise("slipstream"), never).players[0].progress).toBe(CRUISE_MOVE + 2);
-    expect(playTurn(lead, push("slipstream"), seq(die(1))).players[0].progress).toBe(1 + 2 + 2);
+    expect(playTurn(lead, push("slipstream"), never).players[0].progress).toBe(val(6, "medium") + 2);
     const behind = setPlayer(lead, 1, { progress: 9 });
-    const second = playTurn(behind, cruise("slipstream"), never);
-    expect(second.players[0].progress).toBe(CRUISE_MOVE + 4);
+    expect(playTurn(behind, cruise("slipstream"), never).players[0].progress).toBe(CRUISE_MOVE + 4);
   });
 
-  it("ทอยซ้ำ: เอาค่าสูงของสองครั้ง", () => {
-    const s = game(30, ["reroll", "boost", "save"]);
-    const out = playTurn(s, push("reroll"), seq(die(2), die(5)));
-    expect(out.lastTurn?.die).toBe(5);
-    expect(out.players[0].progress).toBe(5 + 2);
+  it("พลิกสองใบ: ใช้ใบที่ค่ามากกว่า ทั้งสองใบไปกองทิ้ง", () => {
+    const s = fix(game(30, ["reroll", "boost", "save"]), 16, 0); // กลาง 5 กับ 7
+    const out = playTurn(s, push("reroll"), never);
+    expect(out.lastTurn?.card).toBe(0);
+    expect(out.players[0].progress).toBe(7);
+    expect(out.players[0].speedDiscard.sort()).toEqual([0, 16]);
   });
 
   it("ขวางทาง: คนที่เดินต่อจากเราโดน −2 ครั้งเดียว และคนสุดท้ายในรอบเล่นไม่ได้", () => {
@@ -181,7 +266,7 @@ describe("ขับคุม และ เร่ง", () => {
     expect(playTurn(lastInOrder, cruise("block"), never)).toBe(lastInOrder);
   });
 
-  it("สำรับหมดแล้วสับกองทิ้งกลับมาจั่วต่อ", () => {
+  it("สำรับการ์ด action หมดแล้วสับกองทิ้งกลับมาจั่วต่อ", () => {
     const s = game();
     const tight = {
       ...s,
@@ -194,15 +279,75 @@ describe("ขับคุม และ เร่ง", () => {
     const out = playTurn(tight, cruise(), never);
     expect(out.players[0].hand).toHaveLength(HAND_SIZE);
   });
+
+  it("กองไพ่เร่งหมดแล้วสับกองทิ้งกลับมาพลิกต่อ", () => {
+    const s = setPlayer(game(), 0, { speedDeck: [], speedDiscard: [3, 4, 5] });
+    const out = playTurn(s, push(), seq(0.5));
+    expect([3, 4, 5]).toContain(out.lastTurn?.card);
+    expect(out.players[0].speedDeck).toHaveLength(2);
+  });
+});
+
+describe("สัญลักษณ์พิเศษบนไพ่เร่ง", () => {
+  it("ไอคอนทีม: ได้จั่วการ์ด action เพิ่ม 1 ใบ (มือเกิน 3 ได้)", () => {
+    const out = playTurn(fix(game(), 2), push(), never);
+    expect(out.players[0].hand).toHaveLength(HAND_SIZE + 1);
+  });
+
+  // ไพ่ 4 มีไอคอนเหตุการณ์ (กลาง 5, ไม่สึก) — rng แรกคือเลือกเหตุการณ์
+  // ลำดับ: ล็อกล้อ, ยางเสื่อมเร็ว, ลมส่ง, วิทยุทีม, เบรกร้อน, ขับพลาด
+  const withEvent = (r: number) => playTurn(fix(game(), 4), push(), seq(r));
+
+  it("ล็อกล้อ: ถอย 2 ช่อง (ไม่ต่ำกว่า 0)", () => {
+    expect(withEvent(0.0).players[0].progress).toBe(5 - 2);
+    expect(withEvent(0.0).lastTurn?.cardEvent).toBe("lockup");
+    expect(CARD_EVENTS.lockup.label).toBeTruthy();
+  });
+
+  it("ยางเสื่อมเร็ว: อายุยางลดอีก 1", () => {
+    const out = withEvent(0.2);
+    expect(out.lastTurn?.cardEvent).toBe("wearmore");
+    expect(out.players[0].life).toBe(TYRES.medium.life - 1);
+  });
+
+  it("ลมส่ง: +2 ช่อง", () => {
+    const out = withEvent(0.4);
+    expect(out.lastTurn?.cardEvent).toBe("tailwind");
+    expect(out.players[0].progress).toBe(5 + 2);
+  });
+
+  it("วิทยุทีม: จั่วการ์ดเพิ่ม 1 ใบ", () => {
+    const out = withEvent(0.55);
+    expect(out.lastTurn?.cardEvent).toBe("radio");
+    expect(out.players[0].hand).toHaveLength(HAND_SIZE + 1);
+  });
+
+  it("เบรกร้อน: เทิร์นถัดไปของเขาบังคับขับคุม แล้วกลับเป็นปกติ", () => {
+    let s = withEvent(0.7);
+    expect(s.lastTurn?.cardEvent).toBe("brakes");
+    expect(s.players[0].limp).toBe(true);
+    s = playTurn(s, cruise(), seq(...QUIET)); // B ขับคุมจบรอบ
+    const forced = playTurn(fix(s, 7), push(), never); // A เลือกเร่ง แต่ถูกบังคับขับคุม ไม่พลิกไพ่
+    expect(forced.lastTurn).toMatchObject({ mode: "cruise", card: null });
+    expect(forced.players[0].limp).toBe(false);
+  });
+
+  it("ขับพลาด: เกิดเหตุผิดปกติ รอบหน้าขึ้นธงเหลือง", () => {
+    let s = withEvent(0.9);
+    expect(s.lastTurn?.cardEvent).toBe("yellow");
+    expect(s.incident).toBe(true);
+    s = playTurn(s, cruise(), seq(0.99));
+    expect(s.yellow).toBe(true);
+  });
 });
 
 describe("ยางพัง", () => {
   const worn = (s: GameState) => setPlayer(s, 0, { life: 0 });
 
-  it("บังคับขับคุมแบบลดทอน แม้เลือกเร่ง และไม่ใช้เต๋า", () => {
+  it("บังคับขับคุมแบบลดทอน แม้เลือกเร่ง และไม่พลิกไพ่", () => {
     const out = playTurn(worn(game()), push(), never);
     expect(out.players[0].progress).toBe(WORN_MOVE);
-    expect(out.lastTurn).toMatchObject({ mode: "cruise", worn: true, die: null });
+    expect(out.lastTurn).toMatchObject({ mode: "cruise", worn: true, card: null });
   });
 
   it("เล่นการ์ดอื่นนอกจากเข้าพิทไม่ได้", () => {
@@ -216,20 +361,19 @@ describe("ยางพัง", () => {
     const out = playTurn(s, cruise("pit"), never);
     const me = out.players[0];
     expect(me.tyres[0]).toBe("soft");
-    expect(me.life).toBe(3);
+    expect(me.life).toBe(TYRES.soft.life);
     expect(me.hand).toEqual(["boost", "save", "reroll"]);
     expect(me.discard).toEqual([]);
   });
 
   it("ไม่มียางสำรองแล้วเข้าพิทไม่ได้", () => {
-    const s = worn(game());
-    const lonely = setPlayer(s, 0, { tyres: ["hard" as Tyre] });
+    const lonely = setPlayer(worn(game()), 0, { tyres: ["hard" as Tyre] });
     expect(canPlay(lonely, activePlayer(lonely), "pit", "cruise")).toBe(false);
   });
 
-  it("ยางสึกถึง 0 จากการเร่ง แล้วเทิร์นถัดไปเป็นยางพัง", () => {
-    const s = setPlayer(game(), 0, { life: 1 });
-    const after = playTurn(s, push(), seq(die(3)));
+  it("ยางสึกถึง 0 จากไพ่สึก แล้วเทิร์นถัดไปเป็นยางพัง", () => {
+    const s = setPlayer(fix(game(), 7), 0, { life: 1 });
+    const after = playTurn(s, push(), never);
     expect(after.players[0].life).toBe(0);
     expect(after.lastTurn?.worn).toBe(false);
   });
@@ -240,7 +384,7 @@ describe("เข้าพิท", () => {
     const out = playTurn(game(), cruise("pit", { pitTo: 2 }), never); // ยางสำรองลำดับ 2 = hard
     const me = out.players[0];
     expect(me.tyres).toEqual(["hard", "soft", "wet"]);
-    expect(me.life).toBe(7);
+    expect(me.life).toBe(TYRES.hard.life);
     expect(me.progress).toBe(Math.max(1, CRUISE_MOVE - PIT_COST));
     expect(me.discard).toEqual(["pit"]);
   });
@@ -252,9 +396,9 @@ describe("เข้าพิท", () => {
     expect(playTurn(s, cruise("pit", { pitTo: 0 }), never)).toBe(s);
   });
 
-  it("เข้าพิทบังคับให้เป็นขับคุม ไม่ทอยเต๋า แม้เลือกเร่ง", () => {
+  it("เข้าพิทบังคับให้เป็นขับคุม ไม่พลิกไพ่ แม้เลือกเร่ง", () => {
     const out = playTurn(game(), push("pit"), never);
-    expect(out.lastTurn).toMatchObject({ mode: "cruise", die: null });
+    expect(out.lastTurn).toMatchObject({ mode: "cruise", card: null });
   });
 });
 
@@ -266,9 +410,9 @@ describe("เซฟตี้คาร์", () => {
     expect(playTurn(sc, cruise("pit"), never).players[0].progress).toBe(CRUISE_MOVE);
   });
 
-  it("เต๋าตอนเร่งสูงสุด 3", () => {
-    const sc = applyEvent(game(), "safety_car");
-    expect(playTurn(sc, push(), seq(die(6))).players[0].progress).toBe(3 + 2);
+  it("ค่าไพ่เร่งสูงสุด 5", () => {
+    const sc = applyEvent(setPlayer(fix(game(), 0), 0, { tyres: ["soft", "hard"], life: 9 }), "safety_car");
+    expect(playTurn(sc, push(), never).players[0].progress).toBe(SC_SPEED_CAP); // นิ่ม 9 → 5
   });
 
   it("ช่องว่างจากผู้นำเหลือครึ่ง", () => {
@@ -281,25 +425,24 @@ describe("เซฟตี้คาร์", () => {
 });
 
 describe("ฝน", () => {
-  it("ยางไม่สึกในฝน (ทุกชนิด) แต่ในแห้งสึก", () => {
-    const rain = withWeather(game(), "light_rain");
-    const inter = setPlayer(rain, 0, { tyres: ["inter", "hard"], life: 5 });
-    expect(playTurn(inter, push(), seq(die(3))).players[0].life).toBe(5);
-    expect(playTurn(game(), push(), seq(die(3))).players[0].life).toBe(4);
+  it("ยางไม่สึกในฝน (แม้ไพ่มีสัญลักษณ์สึก) แต่ในแห้งสึก", () => {
+    const rain = withWeather(fix(game(), 7), "light_rain");
+    const inter = setPlayer(rain, 0, { tyres: ["inter", "hard"], life: 3 });
+    expect(playTurn(inter, push(), never).players[0].life).toBe(3);
+    expect(playTurn(fix(game(), 7), push(), never).players[0].life).toBe(TYRES.medium.life - 1);
   });
 
-  it("ยางที่เหมาะกับฝนได้โบนัสก้าว และไม่ต้องเสี่ยงหมุน", () => {
-    const rain = withWeather(game(), "light_rain");
-    const inter = setPlayer(rain, 0, { tyres: ["inter", "hard"], life: 5 });
-    // rng = 0 จะหมุนทุกครั้งถ้ามีการเช็ก — ยางฝนไม่เช็ก จึงเดินปกติ
-    const out = playTurn(inter, push(), seq(die(5), 0));
-    expect(out.players[0].progress).toBe(5 + 2 + 1);
+  it("ยางที่เหมาะกับฝนได้โบนัสก้าว และไม่เสี่ยงหมุนแม้ไพ่หยดน้ำเยอะ", () => {
+    const rain = withWeather(fix(game(), 0), "light_rain"); // ไพ่ 0 น้ำ 3
+    const inter = setPlayer(rain, 0, { tyres: ["inter", "hard"], life: 3 });
+    const out = playTurn(inter, push(), never);
     expect(out.lastTurn?.spun).toBe(false);
+    expect(out.players[0].progress).toBe(val(0, "inter") + 1);
   });
 
-  it("ยางสลิกเร่งในฝน: ถ้าหมุน เดินแค่ 1 ช่อง และเกิดธงเหลืองรอบหน้า", () => {
-    const rain = withWeather(game(), "heavy_rain");
-    let s = playTurn(rain, push(), seq(die(6), 0.1)); // เช็กหมุน 0.1 < 0.6
+  it("ฝนหนัก ยางกลางเร่ง: ไพ่หยดน้ำ ≥ 1 หมุน → เดิน 1 ช่อง และรอบหน้าขึ้นธงเหลือง", () => {
+    const rain = withWeather(fix(game(), 6), "heavy_rain"); // ไพ่ 6 น้ำ 1
+    let s = playTurn(rain, push(), never);
     expect(s.lastTurn).toMatchObject({ spun: true, moved: 1 });
     expect(s.players[0].progress).toBe(1);
     expect(s.incident).toBe(true);
@@ -308,14 +451,30 @@ describe("ฝน", () => {
     expect(s.incident).toBe(false);
   });
 
-  it("ยางสลิกเร่งในฝนแล้วไม่หมุน เดินเต็มที่", () => {
-    const rain = withWeather(game(), "light_rain");
-    const out = playTurn(rain, push(), seq(die(5), 0.99)); // 0.99 ≥ 0.35
+  it("ฝนหนัก ไพ่ไม่มีหยดน้ำ (0) ไม่หมุน", () => {
+    const rain = withWeather(fix(game(), 3), "heavy_rain"); // ไพ่ 3 น้ำ 0
+    const out = playTurn(rain, push(), never);
     expect(out.lastTurn?.spun).toBe(false);
-    expect(out.players[0].progress).toBe(5 + 2);
+    expect(out.players[0].progress).toBe(val(3, "medium"));
   });
 
-  it("ขับคุมในฝนปลอดภัย ไม่เช็กหมุน", () => {
+  it("ฝนเบาต้องน้ำ ≥ 2 ถึงหมุน", () => {
+    const light = withWeather(fix(game(), 6), "light_rain"); // น้ำ 1 → ไม่หมุน
+    expect(playTurn(light, push(), never).lastTurn?.spun).toBe(false);
+    const spin = withWeather(fix(game(), 12), "light_rain"); // น้ำ 3 → หมุน
+    expect(playTurn(spin, push(), never).lastTurn?.spun).toBe(true);
+  });
+
+  it("อินเตอร์ในฝนหนักต้องน้ำ ≥ 3, เว็ทไม่หมุนเลย", () => {
+    const heavy = withWeather(game(), "heavy_rain");
+    const inter = (id: number) => setPlayer(fix(heavy, id), 0, { tyres: ["inter", "hard"], life: 3 });
+    expect(playTurn(inter(0), push(), never).lastTurn?.spun).toBe(true); // น้ำ 3
+    expect(playTurn(inter(1), push(), never).lastTurn?.spun).toBe(false); // น้ำ 2
+    const wet = setPlayer(fix(heavy, 0), 0, { tyres: ["wet", "hard"], life: 4 });
+    expect(playTurn(wet, push(), never).lastTurn?.spun).toBe(false);
+  });
+
+  it("ขับคุมในฝนปลอดภัย ไม่พลิกไพ่ ไม่หมุน", () => {
     const rain = withWeather(game(), "heavy_rain");
     const out = playTurn(rain, cruise(), never);
     expect(out.lastTurn?.spun).toBe(false);
@@ -323,16 +482,10 @@ describe("ฝน", () => {
   });
 
   it("ยางฝนในสนามแห้ง: ก้าวลด และสึกเร็วกว่า", () => {
-    const inter = setPlayer(game(), 0, { tyres: ["inter", "hard"], life: 5 });
-    const out = playTurn(inter, push(), seq(die(4)));
-    expect(out.players[0].progress).toBe(4 + 2 - 1);
-    expect(out.players[0].life).toBe(3);
-  });
-
-  it("weatherEffect บอกก้าวและโอกาสหมุน", () => {
-    expect(weatherEffect("light_rain", "inter")).toEqual({ move: 1, spin: 0 });
-    expect(weatherEffect("heavy_rain", "soft").spin).toBeGreaterThan(0.5);
-    expect(weatherEffect("dry", "medium")).toEqual({ move: 0, spin: 0 });
+    const inter = setPlayer(fix(game(), 6), 0, { tyres: ["inter", "hard"], life: 3 });
+    const out = playTurn(inter, push(), never); // ไพ่ 6 ไม่สึก แต่ยางฝนร้อนเกิน −1 อายุ
+    expect(out.players[0].progress).toBe(val(6, "inter") - 1);
+    expect(out.players[0].life).toBe(2);
   });
 });
 
@@ -357,15 +510,15 @@ describe("สลับยางด่วนตอนอากาศพลิก"
     const out = playTurn(s, cruise(null, { swap: 3 }), never);
     const me = out.players[0];
     expect(me.tyres).toEqual(["wet", "soft", "hard"]);
-    expect(me.life).toBe(6);
+    expect(me.life).toBe(TYRES.wet.life);
     expect(me.progress).toBe(CRUISE_MOVE);
   });
 
   it("ใช้ยางใหม่กับอากาศเดิมทันที ทำให้เร่งได้โดยไม่เสี่ยงหมุน", () => {
-    const s = at(3);
-    const out = playTurn(s, push(null, { swap: 3 }), seq(die(4), 0));
+    const s = fix(at(3), 12); // ไพ่ 12 น้ำ 3 — ยางสลิกจะหมุนแน่ แต่เว็ทไม่หมุน
+    const out = playTurn(s, push(null, { swap: 3 }), never);
     expect(out.lastTurn?.spun).toBe(false);
-    expect(out.players[0].progress).toBe(4 + 1 + 0);
+    expect(out.players[0].progress).toBe(val(12, "wet") + 0);
   });
 
   it("สลับไม่ได้: นอกรอบที่อากาศพลิก, ยางสำรองผิดประเภท, ยางที่ใช้อยู่เหมาะอยู่แล้ว, หรือรวมกับเข้าพิท", () => {
@@ -380,7 +533,7 @@ describe("สลับยางด่วนตอนอากาศพลิก"
   });
 
   it("ฝนหยุดแล้วสลับกลับเป็นยางแห้งได้", () => {
-    const s = setPlayer(at(5), 0, { tyres: ["wet", "soft", "hard", "medium"], life: 6 });
+    const s = setPlayer(at(5), 0, { tyres: ["wet", "soft", "hard", "medium"], life: 4 });
     expect(canSwap(s, activePlayer(s), 1)).toBe(true);
     expect(canSwap(s, activePlayer(s), 2)).toBe(true);
   });
@@ -393,7 +546,7 @@ describe("การ์ดปรับฟ้า", () => {
   });
   const s0 = (): GameState => ({ ...game(30, ["sky", "boost", "save"], plan()), round: 1 });
 
-  it("ลัดฟ้า: อากาศถัดไปมาเร็วขึ้น 1 รอบ ความยาวแผนคงเดิม และรอบนี้ไม่เปลี่ยน", () => {
+  it("ลัดฟ้า: อากาศถัดไปมาเร็วขึ้น 1 รอบ ความยาวแผนคงเดิม", () => {
     const out = shiftSky(s0(), "earlier");
     expect(out.weather.slice(0, 4)).toEqual(["dry", "light_rain", "heavy_rain", "dry"]);
     expect(out.weather).toHaveLength(30);
@@ -419,9 +572,9 @@ describe("การ์ดปรับฟ้า", () => {
 
 describe("ลำดับเดินตามอันดับ และผู้ชนะ", () => {
   it("จบรอบแล้วเรียงใหม่: คนนำเดินก่อน เสมอกันตามลำดับเดิม", () => {
-    let s = game();
+    let s = fix(game(), 7);
     s = playTurn(s, cruise(), never); // A = 3
-    s = playTurn(s, push(), seq(die(5), ...QUIET)); // B = 5+2
+    s = playTurn(s, push(), seq(...QUIET)); // B พลิกไพ่ 7: กลาง 5
     expect(s.round).toBe(2);
     expect(s.order).toEqual([1, 0]);
     expect(activePlayer(s).id).toBe(1);
@@ -429,22 +582,22 @@ describe("ลำดับเดินตามอันดับ และผู
   });
 
   it("ขวางทางตกที่คนที่เดินต่อจากเราตามลำดับอันดับ ไม่ใช่เลขผู้เล่น", () => {
-    let s = game(30, ["block", "boost", "save"]);
+    let s = fix(game(30, ["block", "boost", "save"]), 7);
     s = playTurn(s, cruise(), never);
-    s = playTurn(s, push(), seq(die(5), ...QUIET)); // รอบ 2: B นำ เดินก่อน
+    s = playTurn(s, push(), seq(...QUIET)); // รอบ 2: B นำ เดินก่อน
     const out = playTurn(s, cruise("block"), never); // B ขวางคนที่เดินต่อ = A
     expect(out.players[0].debuff).toBe(2);
   });
 
   it("ใครข้ามเส้นชัยก่อนชนะทันที คนที่เหลือไม่ได้เดินต่อ", () => {
-    let s = game(5);
+    let s = fix(game(5), 7);
     s = setPlayer(s, 1, { progress: 3 });
-    s = playTurn(s, push(), seq(die(6))); // A: 6+2 = 8 ข้ามเส้นชัย
+    s = playTurn(s, push(), never); // A: กลาง 5 = ข้ามเส้นชัย
     expect(s.winner).toBe(0);
     expect(s.players[1].progress).toBe(3); // B ไม่ได้เดิน
   });
 
-  it("ผู้นำเดินก่อนในรอบถัดไป จึงข้ามเส้นก่อนได้ แม้คนตามหลังเดินไกลกว่าในรอบเดียวกัน", () => {
+  it("ผู้นำเดินก่อนในรอบถัดไป จึงข้ามเส้นก่อนได้ แม้คนตามหลังจะเดินไกลกว่าในรอบเดียวกัน", () => {
     let s = game(10);
     s = playTurn(s, cruise(), never); // A=3
     s = playTurn(s, cruise(), seq(...QUIET)); // B=3, เสมอ → A นำเดินก่อน
@@ -498,7 +651,7 @@ describe("ธงเหลือง และเหตุการณ์ต้น
     const s = game(40);
     const spread = setPlayer(setPlayer(s, 0, { progress: 20, life: 1 }), 1, { progress: 10, life: 0 });
     const out = applyEvent(spread, "red_flag");
-    expect(out.players.map((p) => p.life)).toEqual([5, 5]);
+    expect(out.players.map((p) => p.life)).toEqual([TYRES.medium.life, TYRES.medium.life]);
     expect(out.players.map((p) => p.progress)).toEqual([20, 13]);
     expect(applyEvent(game(), "red_flag").players.map((p) => p.progress)).toEqual([0, 0]);
   });
