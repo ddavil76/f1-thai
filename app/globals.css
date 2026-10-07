@@ -623,6 +623,54 @@ html[data-intro="seen"] .launch-intro {
   animation: go-flash 0.45s ease-out;
 }
 
+/* ---- เกมกระดาน: ไพ่และรถ ---- */
+/* แสงแดงกระพือรอบรถที่ถึงตาเล่น */
+@keyframes bg-ring {
+  from { box-shadow: 0 0 0 0 rgb(225 6 0 / 0.7); }
+  to { box-shadow: 0 0 0 9px rgb(225 6 0 / 0); }
+}
+.bg-live { animation: bg-ring 1.4s ease-out infinite; }
+/* กองไพ่ MOVE เด้งเบา ๆ ชวนแตะ */
+@keyframes bg-peek {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-4px) rotate(-3deg); }
+}
+.bg-peek { animation: bg-peek 2.4s ease-in-out infinite; }
+/* ไพ่ตัวเลือกพุ่งจากกองเข้ามือ (หน่วงใบละนิดด้วย animation-delay) */
+@keyframes bg-deal {
+  from { transform: translate(-90px, 24px) rotate(-12deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.bg-deal { animation: bg-deal 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* พลิกไพ่ MOVE: หน้าไพ่อยู่ด้านหลังของกล่อง หมุนแกนตั้งมาจบที่ 180° */
+.bg-stage { perspective: 900px; }
+.bg-card3d { position: relative; transform-style: preserve-3d; transform: rotateY(180deg); }
+.bg-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 14px;
+}
+.bg-front { transform: rotateY(180deg); }
+@keyframes bg-flip {
+  0% { transform: rotateY(0deg); }
+  45% { transform: rotateY(90deg) scale(1.06); }
+  100% { transform: rotateY(180deg); }
+}
+.bg-flip { animation: bg-flip 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* ไพ่ที่เล่นแล้วลอยขึ้นหาสนามแล้วจาง */
+@keyframes bg-play {
+  to { transform: translateY(-90px) scale(0.6) rotate(6deg); opacity: 0; }
+}
+.bg-play { animation: bg-play 0.55s cubic-bezier(0.3, 0.6, 0.3, 1) both; }
+/* รถเป้าหมายบนแถบสนามข้างหน้ากะพริบ */
+@keyframes bg-ghost {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+.bg-ghost { animation: bg-ghost 1.2s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   /* intro เป็นการเคลื่อนไหวล้วน ไม่มีข้อมูล — ข้ามไปเลย */
   .launch-intro {
@@ -649,6 +697,12 @@ html[data-intro="seen"] .launch-intro {
      ping วางทับจุดทึบสีเดียวกันอยู่แล้ว หยุดนิ่งจึงยังเห็นเป็นจุดปกติ
      ส่วน spin/pulse มีข้อความกำกับอยู่ ไม่ได้สื่อความหมายด้วยการเคลื่อนไหวอย่างเดียว */
   .speed-streak > i,
+  .bg-live,
+  .bg-peek,
+  .bg-deal,
+  .bg-flip,
+  .bg-play,
+  .bg-ghost,
   .animate-ping,
   .animate-spin,
   .animate-pulse {

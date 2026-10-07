@@ -7,11 +7,11 @@ import { buildBoard } from "@/lib/boardgame/board";
 export const metadata = {
   title: "Grand Prix Tour เกมกระดาน",
   description:
-    "เกมกระดานแข่งรอบสนามจริง 2 คนผลัดกันเล่น เลือกยาง ใช้การ์ดกลยุทธ์ ทอยเต๋า แล้วลุ้นเซฟตี้คาร์ ฝน และธงแดง",
+    "เกมการ์ดแข่งรอบสนามจริง เลือกไพ่เดิน จัดการยางและ ERS แซงด้วยสลิปสตรีมกับ DRS แข่งกับรถ AI",
 };
 
 export default function BoardGamePage() {
-  const board = buildBoard("suzuka", "ซูซูกะ");
+  const board = buildBoard("spa", "สปา-ฟรังโคชองส์");
   if (!board) notFound();
 
   return (
@@ -23,7 +23,7 @@ export default function BoardGamePage() {
         </h1>
         <SpeedStreak className="pb-1 pt-1.5" />
         <p className="text-sm text-white/55">
-          เกมกระดานแข่งรอบสนาม{board.name} · 2 คนผลัดกันเล่นบนเครื่องเดียว
+          เกมการ์ดแข่งรอบสนาม{board.name} · 1–2 คนบนเครื่องเดียว คุมทีมละ 2 คัน แข่งกับรถ AI
         </p>
       </header>
 
