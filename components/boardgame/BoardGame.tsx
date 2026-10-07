@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dices, Flag, RotateCcw, X } from "lucide-react";
 import OsmCredit from "@/components/OsmCredit";
 import type { Board } from "@/lib/boardgame/board";
@@ -37,15 +37,29 @@ function BoardView({ board, state }: { board: Board; state: GameState }) {
         <path d={board.d} fill="none" stroke="#1F1F24" strokeWidth={r * 3.2} strokeLinejoin="round" strokeLinecap="round" />
         <path d={board.d} fill="none" stroke="#3a3a42" strokeWidth={0.5} strokeLinejoin="round" />
         {board.cells.map((c, i) => (
-          <circle
-            key={i}
-            cx={c.x}
-            cy={c.y}
-            r={i === 0 ? r * 0.9 : r * 0.55}
-            fill={i === 0 ? "#fff" : "#08080A"}
-            stroke={i === 0 ? "#E10600" : "#5a5a64"}
-            strokeWidth={i === 0 ? 0.8 : 0.4}
-          />
+          <g key={i}>
+            <circle
+              cx={c.x}
+              cy={c.y}
+              r={r * 1.05}
+              fill={i === 0 ? "#fff" : "#08080A"}
+              stroke={i === 0 ? "#E10600" : "#5a5a64"}
+              strokeWidth={i === 0 ? 0.8 : 0.4}
+            />
+            {/* เลขช่องในรอบ: 0 = เส้นสตาร์ท/เส้นชัย */}
+            <text
+              x={c.x}
+              y={c.y}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={r * 1.15}
+              fontWeight={700}
+              fill={i === 0 ? "#E10600" : "#b4b4bc"}
+              className="tabular-nums"
+            >
+              {i === 0 ? "S" : i}
+            </text>
+          </g>
         ))}
         {state.players.map((p) => {
           const cell = board.cells[p.progress % CELLS_PER_LAP];
@@ -58,11 +72,11 @@ function BoardView({ board, state }: { board: Board; state: GameState }) {
               className="transition-transform duration-500 ease-out motion-reduce:transition-none"
               style={{ transform: `translate(${cell.x + off}px, ${cell.y - off}px)` }}
             >
-              <circle r={r * 0.95} fill={seat.color} stroke="#08080A" strokeWidth={0.6} />
+              <circle r={r * 0.7} fill={seat.color} stroke="#08080A" strokeWidth={0.6} />
               <text
                 textAnchor="middle"
                 dominantBaseline="central"
-                fontSize={r * 1.1}
+                fontSize={r * 0.95}
                 fontWeight={800}
                 fill={seat.ink}
               >
@@ -73,6 +87,37 @@ function BoardView({ board, state }: { board: Board; state: GameState }) {
         })}
       </svg>
       <OsmCredit className="bottom-2 right-2" />
+    </div>
+  );
+}
+
+/** ตำแหน่งจุดบนหน้าเต๋า (ตาราง 3×3, นับ 0–8 จากซ้ายบน) */
+const PIPS: Record<number, number[]> = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
+
+/** ลูกเต๋า — face = null แสดงหน้าว่างก่อนทอยครั้งแรก, tilt ใช้เอียงตอนกำลังกลิ้ง */
+function Die({ face, tilt }: { face: number | null; tilt: number }) {
+  return (
+    <div
+      role="img"
+      aria-label={face ? `เต๋าขึ้น ${face}` : "ยังไม่ได้ทอยเต๋า"}
+      className="grid h-16 w-16 shrink-0 grid-cols-3 grid-rows-3 gap-1 rounded-xl bg-[#DEDEDE] p-2.5 shadow-[0_6px_16px_-4px_rgba(0,0,0,0.7)] transition-transform duration-75 motion-reduce:transition-none"
+      style={{ transform: `rotate(${tilt}deg)` }}
+    >
+      {Array.from({ length: 9 }, (_, i) => (
+        <span
+          key={i}
+          className={`rounded-full ${
+            face && PIPS[face].includes(i) ? (face === 1 ? "bg-[#E10600]" : "bg-[#08080A]") : ""
+          }`}
+        />
+      ))}
     </div>
   );
 }
@@ -234,6 +279,35 @@ function ActionCard({
 export default function BoardGame({ board }: { board: Board }) {
   const [state, setState] = useState<GameState | null>(null);
   const [action, setAction] = useState<Action | null>(null);
+  /** ผลเทิร์นที่คำนวณไว้แล้ว รอให้เต๋ากลิ้งจบก่อนค่อยใช้จริง */
+  const [rolling, setRolling] = useState<{ next: GameState; settled: boolean } | null>(null);
+  const [face, setFace] = useState<number | null>(null);
+  const [tilt, setTilt] = useState(0);
+
+  useEffect(() => {
+    if (!rolling) return;
+    if (rolling.settled) {
+      // หยุดที่ค่าจริงแป๊บหนึ่งให้เห็นผล แล้วค่อยเดินรถ
+      const t = setTimeout(() => {
+        setState(rolling.next);
+        setRolling(null);
+      }, 650);
+      return () => clearTimeout(t);
+    }
+    const tick = setInterval(() => {
+      setFace(1 + Math.floor(Math.random() * 6));
+      setTilt((Math.random() - 0.5) * 70);
+    }, 90);
+    const stop = setTimeout(() => {
+      setFace(rolling.next.lastTurn?.die ?? 1);
+      setTilt(0);
+      setRolling({ next: rolling.next, settled: true });
+    }, 850);
+    return () => {
+      clearInterval(tick);
+      clearTimeout(stop);
+    };
+  }, [rolling]);
 
   if (!state) {
     return (
@@ -253,14 +327,27 @@ export default function BoardGame({ board }: { board: Board }) {
   const log = state.lastTurn;
 
   function roll() {
-    setState((s) => (s ? playTurn(s, action, Math.random) : s));
+    if (rolling || !state) return;
+    const next = playTurn(state, action, Math.random);
     setAction(null);
+    const calm =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (calm) {
+      setFace(next.lastTurn?.die ?? null);
+      setState(next);
+    } else {
+      setRolling({ next, settled: false });
+    }
   }
 
   function restart() {
     setState(null);
     setAction(null);
+    setFace(null);
   }
+
+  const shownFace = rolling ? face : (state.lastTurn?.die ?? null);
 
   return (
     <div className="space-y-4">
@@ -281,7 +368,10 @@ export default function BoardGame({ board }: { board: Board }) {
                 P{rank + 1} · {p.name}
               </p>
               <p className="tabular-nums text-white/60">
-                รอบ {lapOf(p.progress)}/{LAPS} · ยาง{TYRES[p.tyres[0]].label} {p.life}/{TYRES[p.tyres[0]].life}
+                รอบ {lapOf(p.progress)}/{LAPS} · ช่อง {p.progress}/{TOTAL}
+              </p>
+              <p className="tabular-nums text-white/60">
+                ยาง{TYRES[p.tyres[0]].label} {p.life}/{TYRES[p.tyres[0]].life}
               </p>
             </div>
           </div>
@@ -356,14 +446,22 @@ export default function BoardGame({ board }: { board: Board }) {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={roll}
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white"
-          >
-            <Dices className="h-5 w-5" aria-hidden />
-            {action ? `เล่น “${ACTIONS[action].label}” แล้วทอยเต๋า` : "ไม่เล่นการ์ด ทอยเต๋าเลย"}
-          </button>
+          <div className="flex items-center gap-4">
+            <Die face={shownFace} tilt={rolling ? tilt : 0} />
+            <button
+              type="button"
+              onClick={roll}
+              disabled={rolling !== null}
+              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Dices className="h-5 w-5 shrink-0" aria-hidden />
+              {rolling
+                ? "กำลังทอย…"
+                : action
+                  ? `เล่น “${ACTIONS[action].label}” แล้วทอยเต๋า`
+                  : "ไม่เล่นการ์ด ทอยเต๋าเลย"}
+            </button>
+          </div>
         </section>
       )}
 
