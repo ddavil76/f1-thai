@@ -9,6 +9,7 @@ import {
   type Driver, type GameState, type Lane,
 } from "@/lib/boardgame/engine";
 import { look, tyreOf } from "@/components/boardgame/look";
+import type { HelpKey } from "@/components/boardgame/help";
 
 /** ระยะจากเส้นกลางสนาม (หน่วยของแผนที่) */
 const LANE = 1.3;
@@ -58,8 +59,9 @@ function geometry(cells: Pt[]) {
 export type Spot = { progress: number; lane: Lane };
 
 export default function TrackView({
-  board, state, focus, ghost, zoomed, onToggle,
+  board, state, focus, ghost, zoomed, onToggle, onHelp,
 }: {
+  onHelp?: (k: HelpKey) => void;
   board: Board;
   state: GameState;
   focus: Driver | null;
@@ -280,11 +282,20 @@ export default function TrackView({
         <span className="block pt-0.5 text-center text-[9px] font-bold text-white/70">{zoomed ? "ทั้งสนาม" : "ซูม"}</span>
       </button>
 
-      <div className="pointer-events-none absolute left-2 top-2 flex flex-col gap-0.5 rounded-lg bg-[#08080A]/60 px-1.5 py-1 text-[10px] text-white/70">
-        <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-(--color-f1)/60" />โค้ง</span>
-        <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-white/30" />DRS</span>
-        <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm border border-white/60" />V-BOX</span>
-        {state.flags.length > 0 && <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-yellow-400/70" />ธงเหลือง</span>}
+      <div className="absolute left-2 top-2 flex flex-col items-start gap-0.5 rounded-lg bg-[#08080A]/60 px-1.5 py-1 text-[10px] text-white/75">
+        {(
+          [
+            ["corner", "โค้ง", "bg-(--color-f1)/60"],
+            ["drs", "DRS", "bg-white/30"],
+            ["vbox", "V-BOX", "border border-white/60"],
+            ...(state.flags.length ? ([["flag", "ธงเหลือง", "bg-yellow-400/70"]] as const) : []),
+          ] as const
+        ).map(([k, label, sw]) => (
+          <button key={k} type="button" onClick={() => onHelp?.(k)} className="flex items-center gap-1 underline decoration-white/25 decoration-dotted underline-offset-2">
+            <i className={`h-2 w-2 rounded-sm ${sw}`} />
+            {label}
+          </button>
+        ))}
       </div>
       <OsmCredit className="bottom-1.5 right-2" />
     </div>

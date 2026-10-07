@@ -75,7 +75,7 @@ describe("เริ่มเกม", () => {
     const a = s.drivers[0];
     expect(a.sets.sort()).toEqual(["red", "red", "yellow"]);
     expect(a.ers).toBe(ERS_MAX);
-    expect(a.tokens).toEqual({ attack: TOKEN_USES, block: TOKEN_USES, slip: TOKEN_USES });
+    expect(a.tokens).toEqual({ attack: TOKEN_USES, block: TOKEN_USES, slip: TOKEN_USES, pass: 0 });
   });
 
   it("สำรับ MOVE: ยางแดงเร็วกว่าเหลืองโดยเฉลี่ย และไพ่เร็วสุดของแต่ละแถวมีป้ายสึก", () => {

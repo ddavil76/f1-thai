@@ -11,9 +11,11 @@ import {
 
 /** ควอลิฟาย Q1 → Q2 แล้วส่งกริดกับยางสึกตั้งต้นกลับไป */
 export default function Qualifying({
-  cars, onDone,
+  cars, extra = true, onDone,
 }: {
   cars: CarSpec[];
+  /** มีรอบพิเศษไหม (กติกาของเราไม่มี) */
+  extra?: boolean;
   onDone: (grid: number[], wear: number[]) => void;
 }) {
   const [q, setQ] = useState<Quali>(() => newQuali(cars, Math.random));
@@ -59,7 +61,7 @@ export default function Qualifying({
   const order = byTime(q);
   const cut = q.stage === "q1" ? Math.ceil(order.length / 2) : order.length;
   const extraRow = (id: number) =>
-    canExtra(q, cars, id) ? (
+    extra && canExtra(q, cars, id) ? (
       <button
         type="button"
         onClick={() => setQ(extraLap(q, cars, id))}
@@ -95,9 +97,13 @@ export default function Qualifying({
         title={q.stage === "q1" ? "ผล Q1" : q.stage === "q2" ? "ผล Q2 — ชิงโพล" : "กริดออกสตาร์ท"}
         sub={
           q.stage === "q1"
-            ? `ครึ่งหลังตกรอบ · รอบพิเศษได้คันละครั้ง (จั่วเพิ่ม เร็วกว่าถึงนับ แต่ยางออกสตาร์ทสึก ${HALF_WEAR} ขั้น)`
+            ? extra
+              ? `ครึ่งหลังตกรอบ · รอบพิเศษได้คันละครั้ง (จั่วเพิ่ม เร็วกว่าถึงนับ แต่ยางออกสตาร์ทสึก ${HALF_WEAR} ขั้น)`
+              : "ครึ่งหลังตกรอบ · 6 คันแรกไปชิงโพลใน Q2"
             : q.stage === "q2"
-              ? "6 คันวิ่งด้วยไพ่ที่เก็บไว้ · ใครยังไม่ใช้รอบพิเศษ ใช้ได้ตอนนี้"
+              ? extra
+                ? "6 คันวิ่งด้วยไพ่ที่เก็บไว้ · ใครยังไม่ใช้รอบพิเศษ ใช้ได้ตอนนี้"
+                : "6 คันวิ่งด้วยไพ่ที่เก็บไว้"
               : "เรียงตามผลควอลิฟาย"
         }
       />

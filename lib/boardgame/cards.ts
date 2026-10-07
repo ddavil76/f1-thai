@@ -159,6 +159,16 @@ export const ACTION_INFO: Record<ActionKind, { title: string; text: string }> = 
   incident: { title: "เฉี่ยวชน", text: "รถคันนี้และคันที่อยู่ติดกัน (หน้า หลัง ข้าง) ทอยเต๋าอุบัติเหตุ" },
 };
 
+/** คำอธิบายที่ต่างไปในกติกาของเรา */
+export const ACTION_TEXT_OURS: Partial<Record<ActionKind, string>> = {
+  weather: "อากาศเลื่อนไป 1 ขั้น (แดด → เมฆ → ฝน)",
+  trackLimits: "ถอยหลัง 2 ช่องทันที",
+  incident: "รถคันนี้และคันที่อยู่ติดกันทอยเต๋าอุบัติเหตุ (รถผู้เล่นไม่ชนออก แค่เสียหาย)",
+};
+
+/** ไพ่ ACTION ที่ใช้ในกติกาของเรา (ผลชัด เข้าใจทันที) */
+export const ACTION_OURS: ActionKind[] = ["weather", "tires", "ersFail", "brakes", "trackLimits", "incident"];
+
 export const ACTION_DECK: ActionKind[] = [
   ...times(3, "mistake" as const),
   ...times(3, "weather" as const),
@@ -176,9 +186,11 @@ export const ACTION_DECK: ActionKind[] = [
 
 /* ---------- ลูกเต๋าอุบัติเหตุ ---------- */
 
-export type IncidentFace = "escape" | "warn" | "penalty" | "off" | "damage" | "crash";
+export type IncidentFace = "escape" | "warn" | "penalty" | "back" | "off" | "damage" | "crash";
 
 export const INCIDENT_DIE: IncidentFace[] = ["escape", "warn", "penalty", "off", "damage", "crash"];
+/** ลูกเต๋าของกติกาของเรา — ไม่มีใบเตือน/โทษ รอดง่ายขึ้น */
+export const INCIDENT_DIE_OURS: IncidentFace[] = ["escape", "escape", "back", "off", "damage", "crash"];
 
 export const INCIDENT_INFO: Record<IncidentFace, { title: string; color: string }> = {
   escape: { title: "รอดหวุดหวิด", color: "#22c55e" },
@@ -186,6 +198,7 @@ export const INCIDENT_INFO: Record<IncidentFace, { title: string; color: string 
   penalty: { title: "โดนลงโทษ", color: "#ff3b2f" },
   off: { title: "หลุดออกนอกสนาม", color: "#facc15" },
   damage: { title: "รถเสียหาย", color: "#fb923c" },
+  back: { title: "เสียจังหวะ ถอย 2 ช่อง", color: "#DEDEDE" },
   crash: { title: "ชนออกจากเรซ", color: "#E10600" },
 };
 
@@ -219,6 +232,9 @@ export const PITWALL_INFO: Record<PitwallKind, { title: string; text: string }> 
   push: { title: "ดันสุด", text: "โหมด: วิ่งเท่าไพ่เร็วสุดทุกตา ยางสึกทุกตา" },
   pace: { title: "รักษาจังหวะ", text: "โหมด: วิ่งระยะคงที่ไม่สึกยาง หลุดจังหวะ = จบโหมด" },
 };
+
+/** ไพ่ PITWALL ที่ใช้ในกติกาของเรา */
+export const PITWALL_OURS: PitwallKind[] = ["charge", "tires", "radar", "teamSpeed", "quickBox", "push"];
 
 export const PITWALL_DECK: PitwallCard[] = [
   ...times(2, { kind: "attack" as const }),

@@ -131,8 +131,8 @@ export function SimpleCard({ kicker, value, playing }: { kicker: string; value: 
 }
 
 /** ไพ่ ACTION พลิกหน้า */
-export function ActionCard3D({ kind, ok }: { kind: ActionKind; ok: boolean }) {
-  const info = ACTION_INFO[kind];
+export function ActionCard3D({ kind, ok, text }: { kind: ActionKind; ok: boolean; text?: string }) {
+  const info = { ...ACTION_INFO[kind], ...(text ? { text } : {}) };
   return (
     <div className="bg-stage h-[132px] w-[96px] flex-none">
       <div className="bg-card3d bg-flip h-full w-full" role="img" aria-label={`ไพ่ ACTION ${info.title}: ${info.text}`}>
