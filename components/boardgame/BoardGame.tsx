@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Dices, Flag, RotateCcw, X } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  CloudDrizzle, CloudRain, Dices, Flag, RotateCcw, Sun, TriangleAlert, X,
+} from "lucide-react";
 import OsmCredit from "@/components/OsmCredit";
 import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
-  ACTIONS, EVENTS, MAX_PER_COMPOUND, TYRES, TYRE_SLOTS, canPlay, newGame, playTurn,
-  standings, validTyres,
-  type Action, type GameState, type Tyre,
+  ACTIONS, EVENTS, MAX_PER_COMPOUND, PIT_COST, SURE_AHEAD, TYRES, TYRE_SLOTS, WEATHER,
+  YELLOW_TO_SC, canPlay, forecastAt, makeWeatherPlan, newGame, pitCost, playTurn, standings,
+  validTyres, weatherEffect, weatherNow,
+  type Action, type GameState, type Tyre, type Weather, type WeatherPlan,
 } from "@/lib/boardgame/engine";
 
 const LAPS = 3;
@@ -20,6 +23,25 @@ const SEATS = [
   { name: "เมเทียร์ เรซซิ่ง", color: "#E10600", ink: "#fff" },
   { name: "ไอซ์ไบรท์ เรซซิ่ง", color: "#DEDEDE", ink: "#08080A" },
 ] as const;
+
+/**
+ * แผนอากาศที่ยังไม่เริ่มเกม เก็บไว้นอก React เพื่อให้ฝั่งเซิร์ฟเวอร์ไม่ต้องสุ่ม (ผลคงที่ต่อ build)
+ * แล้ว client ค่อยสุ่มของจริงตอน hydrate — `resetPlan` ใช้ตอนเริ่มเกมใหม่
+ */
+let planCache: WeatherPlan | null = null;
+const planListeners = new Set<() => void>();
+const subscribePlan = (cb: () => void) => {
+  planListeners.add(cb);
+  return () => {
+    planListeners.delete(cb);
+  };
+};
+const getPlan = (): WeatherPlan | null => (planCache ??= makeWeatherPlan(Math.random));
+const getServerPlan = (): WeatherPlan | null => null;
+function resetPlan() {
+  planCache = null;
+  planListeners.forEach((l) => l());
+}
 
 const lapOf = (progress: number) => Math.min(LAPS, Math.floor(progress / CELLS_PER_LAP) + 1);
 
@@ -122,20 +144,64 @@ function Die({ face, tilt }: { face: number | null; tilt: number }) {
   );
 }
 
+/** สีขอบตามชนิดยาง (ตามธรรมเนียมสีแถบยางในการแข่งจริง) */
 const TYRE_TONE: Record<Tyre, string> = {
-  soft: "border-red-500/60",
-  medium: "border-yellow-400/60",
-  hard: "border-white/50",
+  soft: "border-red-500/70",
+  medium: "border-yellow-400/70",
+  hard: "border-white/60",
+  inter: "border-green-500/70",
+  wet: "border-sky-400/70",
 };
+
+function WeatherIcon({ weather, className = "h-5 w-5" }: { weather: Weather; className?: string }) {
+  if (weather === "dry") return <Sun className={`${className} text-yellow-300`} aria-hidden />;
+  if (weather === "light_rain") return <CloudDrizzle className={`${className} text-sky-300`} aria-hidden />;
+  return <CloudRain className={`${className} text-sky-400`} aria-hidden />;
+}
+
+/** แถบพยากรณ์อากาศ 5 รอบเทิร์น — ใกล้แม่น ไกลคลาดเคลื่อนได้ (เส้นประ) */
+function ForecastStrip({ plan, round }: { plan: WeatherPlan; round: number }) {
+  return (
+    <section className="space-y-2" aria-label="พยากรณ์อากาศ">
+      <p className="text-xs font-medium text-white/55">
+        พยากรณ์อากาศ · แม่นใน {SURE_AHEAD} รอบแรก ไกลกว่านั้นคลาดเคลื่อนได้
+      </p>
+      <ul className="grid grid-cols-5 gap-1.5">
+        {Array.from({ length: 5 }, (_, ahead) => {
+          const f = forecastAt(plan, round, ahead);
+          return (
+            <li
+              key={ahead}
+              className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 text-center ${
+                f.sure ? "border-white/20 bg-white/5" : "border-dashed border-white/20"
+              }`}
+            >
+              <span className="text-[10px] font-bold tabular-nums text-white/55">
+                {ahead === 0 ? "ตอนนี้" : `R${round + ahead}`}
+              </span>
+              <WeatherIcon weather={f.weather} />
+              <span className="text-[11px] leading-tight text-white/75">
+                {f.sure ? "" : "~"}
+                {WEATHER[f.weather].label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 /** การ์ดยาง — ใช้ทั้งตอนเลือกและตอนแสดงยางที่ใส่ไว้ */
 function TyreCard({
-  tyre, label, life, active = false, onClick, disabled,
+  tyre, label, life, hint, active = false, onClick, disabled,
 }: {
   tyre: Tyre;
   label?: string;
   /** อายุที่เหลือ (ถ้าไม่ส่ง = แสดงอายุเต็ม) */
   life?: number;
+  /** ข้อความผลของอากาศปัจจุบันต่อยางใบนี้ */
+  hint?: { text: string; good: boolean } | null;
   active?: boolean;
   onClick?: () => void;
   disabled?: boolean;
@@ -144,13 +210,19 @@ function TyreCard({
   const body = (
     <>
       {label && <span className="mb-1 block text-[10px] font-bold text-white/55">{label}</span>}
-      <span className="block font-bold">ยาง{t.label}</span>
+      <span className="block font-bold">{t.label}</span>
       <span className="block text-xs tabular-nums text-white/60">
-        +{t.move} ช่อง · อายุ {life ?? t.life}/{t.life}
+        +{t.move} · {life ?? t.life}/{t.life}
       </span>
+      <span className="block text-[10px] text-white/50">เหมาะ: {t.best}</span>
+      {hint && (
+        <span className={`block text-[10px] font-bold ${hint.good ? "text-green-400" : "text-yellow-400"}`}>
+          {hint.text}
+        </span>
+      )}
     </>
   );
-  const cls = `rounded-xl border-2 bg-white/5 px-3 py-2 text-left text-sm ${TYRE_TONE[tyre]} ${
+  const cls = `rounded-xl border-2 bg-white/5 px-2.5 py-2 text-left text-sm ${TYRE_TONE[tyre]} ${
     active ? "bg-white/10 ring-2 ring-white/40" : ""
   }`;
   if (!onClick) return <div className={cls}>{body}</div>;
@@ -167,7 +239,12 @@ function TyreCard({
 }
 
 /** ขั้นเลือกยางก่อนแข่ง — ผู้เล่นทีละคน */
-function TyreSetup({ onDone }: { onDone: (tyres: Tyre[][]) => void }) {
+function TyreSetup({
+  plan, onDone,
+}: {
+  plan: WeatherPlan;
+  onDone: (tyres: Tyre[][]) => void;
+}) {
   const [picked, setPicked] = useState<Tyre[][]>([]);
   const [draft, setDraft] = useState<Tyre[]>([]);
   const who = picked.length;
@@ -196,6 +273,8 @@ function TyreSetup({ onDone }: { onDone: (tyres: Tyre[][]) => void }) {
         <span className="text-white/60">เลือกการ์ดยาง {TYRE_SLOTS} ใบ ใส่ไว้ก่อนออกตัว</span>
       </p>
 
+      <ForecastStrip plan={plan} round={1} />
+
       <div className="grid grid-cols-3 gap-2">
         {COMPOUNDS.map((t) => (
           <TyreCard
@@ -206,11 +285,13 @@ function TyreSetup({ onDone }: { onDone: (tyres: Tyre[][]) => void }) {
           />
         ))}
       </div>
-      <p className="text-xs text-white/55">ยางแต่ละชนิดเลือกได้ไม่เกิน {MAX_PER_COMPOUND} ใบ</p>
+      <p className="text-xs text-white/55">
+        ตัวเลขบนการ์ด = โบนัสก้าว · อายุ (เทิร์น) · ยางแต่ละชนิดเลือกได้ไม่เกิน {MAX_PER_COMPOUND} ใบ
+      </p>
 
       <div>
-        <p className="mb-2 text-xs font-medium text-white/55">ยางที่ใส่ไว้ (ใบแรกใช้ออกตัว ที่เหลือเป็นยางสำรอง)</p>
-        <div className="grid grid-cols-3 gap-2">
+        <p className="mb-2 text-xs font-medium text-white/55">ยางที่ใส่ไว้ (ใบแรกใช้ออกตัว ที่เหลือเป็นยางสำรองไว้เข้าพิท)</p>
+        <div className="grid grid-cols-4 gap-2">
           {Array.from({ length: TYRE_SLOTS }, (_, i) => {
             const t = draft[i];
             return t ? (
@@ -228,7 +309,7 @@ function TyreSetup({ onDone }: { onDone: (tyres: Tyre[][]) => void }) {
             ) : (
               <div
                 key={i}
-                className="flex min-h-[4.25rem] items-center justify-center rounded-xl border-2 border-dashed border-white/15 text-xs text-white/40"
+                className="flex min-h-[5.5rem] items-center justify-center rounded-xl border-2 border-dashed border-white/15 text-xs text-white/40"
               >
                 {i === 0 ? "ออกตัว" : `สำรอง ${i}`}
               </div>
@@ -283,6 +364,10 @@ export default function BoardGame({ board }: { board: Board }) {
   const [rolling, setRolling] = useState<{ next: GameState; settled: boolean } | null>(null);
   const [face, setFace] = useState<number | null>(null);
   const [tilt, setTilt] = useState(0);
+  /** แผนอากาศของเรซนี้ — เซิร์ฟเวอร์ได้ null (ยังไม่สุ่ม) ฝั่ง client สุ่มหลัง hydrate */
+  const plan = useSyncExternalStore(subscribePlan, getPlan, getServerPlan);
+  /** ยางสำรองที่จะเปลี่ยนไปใช้เมื่อเล่นการ์ดเข้าพิท (ลำดับใน me.tyres) */
+  const [pitTo, setPitTo] = useState(1);
 
   useEffect(() => {
     if (!rolling) return;
@@ -312,9 +397,16 @@ export default function BoardGame({ board }: { board: Board }) {
   if (!state) {
     return (
       <div className="space-y-4">
-        <TyreSetup
-          onDone={(tyres) => setState(newGame(SEATS.map((s) => s.name), TOTAL, tyres, Math.random))}
-        />
+        {plan ? (
+          <TyreSetup
+            plan={plan}
+            onDone={(tyres) =>
+              setState(newGame(SEATS.map((s) => s.name), TOTAL, tyres, plan, Math.random))
+            }
+          />
+        ) : (
+          <p className="card p-4 text-center text-sm text-white/60">กำลังเตรียมพยากรณ์อากาศ…</p>
+        )}
         <Rules />
       </div>
     );
@@ -328,8 +420,9 @@ export default function BoardGame({ board }: { board: Board }) {
 
   function roll() {
     if (rolling || !state) return;
-    const next = playTurn(state, action, Math.random);
+    const next = playTurn(state, action, Math.random, pitTo);
     setAction(null);
+    setPitTo(1);
     const calm =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -343,7 +436,9 @@ export default function BoardGame({ board }: { board: Board }) {
 
   function restart() {
     setState(null);
+    resetPlan();
     setAction(null);
+    setPitTo(1);
     setFace(null);
   }
 
@@ -378,10 +473,30 @@ export default function BoardGame({ board }: { board: Board }) {
         ))}
       </section>
 
+      {!over && (
+        <div className="card p-3">
+          <ForecastStrip plan={state} round={state.round} />
+        </div>
+      )}
+
       {state.event && !over && (
         <p role="status" className="card-poster rounded-xl border border-(--color-f1)/40 px-4 py-3 text-sm">
           <span className="poster text-(--color-f1-text)">{EVENTS[state.event].label}</span>{" "}
           <span className="text-white/75">{EVENTS[state.event].desc}</span>
+        </p>
+      )}
+
+      {state.yellow && !over && (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-xl border border-yellow-400/50 bg-yellow-400/10 px-4 py-3 text-sm"
+        >
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" aria-hidden />
+          <span className="text-white/80">
+            <span className="poster text-yellow-400">ธงเหลือง</span> รอบหน้ามีโอกาสราว{" "}
+            {Math.round(YELLOW_TO_SC * 100)}% เป็นเซฟตี้คาร์ — ถ้าเกิดขึ้นเข้าพิทฟรี
+            แต่ถ้าพลาดช่วงนั้นต้องเสียเวลา {PIT_COST} ช่องตามปกติ
+          </span>
         </p>
       )}
 
@@ -416,17 +531,37 @@ export default function BoardGame({ board }: { board: Board }) {
 
           <div>
             <p className="mb-2 text-xs font-medium text-white/55">ยางของคุณ (ใบที่ใช้อยู่ + สำรอง)</p>
-            <div className="grid grid-cols-3 gap-2">
-              {me.tyres.map((t, i) => (
-                <TyreCard
-                  key={i}
-                  tyre={t}
-                  active={i === 0}
-                  label={i === 0 ? "ใช้อยู่" : `สำรอง ${i}`}
-                  life={i === 0 ? me.life : undefined}
-                />
-              ))}
+            <div className="grid grid-cols-4 gap-2">
+              {me.tyres.map((t, i) => {
+                const fx = weatherEffect(weatherNow(state), t).move;
+                const picking = action === "pit" && i >= 1;
+                return (
+                  <TyreCard
+                    key={i}
+                    tyre={t}
+                    active={i === 0 || (picking && pitTo === i)}
+                    label={i === 0 ? "ใช้อยู่" : picking ? `เปลี่ยนเป็น ${i}` : `สำรอง ${i}`}
+                    life={i === 0 ? me.life : undefined}
+                    hint={
+                      fx === 0
+                        ? null
+                        : { text: `${fx > 0 ? "+" : ""}${fx} ตามอากาศ`, good: fx > 0 }
+                    }
+                    onClick={picking ? () => setPitTo(i) : undefined}
+                  />
+                );
+              })}
             </div>
+            {action === "pit" && (
+              <p className="mt-2 text-xs text-white/65">
+                แตะยางสำรองที่จะเปลี่ยนไปใช้ ·{" "}
+                {pitCost(state) === 0 ? (
+                  <span className="font-bold text-green-400">เซฟตี้คาร์: เข้าพิทฟรี</span>
+                ) : (
+                  <span>เสียเวลา {PIT_COST} ช่อง</span>
+                )}
+              </p>
+            )}
           </div>
 
           <div>
@@ -488,16 +623,25 @@ function Rules() {
           ใครพารถไปครบ {LAPS} รอบ ({TOTAL} ช่อง) ก่อนชนะ — จบเมื่อทุกคนเล่นครบรอบเทิร์นนั้น
         </li>
         <li>
-          ก่อนแข่ง เลือกการ์ดยาง {TYRE_SLOTS} ใบ ใบแรกใช้ออกตัว อีก 2 ใบเป็นสำรองไว้เข้าพิท
+          ก่อนแข่ง ดูพยากรณ์อากาศแล้วเลือกการ์ดยาง {TYRE_SLOTS} ใบ ใบแรกใช้ออกตัว อีก {TYRE_SLOTS - 1} ใบเป็นสำรองไว้เข้าพิท
           ยางนิ่มเดินไกลแต่หมดอายุเร็ว ยางแข็งเดินช้าแต่ทน
+        </li>
+        <li>
+          ฝนตกตามพยากรณ์ ยางสลิกเสียเปรียบมาก — ใช้ยางอินเตอร์กับฝนเบา เว็ทกับฝนหนัก
+          พยากรณ์ 2 รอบแรกแม่นเสมอ ไกลกว่านั้น (เส้นประ) อาจคลาดเคลื่อน
         </li>
         <li>
           ในมือมีการ์ด action 3 ใบ แต่ละเทิร์นเล่นได้ 1 ใบ (หรือไม่เล่นก็ได้) แล้วทอยเต๋า แล้วจั่วเติมให้ครบ 3 ใบ
         </li>
         <li>
-          ก้าว = เต๋า + โบนัสยาง + โบนัสการ์ด ยางหมดอายุแล้วก้าวลด 2 ช่อง — ใช้การ์ดเข้าพิทเพื่อเปลี่ยนยางสำรอง
+          ก้าว = เต๋า + โบนัสยาง + โบนัสการ์ด + ผลของอากาศต่อยาง ยางหมดอายุแล้วก้าวลด 2 ช่อง
+          — ใช้การ์ดเข้าพิทเพื่อเปลี่ยนเป็นยางสำรองที่เลือก (เสียเวลา {PIT_COST} ช่อง)
         </li>
-        <li>ต้นแต่ละรอบเทิร์นอาจเกิดเซฟตี้คาร์ ฝนตก หรือธงแดง ช่วยให้คนตามหลังกลับมาสู้ได้</li>
+        <li>
+          เห็นธงเหลืองแปลว่ารอบหน้าอาจเกิดเซฟตี้คาร์: ช่องว่างจากผู้นำลดครึ่ง เต๋าสูงสุด 3
+          และเข้าพิทฟรีเฉพาะรอบนั้น ถ้ารอไว้แล้วพลาดต้องเสียเวลาเต็ม
+        </li>
+        <li>บางครั้งเกิดธงแดง: ทุกคนได้ยางใหม่ และคันท้ายสุดได้ +3 ช่อง</li>
       </ol>
     </details>
   );

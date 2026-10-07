@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  DECK_LIST, HAND_SIZE, applyEvent, canPlay, newGame, playTurn, shuffle, standings, validTyres,
-  type Action, type GameState, type Rng, type Tyre,
+  DECK_LIST, HAND_SIZE, PIT_COST, TYRE_SLOTS, applyEvent, canPlay, forecastAt, makeWeatherPlan,
+  newGame, pitCost, playTurn, shuffle, standings, validTyres, weatherEffect,
+  type Action, type GameState, type Rng, type Tyre, type Weather, type WeatherPlan,
 } from "@/lib/boardgame/engine";
 
 /** rng ที่คืนค่าตามลำดับที่กำหนด แล้ววนซ้ำ */
@@ -11,23 +12,37 @@ const seq = (...v: number[]): Rng => {
 };
 // ผลเต๋า 1..6 จาก rng: ค่า (d-1)/6 + นิดหน่อย
 const die = (d: number) => (d - 1) / 6 + 0.01;
-// rng สำหรับจบรอบแบบไม่มีเหตุการณ์ (>= EVENT_CHANCE)
-const NO_EVENT = 0.99;
+// จบรอบแบบเงียบ: ไม่มีธงแดง (>= RED_FLAG_CHANCE) และไม่มีธงเหลือง (>= YELLOW_CHANCE)
+const QUIET = [0.99, 0.99];
 
 const TYRES: Tyre[][] = [
-  ["medium", "soft", "hard"],
-  ["medium", "soft", "hard"],
+  ["medium", "soft", "hard", "wet"],
+  ["medium", "soft", "hard", "wet"],
 ];
 
-/** เกมใหม่ที่กำหนดมือผู้เล่นทุกคนเอง (สำรับที่เหลือไว้จั่วเติม) */
-function game(total = 30, hand: Action[] = ["boost", "pit", "save"]): GameState {
-  const s = newGame(["A", "B"], total, TYRES, () => 0.5);
+const dryPlan = (): WeatherPlan => ({
+  weather: Array<Weather>(30).fill("dry"),
+  fcWrong: Array<boolean>(30).fill(false),
+});
+
+/** เกมใหม่อากาศแห้งตลอด และกำหนดมือผู้เล่นทุกคนเอง (สำรับที่เหลือไว้จั่วเติม) */
+function game(
+  total = 30,
+  hand: Action[] = ["boost", "pit", "save"],
+  plan: WeatherPlan = dryPlan(),
+): GameState {
+  const s = newGame(["A", "B"], total, TYRES, plan, () => 0.5);
   return { ...s, players: s.players.map((p) => ({ ...p, hand: [...hand] })) };
 }
 
+const withWeather = (s: GameState, w: Weather): GameState => ({
+  ...s,
+  weather: s.weather.map(() => w),
+});
+
 describe("เริ่มเกม", () => {
   it("แจกมือครบ 3 ใบ สำรับ 12 ใบรวมมือ และยางใบแรกคือยางที่ใช้", () => {
-    const s = newGame(["A", "B"], 30, TYRES, Math.random);
+    const s = newGame(["A", "B"], 30, TYRES, dryPlan(), Math.random);
     for (const p of s.players) {
       expect(p.hand).toHaveLength(HAND_SIZE);
       expect(p.hand.length + p.deck.length).toBe(
@@ -44,10 +59,70 @@ describe("เริ่มเกม", () => {
     expect(src).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("validTyres: ต้องครบ 3 ใบ และชนิดเดียวกันไม่เกิน 2", () => {
-    expect(validTyres(["soft", "soft", "hard"])).toBe(true);
-    expect(validTyres(["soft", "soft", "soft"])).toBe(false);
-    expect(validTyres(["soft", "hard"])).toBe(false);
+  it("validTyres: ต้องครบช่อง และชนิดเดียวกันไม่เกิน 2", () => {
+    expect(TYRE_SLOTS).toBe(4);
+    expect(validTyres(["soft", "soft", "hard", "wet"])).toBe(true);
+    expect(validTyres(["soft", "soft", "soft", "wet"])).toBe(false);
+    expect(validTyres(["soft", "hard", "wet"])).toBe(false);
+  });
+});
+
+describe("แผนอากาศและพยากรณ์", () => {
+  it("makeWeatherPlan: มีฝนอย่างน้อย 2 รอบ เริ่มไม่ก่อนรอบ 3 และสองรอบแรกแห้ง", () => {
+    for (let n = 0; n < 50; n++) {
+      const plan = makeWeatherPlan(Math.random);
+      expect(plan.weather).toHaveLength(plan.fcWrong.length);
+      expect(plan.weather.slice(0, 2)).toEqual(["dry", "dry"]);
+      expect(plan.weather.filter((w) => w !== "dry").length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("พยากรณ์ 2 รอบแรกที่มองไปข้างหน้าแม่นเสมอและมั่นใจ", () => {
+    const plan: WeatherPlan = {
+      weather: ["dry", "dry", "light_rain", "heavy_rain", "dry", ...Array<Weather>(25).fill("dry")],
+      fcWrong: Array<boolean>(30).fill(true), // ผิดทุกรอบ แต่ไม่ควรกระทบระยะใกล้
+    };
+    expect(forecastAt(plan, 3, 0)).toEqual({ weather: "light_rain", sure: true });
+    expect(forecastAt(plan, 3, 1)).toEqual({ weather: "heavy_rain", sure: true });
+  });
+
+  it("พยากรณ์ระยะไกล: ไม่แน่ใจ และคลาดเคลื่อนหนึ่งขั้นเมื่อ fcWrong", () => {
+    const plan: WeatherPlan = {
+      weather: ["dry", "dry", "light_rain", "heavy_rain", "dry", ...Array<Weather>(25).fill("dry")],
+      fcWrong: [false, false, true, true, true, ...Array<boolean>(25).fill(false)],
+    };
+    expect(forecastAt(plan, 1, 2)).toEqual({ weather: "dry", sure: false }); // จริง = ฝนเบา → พยากรณ์ว่าแห้ง
+    expect(forecastAt(plan, 1, 3)).toEqual({ weather: "light_rain", sure: false }); // จริง = ฝนหนัก
+    expect(forecastAt(plan, 1, 4)).toEqual({ weather: "light_rain", sure: false }); // จริง = แห้ง
+  });
+
+  it("เกินแผนที่วางไว้ = แห้ง", () => {
+    expect(forecastAt(dryPlan(), 40, 0).weather).toBe("dry");
+  });
+});
+
+describe("ผลของอากาศต่อยาง", () => {
+  it("ยางสลิกเสียเปรียบในฝน ยางที่ตรงสภาพอากาศได้เปรียบ", () => {
+    expect(weatherEffect("dry", "medium").move).toBe(0);
+    expect(weatherEffect("light_rain", "medium").move).toBe(-2);
+    expect(weatherEffect("light_rain", "inter").move).toBe(1);
+    expect(weatherEffect("heavy_rain", "wet").move).toBe(1);
+    expect(weatherEffect("dry", "wet").move).toBeLessThan(0);
+  });
+
+  it("ฝนเบา: ยางกลางก้าวลด 2 ยางอินเตอร์ได้ +1 ผ่านการเล่นจริง", () => {
+    const rain = withWeather(game(), "light_rain");
+    expect(playTurn(rain, null, seq(die(5))).players[0].progress).toBe(5 + 2 - 2);
+    const inter = {
+      ...rain,
+      players: rain.players.map((p) => ({ ...p, tyres: ["inter" as Tyre, "hard" as Tyre] })),
+    };
+    expect(playTurn(inter, null, seq(die(5))).players[0].progress).toBe(5 + 2 + 1);
+  });
+
+  it("ยางผิดสภาพอากาศเสื่อมเร็วขึ้น", () => {
+    const heavy = withWeather(game(), "heavy_rain");
+    expect(playTurn(heavy, null, seq(die(5))).players[0].life).toBe(5 - 1 - 2);
   });
 });
 
@@ -97,19 +172,6 @@ describe("playTurn", () => {
     expect(out.players[0].progress).toBe(5 + 2);
   });
 
-  it("เข้าพิท: เปลี่ยนเป็นยางสำรอง อายุเต็ม เต๋าเหลือครึ่ง (ปัดขึ้น)", () => {
-    const out = playTurn(game(), "pit", seq(die(5)));
-    const me = out.players[0];
-    expect(me.tyres).toEqual(["soft", "hard"]);
-    expect(me.progress).toBe(3 + 3); // ceil(5/2) + นิ่ม 3
-    expect(me.life).toBe(2); // นิ่มอายุ 3 แล้วเสื่อมไป 1
-  });
-
-  it("ไม่มียางสำรองแล้วเข้าพิทไม่ได้", () => {
-    const p = { ...game().players[0], tyres: ["hard" as Tyre] };
-    expect(canPlay(p, "pit")).toBe(false);
-  });
-
   it("ยางหมดอายุ ก้าวลด 2 แต่ไม่ต่ำกว่า 1", () => {
     const s = game();
     const worn = { ...s, players: s.players.map((p) => ({ ...p, life: 0 })) };
@@ -124,7 +186,7 @@ describe("playTurn", () => {
   it("ขวางทาง: คู่แข่งตาถัดไปโดน −2 ครั้งเดียว", () => {
     let s = playTurn(game(30, ["block", "boost", "save"]), "block", seq(die(3)));
     expect(s.players[1].debuff).toBe(2);
-    s = playTurn(s, null, seq(die(3), NO_EVENT));
+    s = playTurn(s, null, seq(die(3), ...QUIET));
     expect(s.players[1].progress).toBe(3 + 2 - 2);
     expect(s.players[1].debuff).toBe(0);
   });
@@ -142,37 +204,131 @@ describe("playTurn", () => {
     const out = playTurn(tight, null, seq(die(3)));
     expect(out.players[0].hand).toHaveLength(HAND_SIZE);
   });
+});
 
-  it("ฝน: เต๋าสูงสุด 4 และยางเสื่อมเพิ่ม 1", () => {
-    const s = applyEvent(game(), "rain");
-    const out = playTurn(s, null, seq(die(6)));
-    expect(out.players[0].progress).toBe(4 + 2);
-    expect(out.players[0].life).toBe(3);
+describe("เข้าพิท", () => {
+  it("เปลี่ยนเป็นยางสำรองที่เลือก อายุเต็ม เสียเวลา 2 ช่อง และยางสำรองที่เหลือไม่หาย", () => {
+    const out = playTurn(game(), "pit", seq(die(5)), 2); // ยางสำรองลำดับ 2 = hard
+    const me = out.players[0];
+    expect(me.tyres).toEqual(["hard", "soft", "wet"]);
+    expect(me.progress).toBe(5 + 1 - PIT_COST);
+    expect(me.life).toBe(6); // แข็งอายุ 7 แล้วเสื่อมไป 1
+  });
+
+  it("ค่าเริ่มต้นคือยางสำรองใบแรก", () => {
+    const me = playTurn(game(), "pit", seq(die(5))).players[0];
+    expect(me.tyres).toEqual(["soft", "hard", "wet"]);
+  });
+
+  it("ใช้ยางใหม่กับอากาศของรอบนี้ทันที (เปลี่ยนเป็นเว็ทตอนฝนหนักคุ้ม)", () => {
+    const heavy = withWeather(game(), "heavy_rain");
+    const stay = playTurn(heavy, null, seq(die(4))).players[0];
+    expect(stay.progress).toBe(4 + 2 - 3); // ยางกลางในฝนหนัก
+    const toWet = playTurn(heavy, "pit", seq(die(4)), 3).players[0]; // ยางสำรองลำดับ 3 = wet
+    expect(toWet.tyres[0]).toBe("wet");
+    expect(toWet.progress).toBe(4 + 1 + 1 - PIT_COST);
+    const toHard = playTurn(heavy, "pit", seq(die(4)), 2).players[0]; // hard ผิดอากาศ เสียทั้งพิททั้งฝน
+    expect(toHard.progress).toBe(Math.max(1, 4 + 1 - 3 - PIT_COST));
+  });
+
+  it("ไม่มียางสำรอง หรือเลือกลำดับยางที่ไม่มีจริง = เข้าพิทไม่ได้", () => {
+    const s = game();
+    const p = { ...s.players[0], tyres: ["hard" as Tyre] };
+    expect(canPlay(p, "pit")).toBe(false);
+    expect(playTurn(s, "pit", seq(die(3)), 4)).toBe(s);
+    expect(playTurn(s, "pit", seq(die(3)), 0)).toBe(s);
   });
 });
 
-describe("รอบและผู้ชนะ", () => {
-  it("เล่นครบทุกคนแล้วขึ้นรอบใหม่ ผู้เล่นคนแรกเริ่มก่อน", () => {
-    let s = game();
-    s = playTurn(s, null, seq(die(3)));
-    s = playTurn(s, null, seq(die(3), NO_EVENT));
-    expect(s.round).toBe(2);
-    expect(s.turn).toBe(0);
-    expect(s.event).toBeNull();
+describe("เซฟตี้คาร์", () => {
+  it("เข้าพิทฟรีเฉพาะรอบที่เป็นเซฟตี้คาร์ รอบอื่นเสียเต็ม", () => {
+    expect(pitCost(game())).toBe(PIT_COST);
+    expect(pitCost(applyEvent(game(), "safety_car"))).toBe(0);
   });
 
+  it("เต๋าสูงสุด 3 ในรอบเซฟตี้คาร์ และพิทไม่เสียช่อง", () => {
+    const sc = applyEvent(game(), "safety_car");
+    expect(playTurn(sc, null, seq(die(6))).players[0].progress).toBe(3 + 2);
+    expect(playTurn(sc, "pit", seq(die(6))).players[0].progress).toBe(3 + 3); // นิ่ม +3 ไม่เสียพิท
+  });
+
+  it("ช่องว่างจากผู้นำเหลือครึ่ง", () => {
+    const s = game(40);
+    const spread = {
+      ...s,
+      players: [{ ...s.players[0], progress: 20 }, { ...s.players[1], progress: 10 }],
+    };
+    const out = applyEvent(spread, "safety_car");
+    expect(out.players.map((p) => p.progress)).toEqual([20, 15]);
+    expect(out.event).toBe("safety_car");
+  });
+});
+
+describe("ธงเหลืองและเหตุการณ์ต้นรอบ", () => {
+  /** เล่นครบรอบ: A เล่นก่อนด้วยเต๋า 3 แล้ว B เล่นด้วย `tail` */
+  const round = (s: GameState, ...tail: number[]) =>
+    playTurn(playTurn(s, null, seq(die(3))), null, seq(die(3), ...tail));
+
+  it("ธงเหลือง → รอบหน้าเป็นเซฟตี้คาร์ถ้า rng < 0.6", () => {
+    const yellow = { ...game(), yellow: true };
+    const sc = round(yellow, 0.1);
+    expect(sc.event).toBe("safety_car");
+    expect(sc.yellow).toBe(false);
+  });
+
+  it("ธงเหลืองแต่ไม่เป็นเซฟตี้คาร์ (rng >= 0.6): ไม่มีเหตุการณ์ และอาจมีธงเหลืองใหม่", () => {
+    const yellow = { ...game(), yellow: true };
+    const calm = round(yellow, 0.9, 0.99);
+    expect(calm.event).toBeNull();
+    expect(calm.yellow).toBe(false);
+    const again = round(yellow, 0.9, 0.1);
+    expect(again.event).toBeNull();
+    expect(again.yellow).toBe(true);
+  });
+
+  it("ไม่มีธงเหลือง: ธงแดงเกิดได้ (rng < 0.08) ไม่มีธงเหลืองซ้อนในรอบเหตุการณ์", () => {
+    const red = round(game(), 0.01);
+    expect(red.event).toBe("red_flag");
+    expect(red.yellow).toBe(false);
+  });
+
+  it("รอบเงียบ: ไม่มีเหตุการณ์ ไม่มีธง", () => {
+    const quiet = round(game(), ...QUIET);
+    expect(quiet.event).toBeNull();
+    expect(quiet.yellow).toBe(false);
+    expect(quiet.round).toBe(2);
+    expect(quiet.turn).toBe(0);
+  });
+
+  it("ธงแดง: ยางที่ใช้อยู่กลับมาใหม่ คันท้ายได้ +3 (ทุกคนเสมอ = ไม่มีใครได้)", () => {
+    const s = game(40);
+    const spread = {
+      ...s,
+      players: [
+        { ...s.players[0], progress: 20, life: 1 },
+        { ...s.players[1], progress: 10, life: 0 },
+      ],
+    };
+    const out = applyEvent(spread, "red_flag");
+    expect(out.players.map((p) => p.life)).toEqual([5, 5]);
+    expect(out.players.map((p) => p.progress)).toEqual([20, 13]);
+    expect(applyEvent(game(), "red_flag").players.map((p) => p.progress)).toEqual([0, 0]);
+  });
+});
+
+describe("ผู้ชนะ", () => {
   it("ผู้ถึงเส้นชัยก่อนไม่ชนะทันที — รอให้ทุกคนเล่นครบรอบก่อน แล้วใครไปไกลสุดชนะ", () => {
     let s = game(5);
     s = playTurn(s, null, seq(die(6))); // A: 8 ถึงเส้นชัยแล้ว
     expect(s.winner).toBeNull();
-    s = playTurn(s, "boost", seq(die(6), NO_EVENT)); // B: 6+2+3 = 11
+    s = playTurn(s, "boost", seq(die(6), ...QUIET)); // B: 6+2+3 = 11
     expect(s.winner).toBe(1);
   });
 
   it("ก้าวเท่ากัน ตัดสินด้วยอายุยางเหลือมากกว่า", () => {
     let s = game(5);
     s = playTurn(s, null, seq(die(3))); // A: 5, life 4
-    s = playTurn(s, "save", seq(die(4), NO_EVENT)); // B: 4+2−1 = 5, life 5 (ประหยัดยาง)
+    s = playTurn(s, "save", seq(die(4), ...QUIET)); // B: 4+2−1 = 5, life 5 (ประหยัดยาง)
     expect(s.players.map((p) => p.progress)).toEqual([5, 5]);
     expect(s.winner).toBe(1);
   });
@@ -180,46 +336,8 @@ describe("รอบและผู้ชนะ", () => {
   it("จบเกมแล้วเล่นต่อไม่ได้", () => {
     let s = game(1);
     s = playTurn(s, null, seq(die(1)));
-    s = playTurn(s, null, seq(die(1), NO_EVENT));
+    s = playTurn(s, null, seq(die(1), ...QUIET));
     expect(playTurn(s, null, seq(die(6)))).toBe(s);
-  });
-
-  it("ต้นรอบมีโอกาสเกิดเหตุการณ์ตาม rng", () => {
-    let s = game();
-    s = playTurn(s, null, seq(die(3)));
-    // rng: เต๋า, เหตุการณ์เกิด (0.1 < 0.35), เลือกชนิด = rain (0.4 → index 1)
-    s = playTurn(s, null, seq(die(3), 0.1, 0.4));
-    expect(s.event).toBe("rain");
-  });
-});
-
-describe("applyEvent", () => {
-  const spread = (): GameState => {
-    const s = game(40);
-    return {
-      ...s,
-      players: [
-        { ...s.players[0], progress: 20, life: 1 },
-        { ...s.players[1], progress: 10, life: 0 },
-      ],
-    };
-  };
-
-  it("เซฟตี้คาร์: ช่องว่างจากผู้นำเหลือครึ่ง", () => {
-    const s = applyEvent(spread(), "safety_car");
-    expect(s.players.map((p) => p.progress)).toEqual([20, 15]);
-    expect(s.event).toBe("safety_car");
-  });
-
-  it("ธงแดง: ยางที่ใช้อยู่กลับมาใหม่ คันท้ายได้ +3", () => {
-    const s = applyEvent(spread(), "red_flag");
-    expect(s.players.map((p) => p.life)).toEqual([5, 5]);
-    expect(s.players.map((p) => p.progress)).toEqual([20, 13]);
-  });
-
-  it("ธงแดง: ถ้าทุกคนเสมอกัน ไม่มีใครได้โบนัส", () => {
-    const s = applyEvent(game(), "red_flag");
-    expect(s.players.map((p) => p.progress)).toEqual([0, 0]);
   });
 });
 
