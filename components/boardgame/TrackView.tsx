@@ -326,6 +326,19 @@ export default function TrackView({
                 </g>
               );
             })}
+          {/* รถเซฟตี้คาร์นำขบวน */}
+          {state.neutral?.kind === "sc" && racers.some((d) => !d.pit && !d.off) && (() => {
+            const lead = Math.max(...racers.filter((d) => !d.pit && !d.off).map((d) => d.progress));
+            return (
+              <g transform={poseTransform(placePose(g, t, { pos: lead + 1, k: -LANE, spin: 0 }))} aria-label="รถเซฟตี้คาร์">
+                <g transform={`scale(${CAR_SCALE}) translate(-30 -13)`}>
+                  <rect x="4" y="5" width="52" height="16" rx="6" fill="#facc15" stroke="#08080A" strokeWidth="1.2" />
+                  <rect x="22" y="8" width="14" height="10" rx="2" fill="#08080A" />
+                  <text x="44" y="13.5" textAnchor="middle" dominantBaseline="central" fontSize="7" fontWeight="900" fill="#08080A">SC</text>
+                </g>
+              </g>
+            );
+          })()}
           {ghost && focus && (
             <g
               transform={`translate(${at(ghost.progress, laneK(ghost.lane)).x} ${at(ghost.progress, laneK(ghost.lane)).y}) rotate(${g.cell[lapCell(t, ghost.progress)].deg})`}

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_DECK, ACTION_OURS, BACK_CELLS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
+  ACTION_DECK, ACTION_OURS, BACK_CELLS, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
   PITWALL_DECK, PITWALL_OURS, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX,
-  activeDriver, canPitwall, choose, commit, newGame, options, playPitwall, travel,
+  activeDriver, canPitwall, choose, commit, moveFor, newGame, options, playPitwall, travel,
   type ActionKind, type CarSpec, type GameState, type IncidentFace, type Lane, type Rng, type Track,
 } from "@/lib/boardgame/engine";
 
@@ -88,17 +88,50 @@ describe("กติกาของเรา", () => {
     expect(events(out).find((e) => e.t === "incident")).toMatchObject({ rolls: [{ driver: 0, face: "damage" }] });
   });
 
-  it("อากาศ แดด → เมฆ → ฝน แล้วฝนหยุดเองเมื่อครบ 3 เทิร์น", () => {
+  it("อากาศ แดด → เมฆ → ฝน → ทางหมาด → แดด ตามจำนวนเทิร์น", () => {
     let s = topAction(topMove(at(game(), [[0, 0], [30, 0]]), ACTION_CARD), "weather");
     s = commit(choose(s, { kind: "card" }, never), {}, never);
     expect(s.weather).toBe(3);
     s = { ...s, weather: 5, rainLeft: RAIN_ROUNDS };
-    for (let r = 0; r < RAIN_ROUNDS; r++) {
+    const round = () => {
       s = commit(choose(s, { kind: "base" }, never), {}, never);
       s = commit(choose(s, { kind: "base" }, never), {}, never);
-    }
+    };
+    for (let r = 0; r < RAIN_ROUNDS; r++) round();
+    expect(s.weather).toBe(DAMP);
+    expect(s.rainLeft).toBe(DAMP_ROUNDS);
+    for (let r = 0; r < DAMP_ROUNDS; r++) round();
     expect(s.weather).toBe(1);
-    expect(s.rainLeft).toBe(0);
+  });
+
+  it("ยางผิดสภาพแค่ช้าลง: ยางแห้งในฝน −2 · ทางหมาด −1 · ยางฝนบนทางแห้งไม่ถูกล็อก", () => {
+    const c = MOVE_DECK[PLAIN];
+    const base = at(game(), [[0, 0], [30, 0]]);
+    expect(moveFor({ ...base, weather: 5 }, c, base.drivers[0])).toBe(c.y - 2);
+    expect(moveFor({ ...base, weather: DAMP }, c, base.drivers[0])).toBe(c.y - 1);
+    const wet = { ...base, drivers: base.drivers.map((d, i) => (i === 0 ? { ...d, wet: true } : d)) };
+    expect(options(wet).card).toBe(true);
+    expect(moveFor(wet, c, wet.drivers[0])).toBe(c.w);
+  });
+
+  it("รถเสียหาย = VSC: ทุกคันได้แค่ BASE 2 เทิร์น เทิร์นสุดท้ายเป็น ENDING แล้วจบ", () => {
+    let s = topAction(topMove(at(game(), [[0, 0], [30, 0]]), ACTION_CARD), "incident");
+    s = commit(choose(s, { kind: "card" }, never), {}, seq(face("damage")));
+    expect(s.neutral).toEqual({ kind: "vsc", left: NEUTRAL_ROUNDS });
+    expect(events(s).some((e) => e.t === "vsc")).toBe(true);
+    expect(options(s)).toMatchObject({ card: false });
+    s = commit(choose(s, { kind: "base" }, never), {}, never); // จบเทิร์น
+    expect(s.neutral).toEqual({ kind: "vsc", left: 1 });
+    // A รถเสียหาย เดินเอง · B เดิน BASE → จบเทิร์น ENDING
+    s = choose(at({ ...s }, [[10, 0], [30, 0]]), { kind: "worn" }, never);
+    s = commit(choose(s, { kind: "base" }, never), {}, never);
+    expect(s.neutral).toBeNull();
+    expect(events(s).some((e) => e.t === "green")).toBe(true);
+  });
+
+  it("ช่วงเซฟตี้คาร์ห้ามแซง: ตามหลังคันหน้าทุกเลน", () => {
+    const s = { ...at(game(3), [[0, 0], [3, 1], [30, 0]]), neutral: { kind: "sc" as const, left: 2 } };
+    expect(travel(s, s.drivers[0], 4)).toMatchObject({ progress: 2, blocked: true });
   });
 
   it("กองไพ่ ACTION / PITWALL มีเฉพาะแบบที่เข้าใจง่าย", () => {

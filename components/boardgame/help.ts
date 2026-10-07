@@ -1,12 +1,12 @@
 import {
   BACK_CELLS, BASE_MOVE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
-  RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WORN_MOVE, type Rules,
+  DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WORN_MOVE, type Rules,
 } from "@/lib/boardgame/engine";
 
 export type HelpKey =
   | "base" | "move" | "tyre" | "ers" | "pass" | "attack" | "block" | "slip" | "drs" | "line" | "corner"
   | "pitwall" | "vbox" | "flag" | "wet" | "brakes" | "damage" | "off" | "warn" | "penalty" | "push" | "pace"
-  | "quick" | "bonus" | "pit" | "weather";
+  | "quick" | "bonus" | "pit" | "weather" | "sc" | "vsc";
 
 /** คำอธิบายสั้นของศัพท์ในเกม — แตะชื่อบนหน้าจอแล้วขึ้นข้อความนี้ */
 export function helpText(k: HelpKey, rules: Rules): { title: string; text: string } {
@@ -86,11 +86,21 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
         title: "พิท",
         text: `ติ๊ก “จะเข้าพิท” ก่อนถึงโซนเข้าพิท รถจะหยุดในโซน ตาถัดไปเข้าเลนพิท (ช่องละ ${PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก`,
       };
+    case "sc":
+      return {
+        title: "SAFETY CAR",
+        text: `มีรถชนออก — รถทุกคันเรียงแถวตามรถนำร่อง ได้แค่ BASE และห้ามแซง ${NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING แล้วกลับมาแข่งเทิร์นถัดไป · เข้าพิทช่วงนี้เสียเวลาน้อย`,
+      };
+    case "vsc":
+      return {
+        title: "VSC (เซฟตี้คาร์เสมือน)",
+        text: `มีรถเสียหาย — ทุกคันได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ ${NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING`,
+      };
     case "weather":
       return {
         title: "อากาศ",
         text: ours
-          ? `แดด → เมฆ → ฝน เลื่อนได้จากไพ่เหตุการณ์และไพ่เรดาร์ ฝนตก ${RAIN_ROUNDS} เทิร์นแล้วหยุดเอง`
+          ? `แดด → เมฆ → ฝน → ทางหมาด → แดด เลื่อนได้จากไพ่เหตุการณ์และไพ่เรดาร์ ฝนตก ${RAIN_ROUNDS} เทิร์น แล้วทางหมาด ${DAMP_ROUNDS} เทิร์น · ยางแห้งในฝน −2 (บางใบหมุน) ทางหมาด −1 · ยางฝนใช้แถวฝนเสมอ เปลี่ยนยางที่ V-BOX หรือพิท`
           : "มาตร 6 ขั้น ขั้น 5–6 ฝนตก เลยขั้นสุดท้ายวนกลับแดดออก",
       };
   }

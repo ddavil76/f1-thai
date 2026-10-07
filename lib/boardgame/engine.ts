@@ -61,6 +61,11 @@ export const BACK_CELLS = 2;
 export const RAIN_ROUNDS = 3;
 /** กติกาของเรา: อากาศ 3 สถานะ (ค่าเดียวกับมาตร 1–6 จะได้ใช้ isRain ร่วมกัน) */
 export const OURS_WEATHER = [1, 3, 5] as const;
+/** กติกาของเรา: ฝนหยุดแล้วเป็น "ทางหมาด" ก่อนแห้ง (อยู่ระหว่างเมฆกับฝนบนมาตร) */
+export const DAMP = 4;
+export const DAMP_ROUNDS = 2;
+/** เซฟตี้คาร์ / VSC อยู่กี่เทิร์น — เทิร์นสุดท้ายขึ้นสถานะ ENDING */
+export const NEUTRAL_ROUNDS = 2;
 
 export const COMPOUNDS: Record<Compound, { label: string; wear: number }> = {
   yellow: { label: "เหลือง", wear: 1 },
@@ -154,6 +159,8 @@ export type GameEvent =
   | { t: "spin"; driver: number }
   | { t: "incident"; rolls: { driver: number; face: IncidentFace }[] }
   | { t: "sc"; at: number }
+  | { t: "vsc" }
+  | { t: "green"; kind: "sc" | "vsc" }
   | { t: "weather"; from: number; to: number }
   | { t: "vbox"; driver: number; wet: boolean }
   | { t: "warn" | "penalty" | "paceEnd" | "served" | "back"; driver: number };
@@ -202,6 +209,8 @@ export type GameState = {
   /** กติกาของเรา: ฝนจะหยุดในอีกกี่เทิร์น */
   rainLeft: number;
   rules: Rules;
+  /** ช่วงเซฟตี้คาร์ / VSC — left = เหลือกี่เทิร์น (1 = ENDING จบเทิร์นนี้) */
+  neutral: { kind: "sc" | "vsc"; left: number } | null;
   /** รถ AI รอให้หน้าจอสั่งเดินทีละคัน (aiStep) */
   stepAI: boolean;
   flags: Flag[];
@@ -276,7 +285,8 @@ export function limits(s: GameState, d: Driver) {
   return {
     rain,
     flag: inFlag(s, d),
-    slow: d.brakes || inFlag(s, d) || (d.wet && !rain),
+    // กติกาของเรา: ยางผิดสภาพแค่ช้าลง (ดู moveFor) ไม่ถูกล็อก · SC/VSC ทุกคันได้แค่ BASE
+    slow: d.brakes || inFlag(s, d) || (s.rules === "full" && d.wet && !rain) || s.neutral !== null,
     limp: d.worn || d.damage,
   };
 }
@@ -403,6 +413,7 @@ export function newGame(
     rainLeft: rules === "ours" && wet ? RAIN_ROUNDS : 0,
     rules,
     stepAI: !!opts.stepAI,
+    neutral: null,
     flags: [],
     finishOrder: [],
     feed: [],
@@ -494,9 +505,20 @@ export function options(s: GameState, d: Driver = activeDriver(s)): Options {
 /** ระยะของไพ่ MOVE ตามยางที่ใส่ — ฝนตกและใส่ยางฝนใช้แถวยางฝน */
 export const cardValue = (c: MoveCard, d: Driver, rain: boolean) => (rain && d.wet ? c.w : moveValue(c, d.compound));
 
+/**
+ * ระยะของไพ่ MOVE ในเกมนี้ — กติกาของเรา ยางผิดสภาพแค่ช้าลง:
+ * ยางฝนใช้แถวฝนเสมอ · ยางแห้งตอนฝนตก −2 (และอาจหมุน) · ตอนทางหมาด −1
+ */
+export function moveFor(s: GameState, c: MoveCard, d: Driver): number {
+  if (s.rules === "full") return cardValue(c, d, isRain(s));
+  if (d.wet) return c.w;
+  const cut = isRain(s) ? 2 : s.weather === DAMP ? 1 : 0;
+  return Math.max(1, moveValue(c, d.compound) - cut);
+}
+
 /** โหมด PUSH วิ่งเท่าไพ่สึกที่เร็วที่สุดของยางที่ใส่ */
-export const pushValue = (d: Driver, rain: boolean) =>
-  Math.max(...MOVE_DECK.filter((c) => c.tires).map((c) => cardValue(c, d, rain)));
+export const pushValue = (s: GameState, d: Driver) =>
+  Math.max(...MOVE_DECK.filter((c) => c.tires).map((c) => moveFor(s, c, d)));
 
 /* ---------- การเดิน ---------- */
 
@@ -526,6 +548,14 @@ export function travel(
   let blocked = false;
 
   const blocker = s.drivers.find((o) => o.blockVictim === d.id && solid(o) && o.progress > start);
+  // เซฟตี้คาร์: ห้ามแซง ตามหลังคันหน้าทุกเลน
+  if (s.neutral?.kind === "sc") {
+    const ahead = s.drivers.filter((o) => o.id !== d.id && solid(o) && o.progress > start).map((o) => o.progress);
+    if (ahead.length && target > Math.min(...ahead) - 1) {
+      target = Math.max(start, Math.min(...ahead) - 1);
+      blocked = true;
+    }
+  }
   if (blocker && target > blocker.progress - 1) {
     target = Math.max(start, blocker.progress - 1);
     blocked = true;
@@ -740,8 +770,8 @@ class Fx {
       else if (r.face === "off") this.goOff(d.id);
       else if (r.face === "back") this.back(d.id);
       else if (r.face === "damage") {
+        // รถเสียหาย = VSC ทั้งสนาม (แทนธงเหลืองเฉพาะจุด)
         this.set({ ...d, damage: true });
-        this.flag(d);
         this.damaged++;
       } else if (r.face === "crash") {
         this.set({ ...d, out: true, off: false, mode: null });
@@ -852,17 +882,28 @@ function deploySafetyCar(s: GameState, crashes: number, damaged: number, events:
     }
     return x;
   });
-  const next: GameState = { ...s, drivers, flags: [], round: s.round + 1, turn: 0, pending: null };
+  const next: GameState = {
+    ...s, drivers, flags: [], round: s.round + 1, turn: 0, pending: null, neutral: { kind: "sc", left: NEUTRAL_ROUNDS },
+  };
   return { ...next, order: standings(next).filter((o) => o.finished === null && !o.out).map((o) => o.id) };
 }
 
-/** กติกาของเรา: จบเทิร์นแล้วนับถอยหลังฝน ครบแล้วแดดออก */
+/** กติกาของเรา: จบเทิร์นแล้วนับถอยหลังฝน → ทางหมาด → แดดออก */
 function rainTick(s: GameState, events: GameEvent[]): Partial<GameState> {
-  if (s.rules !== "ours" || s.weather < RAIN_AT) return {};
+  if (s.rules !== "ours" || s.weather < DAMP) return {};
   const left = s.rainLeft - 1;
   if (left > 0) return { rainLeft: left };
-  events.push({ t: "weather", from: s.weather, to: OURS_WEATHER[0] });
-  return { rainLeft: 0, weather: OURS_WEATHER[0] };
+  const to = s.weather >= RAIN_AT ? DAMP : OURS_WEATHER[0];
+  events.push({ t: "weather", from: s.weather, to });
+  return { rainLeft: to === DAMP ? DAMP_ROUNDS : 0, weather: to };
+}
+
+/** จบเทิร์น: นับถอยหลังเซฟตี้คาร์ / VSC */
+function neutralTick(s: GameState, events: GameEvent[]): Partial<GameState> {
+  if (!s.neutral) return {};
+  if (s.neutral.left > 1) return { neutral: { ...s.neutral, left: s.neutral.left - 1 } };
+  events.push({ t: "green", kind: s.neutral.kind });
+  return { neutral: null };
 }
 
 /** จบการเดินของรถหนึ่งคัน: บันทึก เช็กเส้นชัย ส่งตาต่อ แล้วให้ AI เดินจนถึงคนถัดไป */
@@ -909,6 +950,11 @@ function finishMove(
   } else if (done(next)) {
     next = { ...next, over: true };
   } else {
+    // รถเสียหาย (ไม่มีใครชนออก) = VSC ถ้ายังไม่มี SC/VSC อยู่
+    if (sc && sc.damaged > 0 && !next.neutral) {
+      next = { ...next, neutral: { kind: "vsc", left: NEUTRAL_ROUNDS } };
+      events.push({ t: "vsc" });
+    }
     let turn = s.turn + 1;
     while (turn < s.order.length && (next.drivers[s.order[turn]].finished !== null || next.drivers[s.order[turn]].out)) {
       turn++;
@@ -922,6 +968,7 @@ function finishMove(
         turn: 0,
         flags: next.flags.filter((f) => f.until >= round),
         ...rainTick(next, events),
+        ...neutralTick(next, events),
         drivers: next.drivers.map((o) => ({ ...o, slipTarget: null, blockVictim: null })),
       };
       next = { ...next, order: standings(next).filter((o) => o.finished === null && !o.out).map((o) => o.id) };
@@ -1131,14 +1178,14 @@ export function choose(s: GameState, c: Choice, rng: Rng): GameState {
   }
   if (c.kind === "base" && o.base) return { ...st, pending: { driver: d.id, kind: "base", card: null, value: BASE_MOVE } };
   if (c.kind === "push" && o.push) {
-    return { ...st, pending: { driver: d.id, kind: "push", card: null, value: pushValue(d, isRain(s)) - offlinePenalty(s, d) } };
+    return { ...st, pending: { driver: d.id, kind: "push", card: null, value: pushValue(s, d) - offlinePenalty(s, d) } };
   }
   if (c.kind === "pace" && o.pace && d.mode?.kind === "pace") {
     return { ...st, pending: { driver: d.id, kind: "pace", card: null, value: d.mode.value } };
   }
   if (c.kind === "card" && o.card) {
     const { id, s: s2 } = drawMove(st, d.team, rng);
-    const value = Math.max(0, cardValue(MOVE_DECK[id], d, isRain(s)) - offlinePenalty(s, d));
+    const value = Math.max(0, moveFor(s, MOVE_DECK[id], d) - offlinePenalty(s, d));
     return { ...s2, pending: { driver: d.id, kind: "card", card: id, value } };
   }
   if (c.kind === "drs") {
@@ -1302,7 +1349,9 @@ function aiTurn(s: GameState, rng: Rng): GameState {
     d.boxing || (card.box && d.pits === 0 && d.progress >= s.total * AI_PIT_FROM) || (l.rain && !d.wet);
   const st: GameState = { ...s, aiDeck: r.deck, aiDiscard: r.discard };
   const x = { ...d, boxing };
-  const value = (l.rain && d.wet ? card.w : card.v) - offlinePenalty(s, d);
+  const raw = d.wet ? card.w : card.v;
+  const cut = s.rules === "ours" && !d.wet ? (l.rain ? 2 : s.weather === DAMP ? 1 : 0) : 0;
+  const value = s.rules === "full" ? (l.rain && d.wet ? card.w : card.v) - offlinePenalty(s, d) : Math.max(1, raw - cut) - offlinePenalty(s, d);
   const extras = s.rules === "ours" ? { pass: card.attack } : { attack: card.attack, block: card.block };
   return resolve(replace(st, x), x, "card", value, aiFx(card, d, l.rain), r.id, extras, rng);
 }

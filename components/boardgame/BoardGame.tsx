@@ -15,10 +15,10 @@ import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
   ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
-  GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, OURS_WEATHER, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
-  PIT_SPEED, RAIN_AT, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WEATHER_MAX, WORN_MOVE,
-  activeDriver, aiStep, aiTurnPending, attackTarget, canPitwall, cardValue, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
-  offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
+  DAMP, DAMP_ROUNDS, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, OURS_WEATHER, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
+  NEUTRAL_ROUNDS, PIT_SPEED, RAIN_AT, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WEATHER_MAX, WORN_MOVE,
+  activeDriver, aiStep, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
+  moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
   type CarSpec, type Choice, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
   type TurnLog,
 } from "@/lib/boardgame/engine";
@@ -243,7 +243,7 @@ function buildCars(setup: Setup): { cars: CarSpec[]; teams: string[] } {
 
 const carName = (s: GameState, id: number) => `#${s.drivers[id].num} ${s.drivers[id].name}`;
 
-const weatherName = (w: number) => (w >= RAIN_AT ? "ฝนตก" : w >= 3 ? "เมฆครึ้ม" : "แดดออก");
+const weatherName = (w: number) => (w >= RAIN_AT ? "ฝนตก" : w === DAMP ? "ทางหมาด" : w >= 3 ? "เมฆครึ้ม" : "แดดออก");
 
 function eventText(s: GameState, e: GameEvent): string {
   switch (e.t) {
@@ -260,7 +260,7 @@ function eventText(s: GameState, e: GameEvent): string {
     case "weather":
       return s.rules === "ours"
         ? `อากาศเปลี่ยน: ${weatherName(e.from)} → ${weatherName(e.to)}`
-        : `อากาศเปลี่ยน: ขั้น ${e.from} → ${e.to} (${weatherName(e.to)})`;
+        : `อากาศเปลี่ยน: ขั้น ${e.from} → ${e.to} (${e.to >= RAIN_AT ? "ฝนตก" : e.to >= 3 ? "เมฆครึ้ม" : "แดดออก"})`;
     case "vbox":
       return `${carName(s, e.driver)} ผ่าน V-BOX เปลี่ยนเป็นยาง${e.wet ? "ฝน" : "แห้ง"}`;
     case "warn":
@@ -273,6 +273,10 @@ function eventText(s: GameState, e: GameEvent): string {
       return `${carName(s, e.driver)} จอดรับโทษในพิท`;
     case "back":
       return `${carName(s, e.driver)} ${BACK_TEXT}`;
+    case "vsc":
+      return "VSC! มีรถเสียหาย ทุกคันได้แค่ BASE";
+    case "green":
+      return `จบ ${e.kind === "sc" ? "SAFETY CAR" : "VSC"} — ธงเขียว กลับมาแข่งเต็มที่`;
   }
 }
 
@@ -309,6 +313,7 @@ function worthPopup(s: GameState, e: GameEvent): boolean {
   const human = (id: number) => !s.drivers[id].ai;
   switch (e.t) {
     case "sc":
+    case "vsc":
     case "weather":
       return true;
     case "action":
@@ -323,16 +328,59 @@ function worthPopup(s: GameState, e: GameEvent): boolean {
   }
 }
 
+/** แถบสถานะใต้หัวจอ: เซฟตี้คาร์ / VSC และพยากรณ์อากาศ */
+function StatusStrip({ s, onHelp }: { s: GameState; onHelp: (k: HelpKey) => void }) {
+  const n = s.neutral;
+  const ours = s.rules === "ours";
+  const wx =
+    ours && s.weather >= RAIN_AT
+      ? `ฝนตก · อีก ${s.rainLeft} เทิร์นเริ่มหยุด`
+      : ours && s.weather === DAMP
+        ? `ทางหมาด · อีก ${s.rainLeft} เทิร์นแห้ง`
+        : s.weather === 3 && ours
+          ? "เมฆครึ้ม · ฝนอาจมา"
+          : null;
+  if (!n && !wx) return null;
+  return (
+    <div className="flex flex-none items-center gap-2 border-b border-white/10 px-2 py-1">
+      {n && (
+        <button
+          type="button"
+          onClick={() => onHelp(n.kind)}
+          className={`poster flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] ${n.left > 1 ? "bg-[#facc15] text-[#08080A]" : "bg-[#facc15]/20 text-[#facc15]"}`}
+          aria-live="polite"
+        >
+          {n.kind === "sc" ? "SAFETY CAR" : "VSC"}
+          {n.left > 1 ? <span className="font-sans text-[10px] font-bold normal-case">ได้แค่ BASE</span> : <span className="font-sans text-[10px] font-bold">ENDING · จบเทิร์นนี้</span>}
+        </button>
+      )}
+      {wx && (
+        <button type="button" onClick={() => onHelp("weather")} className="truncate text-[11px] text-[#93c5fd]">
+          {wx}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function WeatherGauge({ s }: { s: GameState }) {
   const w = s.weather;
   const Icon = w >= RAIN_AT ? CloudRain : w >= 3 ? Cloud : Sun;
   const color = w >= RAIN_AT ? "text-[#60a5fa]" : w >= 3 ? "text-white/70" : "text-yellow-300";
-  const steps: readonly number[] = s.rules === "ours" ? OURS_WEATHER : Array.from({ length: WEATHER_MAX }, (_, i) => i + 1);
+  const steps: readonly number[] = Array.from({ length: WEATHER_MAX }, (_, i) => i + 1);
+  if (s.rules === "ours") {
+    return (
+      <span className="flex items-center gap-1 rounded-full bg-[#1F1F24] px-2 py-1" role="img" aria-label={`อากาศ ${weatherName(w)}`}>
+        <Icon className={`h-3.5 w-3.5 ${w === DAMP ? "text-[#93c5fd]" : color}`} aria-hidden />
+        <span className="text-[10px] font-bold text-white/85">{weatherName(w)}</span>
+      </span>
+    );
+  }
   return (
     <span
       className="flex items-center gap-1 rounded-full bg-[#1F1F24] px-2 py-1"
       role="img"
-      aria-label={`อากาศ ${weatherName(w)}${s.rules === "ours" && w >= RAIN_AT ? ` หยุดในอีก ${s.rainLeft} เทิร์น` : ""}`}
+      aria-label={`อากาศ ${w >= RAIN_AT ? "ฝนตก" : w >= 3 ? "เมฆครึ้ม" : "แดดออก"} ขั้น ${w}/${WEATHER_MAX}`}
     >
       <Icon className={`h-3.5 w-3.5 ${color}`} aria-hidden />
       <span className="flex gap-px">
@@ -344,7 +392,6 @@ function WeatherGauge({ s }: { s: GameState }) {
           />
         ))}
       </span>
-      {s.rules === "ours" && w >= RAIN_AT && <span className="text-[10px] font-bold text-[#93c5fd] tabular-nums">{s.rainLeft}</span>}
     </span>
   );
 }
@@ -378,6 +425,11 @@ function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[];
                     </span>
                   </div>
                 ))}
+              </div>
+            ) : e.t === "vsc" ? (
+              <div className="rounded-xl border-2 border-[#facc15] px-3 py-2 text-center text-white">
+                <p className="poster text-2xl text-[#facc15]">VSC</p>
+                <p className="text-xs font-bold">มีรถเสียหาย — ทุกคันได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ จนจบ VSC</p>
               </div>
             ) : e.t === "sc" ? (
               <div className="rounded-xl bg-[#facc15] px-3 py-2 text-center text-[#08080A]">
@@ -611,13 +663,31 @@ export default function BoardGame({ board }: { board: Board }) {
   const moveRange = (() => {
     if (!d) return null;
     const off = offlinePenalty(state, d);
-    const vals = MOVE_DECK.map((c) => Math.max(0, cardValue(c, d, rain) - off));
-    const risk = rain && !d.wet ? "บางใบลื่นหมุน" : rain ? "ฝน ยางไม่สึก" : "บางใบยางสึก";
+    const vals = MOVE_DECK.map((c) => Math.max(0, moveFor(state, c, d) - off));
+    const risk = ours
+      ? rain && !d.wet
+        ? "ยางแห้งในฝน −2 · บางใบหมุน"
+        : state.weather === DAMP && !d.wet
+          ? "ทางหมาด ยางแห้ง −1"
+          : d.wet && !rain && state.weather !== DAMP
+            ? "ยางฝนบนทางแห้ง ช้าลง"
+            : rain
+              ? "ฝน ยางไม่สึก"
+              : "บางใบยางสึก"
+      : rain && !d.wet
+        ? "บางใบลื่นหมุน"
+        : rain
+          ? "ฝน ยางไม่สึก"
+          : "บางใบยางสึก";
     return { min: Math.min(...vals), max: Math.max(...vals), risk, off };
   })();
   const toPit = d ? (state.track.pitEntry.start - (((d.progress % CELLS_PER_LAP) + CELLS_PER_LAP) % CELLS_PER_LAP) + CELLS_PER_LAP) % CELLS_PER_LAP : 99;
 
-  const slowWhy = lim?.limp
+  const slowWhy = state.neutral
+    ? state.neutral.kind === "sc"
+      ? "SAFETY CAR: ได้แค่ BASE ห้ามแซง — เข้าพิทตอนนี้เสียเวลาน้อย"
+      : "VSC: ได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ"
+    : lim?.limp
     ? d?.damage
       ? "รถเสียหาย เดินเองช่องละ 3 — ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม"
       : "ยางพัง เดินเองช่องละ 3 — ต้องเข้าพิท"
@@ -625,7 +695,7 @@ export default function BoardGame({ board }: { board: Board }) {
       ? "ธงเหลือง: ได้แค่ BASE ห้ามไพ่/เหรียญ/ERS"
       : d?.brakes
         ? "เบรกร้อน: ได้แค่ BASE จนกว่าจะผ่าน V-BOX หรือเข้าพิท"
-        : d?.wet && !rain
+        : !ours && d?.wet && !rain
           ? "แดดออกแล้วแต่ใส่ยางฝน: ได้แค่ BASE — ผ่าน V-BOX เพื่อเปลี่ยนยาง"
           : null;
 
@@ -653,6 +723,7 @@ export default function BoardGame({ board }: { board: Board }) {
             <CircleHelp className="h-5 w-5" />
           </button>
         </header>
+        <StatusStrip s={state} onHelp={ask} />
 
         <div className="relative min-h-0 flex-1">
           <TrackView board={board} state={state} focus={focusCar} ghost={landing} zoomed={zoomed && !!focusCar} onToggle={() => setZoomed((z) => !z)} onHelp={ask} />
@@ -1129,7 +1200,7 @@ function RulesList({ rules }: { rules: Rules }) {
           ยางสึกจาก {WEAR_MAX} ขั้น (เหลือง 1 แดง 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
         </RuleBlock>
         <RuleBlock title="เหตุการณ์">
-          ไพ่ป้าย ACT เปิดเหตุการณ์ (อากาศ ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · ฝนตก {RAIN_ROUNDS} เทิร์นแล้วหยุด ผ่าน V-BOX เพื่อเปลี่ยนยางฝน · ชนออก = เซฟตี้คาร์จัดแถวใหม่
+          ไพ่ป้าย ACT เปิดเหตุการณ์ (อากาศ ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · ฝนตก {RAIN_ROUNDS} เทิร์น แล้วทางหมาด {DAMP_ROUNDS} เทิร์นก่อนแห้ง — ใส่ยางผิดสภาพแค่ช้าลง (ยางแห้งในฝน −2 ทางหมาด −1) เปลี่ยนที่ V-BOX หรือพิท · รถเสียหาย = VSC · ชนออก = SAFETY CAR (ทุกคันได้แค่ BASE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
         </RuleBlock>
       </div>
     );
