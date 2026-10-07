@@ -3,31 +3,15 @@
  * แก้มยางเป็นสีตามชนิดยาง — รถ AI ส่งสีกลาง ๆ มาแทน
  * ghost = รถโปร่งเส้นประ ใช้บอกตำแหน่งที่จะไปถึง และรถที่อยู่ในพิท
  */
-export default function Car({
-  color, ink, num, tyre = "#3a3a40", ghost = false, width = 30, className = "", label,
-}: {
-  color: string;
-  ink: string;
-  num: number;
-  tyre?: string;
-  ghost?: boolean;
-  width?: number;
-  className?: string;
-  label?: string;
-}) {
+type Paint = { color: string; ink: string; num: number; tyre?: string; ghost?: boolean };
+
+/** ตัวรถในพิกัด 60×26 (หัวชี้ขวา) — ใช้ซ้อนใน SVG อื่นได้ เช่นบนแผนที่สนาม */
+export function CarBody({ color, ink, num, tyre = "#3a3a40", ghost = false }: Paint) {
   const body = ghost ? "#ffffff" : color;
   const fill = ghost ? 0 : 1;
   const dash = ghost ? "2 1.6" : undefined;
   return (
-    <svg
-      viewBox="0 0 60 26"
-      width={width}
-      height={Math.round((width * 26) / 60)}
-      role={label ? "img" : undefined}
-      aria-label={label}
-      aria-hidden={label ? undefined : true}
-      className={`block overflow-visible ${className}`}
-    >
+    <>
       <rect x="0.8" y="3" width="5.4" height="20" rx="1.4" fill="#0b0b0e" stroke={body} strokeWidth="1.1" strokeDasharray={dash} />
       <rect x="1.6" y="10.5" width="3.8" height="5" rx="1" fill={body} fillOpacity={fill} />
       {[
@@ -52,6 +36,28 @@ export default function Car({
       <text x="13.2" y="13.3" textAnchor="middle" dominantBaseline="central" fontSize="6.6" fontWeight="800" fill={ghost ? "#ffffff" : ink}>
         {num}
       </text>
+    </>
+  );
+}
+
+export default function Car({
+  color, ink, num, tyre = "#3a3a40", ghost = false, width = 30, className = "", label,
+}: Paint & {
+  width?: number;
+  className?: string;
+  label?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 60 26"
+      width={width}
+      height={Math.round((width * 26) / 60)}
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      className={`block overflow-visible ${className}`}
+    >
+      <CarBody color={color} ink={ink} num={num} tyre={tyre} ghost={ghost} />
     </svg>
   );
 }

@@ -66,6 +66,8 @@ export type Board = {
   drs: Zone[];
   /** โซนเบรกก่อนเข้าพิท (ช่องท้ายรอบก่อนเส้นสตาร์ท) */
   pitEntry: Zone;
+  /** ช่อง V-BOX บนสนาม — ผ่านแล้วสลับยางฝน/ยางแห้ง และซ่อมรถ */
+  vbox: number;
 };
 
 export const CELLS_PER_LAP = 36;
@@ -179,11 +181,25 @@ function straightRuns(cells: Pt[], corners: Zone[], deg: number): Zone[] {
     .sort((a, b) => a.start - b.start);
 }
 
+/** วาง V-BOX กลางรอบ ห่างจากโค้งและโซนเข้าพิท (ทางตรงก่อน) */
+export function findVbox(cells: Pt[], corners: Zone[], drs: Zone[]): number {
+  const n = cells.length;
+  const inZone = (z: Zone, c: number) =>
+    z.start <= z.end ? c >= z.start && c <= z.end : c >= z.start || c <= z.end;
+  const ok = (c: number) => c > 0 && c < n - PIT_ENTRY_CELLS && !corners.some((z) => inZone(z, c));
+  const mid = Math.floor(n / 2);
+  const order = Array.from({ length: n }, (_, k) => (k % 2 ? mid + Math.ceil(k / 2) : mid - k / 2)).filter(
+    (c) => c >= 0 && c < n,
+  );
+  return order.find((c) => ok(c) && !drs.some((z) => inZone(z, c))) ?? order.find(ok) ?? mid;
+}
+
 export function buildBoard(circuitId: string, name: string): Board | null {
   const track = circuitTrack(circuitId);
   if (!track) return null;
   const cells = resampleLoop(parsePolyline(track.d), CELLS_PER_LAP);
   const corners = findCorners(cells);
+  const drs = findStraights(cells, corners);
   return {
     circuitId,
     name,
@@ -192,7 +208,8 @@ export function buildBoard(circuitId: string, name: string): Board | null {
     h: track.h,
     cells,
     corners,
-    drs: findStraights(cells, corners),
+    drs,
     pitEntry: { start: CELLS_PER_LAP - PIT_ENTRY_CELLS, end: CELLS_PER_LAP - 1 },
+    vbox: findVbox(cells, corners, drs),
   };
 }

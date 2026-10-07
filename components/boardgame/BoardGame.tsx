@@ -1,385 +1,42 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
-import { Flag, RotateCcw, Zap } from "lucide-react";
-import OsmCredit from "@/components/OsmCredit";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { CircleHelp, Cloud, CloudRain, Flag, List, RotateCcw, Sun, X, Zap } from "lucide-react";
 import Car from "@/components/boardgame/Car";
-import type { Board, Pt } from "@/lib/boardgame/board";
+import Qualifying from "@/components/boardgame/Qualifying";
+import TrackView from "@/components/boardgame/TrackView";
+import {
+  ActionCard3D, Coin, DieFace, HandCard, Meter, MoveCard3D, PitwallChip, SimpleCard,
+} from "@/components/boardgame/Cards";
+import { AI_TEAMS, COMPOUND_COLOR, HUMAN_TEAMS, WET_COLOR, look, tyreOf } from "@/components/boardgame/look";
+import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
-  BASE_MOVE, BOX_AT, COMPOUNDS, ERS_BONUS, ERS_MAX, GRID_SIZE, MOVE_DECK, PIT_LEN, PIT_SPEED,
-  TOKEN_USES, WEAR_MAX, WORN_MOVE,
-  activeDriver, attackTarget, choose, commit, drsTarget, inZone, lapCell, moveValue, newGame,
-  onTrack, options, slipTargetOf, standings, travel, zoneAt,
-  type CarSpec, type Choice, type Compound, type Driver, type GameState, type Lane, type TurnLog,
+  ACTION_INFO, BASE_MOVE, COMPOUNDS, ERS_BONUS, ERS_MAX, FLAG_LEN, GRID_SIZE, INCIDENT_INFO, PENALTY_PLACES,
+  PITWALL_DECK, PITWALL_INFO, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WEATHER_MAX, WORN_MOVE,
+  activeDriver, attackTarget, canPitwall, choose, commit, drsTarget, isRain, lapCell, limits, newGame,
+  options, playPitwall, reportTarget, slipTargetOf, standings, travel,
+  type CarSpec, type Choice, type Compound, type Driver, type GameEvent, type GameState, type Lane, type TurnLog,
 } from "@/lib/boardgame/engine";
 
-/** ทีมของผู้เล่น — ชื่อทีม/นักขับสมมติ สีแดงกับขาวให้ตัดกันบนพื้นดำ */
-const HUMAN_TEAMS = [
-  { name: "เมเทียร์ เรซซิ่ง", color: "#E10600", ink: "#fff", drivers: [{ name: "ภูมิ", num: 7 }, { name: "นาวิน", num: 17 }] },
-  { name: "ไอซ์ไบรท์ เรซซิ่ง", color: "#DEDEDE", ink: "#08080A", drivers: [{ name: "มีนา", num: 21 }, { name: "ธาม", num: 27 }] },
-] as const;
-
-/** ทีม AI สมมติ เติมให้กริดครบ 12 คัน */
-const AI_TEAMS = [
-  { name: "ไลท์สปีด", nums: [3, 4] },
-  { name: "ทาสคาน", nums: [11, 12] },
-  { name: "โอไรออน", nums: [19, 20] },
-  { name: "บลูเฟิร์น", nums: [24, 25] },
-  { name: "ซันเดอร์", nums: [38, 39] },
-];
-const AI_LOOK = { color: "#4a4a55", ink: "#DEDEDE" };
-const look = (d: Driver) => (d.ai ? AI_LOOK : HUMAN_TEAMS[d.team]);
-const COMPOUND_COLOR: Record<Compound, string> = { yellow: "#facc15", red: "#E10600" };
-const tyreOf = (d: Driver) => (d.ai ? "#3a3a40" : COMPOUND_COLOR[d.compound]);
-const KERB = "repeating-linear-gradient(90deg,#E10600 0 4px,#fff 4px 8px)";
-
 const LAP_CHOICES = [4, 2, 1];
-/** แถบสนามข้างหน้าแสดงกี่ช่อง */
-const RIBBON = 12;
 /** ความยาวแอนิเมชันไพ่ลอยขึ้นตอนกดเดิน (ตรงกับ .bg-play ใน globals.css) */
 const PLAY_MS = 550;
+/** ไฟสตาร์ท 5 ดวงแล้วดับ (ตรงกับ .bg-lights ใน globals.css) */
+const LIGHTS_MS = 3400;
 
-/* ---------- แผนที่สนามทั้งวง ---------- */
-
-function lanePoints(cells: Pt[], off: number) {
-  const n = cells.length;
-  return cells.map((c, i) => {
-    const a = cells[(i - 1 + n) % n];
-    const b = cells[(i + 1) % n];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len;
-    const ny = dx / len;
-    const at = (k: number) => ({ x: c.x + nx * off * k, y: c.y + ny * off * k });
-    return { lanes: [at(-1), at(1)] as const, edge: at(2.3), pit: at(-3.6) };
-  });
-}
-
-function MapView({ board, state, activeId }: { board: Board; state: GameState; activeId: number | null }) {
-  const pad = 8;
-  const off = 1.4;
-  const geo = lanePoints(board.cells, off);
-  const t = state.track;
-  const pitCells = Array.from({ length: PIT_LEN }, (_, k) => lapCell(t, t.pitEntry.start + k));
-  const pitLine = pitCells.map((c) => `${geo[c].pit.x},${geo[c].pit.y}`).join(" ");
-  const pos = (d: Driver) =>
-    d.pit ? geo[lapCell(t, d.pit.base + d.pit.pos)].pit : geo[lapCell(t, d.progress)].lanes[d.lane];
-  const racers = state.drivers.filter((d) => d.finished === null);
-  const start = board.cells[0];
-  return (
-    <section aria-label="แผนที่สนาม" className="relative rounded-2xl border border-white/10 bg-[#0f0f13] p-2">
-      <svg
-        viewBox={`${-pad} ${-pad} ${board.w + pad * 2} ${board.h + pad * 2}`}
-        className="mx-auto block max-h-[17rem] w-full"
-        role="img"
-        aria-label={`แผนที่สนาม${board.name} รถบนสนาม ${racers.length} คัน`}
-      >
-        <path d={board.d} fill="none" stroke="#3a3a44" strokeWidth={off * 5.2} strokeLinejoin="round" strokeLinecap="round" />
-        <path d={board.d} fill="none" stroke="#24242b" strokeWidth={off * 4.2} strokeLinejoin="round" strokeLinecap="round" />
-        <polyline points={pitLine} fill="none" stroke="#DEDEDE" strokeOpacity={0.35} strokeWidth={0.7} strokeDasharray="1 0.8" />
-        <text x={geo[pitCells[BOX_AT]].pit.x} y={geo[pitCells[BOX_AT]].pit.y - 1.8} textAnchor="middle" fontSize={1.8} fontWeight={800} fill="#DEDEDE" fillOpacity={0.75}>
-          PIT
-        </text>
-        <path d={board.d} fill="none" stroke="#E10600" strokeOpacity={0.5} strokeWidth={0.3} strokeDasharray="1.4 1" />
-        {geo.map((g, i) => (
-          <g key={i}>
-            {zoneAt(t, t.corners, i) >= 0 && (
-              <circle cx={g.edge.x} cy={g.edge.y} r={1} fill="#E10600" stroke="#fff" strokeWidth={0.35} />
-            )}
-            {zoneAt(t, t.drs, i) >= 0 && (
-              <rect x={g.edge.x - 0.7} y={g.edge.y - 0.7} width={1.4} height={1.4} fill="#DEDEDE" fillOpacity={0.85} />
-            )}
-            {inZone(t.pitEntry, i) && <circle cx={g.edge.x} cy={g.edge.y} r={0.8} fill="none" stroke="#DEDEDE" strokeWidth={0.4} />}
-          </g>
-        ))}
-        <rect x={start.x - 1.5} y={start.y - 1.5} width={3} height={3} fill="#fff" />
-        <rect x={start.x - 1.5} y={start.y - 1.5} width={1.5} height={1.5} fill="#08080A" />
-        <rect x={start.x} y={start.y} width={1.5} height={1.5} fill="#08080A" />
-        {[...racers]
-          .sort((a, b) => Number(b.ai) - Number(a.ai) || Number(a.id === activeId) - Number(b.id === activeId))
-          .map((d) => {
-            const p = pos(d);
-            const c = look(d);
-            const me = d.id === activeId;
-            const r = d.ai ? 1.15 : 1.5;
-            return (
-              <g
-                key={d.id}
-                className="transition-transform duration-500 ease-out motion-reduce:transition-none"
-                style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
-              >
-                {me && <circle r={r + 1} fill="none" stroke="#E10600" strokeWidth={0.6} />}
-                <circle
-                  r={r}
-                  fill={d.pit ? "transparent" : c.color}
-                  stroke={d.pit ? "#DEDEDE" : d.ai ? "#08080A" : "#fff"}
-                  strokeWidth={d.ai ? 0.3 : 0.45}
-                  strokeDasharray={d.pit ? "0.6 0.5" : undefined}
-                />
-                <text textAnchor="middle" dominantBaseline="central" fontSize={r * 1.05} fontWeight={800} fill={d.pit ? "#DEDEDE" : c.ink}>
-                  {d.num}
-                </text>
-              </g>
-            );
-          })}
-      </svg>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-1 text-[11px] text-white/60">
-        <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-(--color-f1)" aria-hidden />โค้ง</span>
-        <span><span className="mr-1 inline-block h-2 w-2 bg-[#DEDEDE]" aria-hidden />DRS</span>
-        <span><span className="mr-1 inline-block h-2 w-2 rounded-full border border-[#DEDEDE]" aria-hidden />โซนเข้าพิท</span>
-      </div>
-      <OsmCredit className="bottom-2 right-2" />
-    </section>
-  );
-}
-
-/* ---------- แถบสนามข้างหน้า ---------- */
-
-function Ribbon({
-  state, d, ghost,
-}: {
-  state: GameState;
-  d: Driver;
-  ghost: { progress: number; lane: Lane } | null;
-}) {
-  const t = state.track;
-  const from = d.progress;
-  const cells = Array.from({ length: RIBBON }, (_, i) => from + i);
-  const carAt = (q: number, lane: Lane) =>
-    state.drivers.find((o) => onTrack(o) && o.progress === q && o.lane === lane && o.id !== d.id);
-  const corners = cells.filter((q) => zoneAt(t, t.corners, q) >= 0).map((q) => lapCell(t, q));
-  return (
-    <section aria-label="สนามข้างหน้า">
-      <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <span className="poster text-xs text-white">ข้างหน้า #{d.num}</span>
-        <span className="truncate text-[11px] text-white/60">
-          {corners.length ? `โค้งที่ช่อง ${corners.join(", ")}` : "ทางโล่ง ไม่มีโค้งใน 12 ช่อง"}
-        </span>
-      </div>
-      <div className="rounded-2xl border border-white/10 bg-[#24242b] p-1.5 pb-1">
-        <div className="grid grid-cols-12 gap-0.5">
-          {cells.map((q) => {
-            const corner = zoneAt(t, t.corners, q) >= 0;
-            const drs = zoneAt(t, t.drs, q) >= 0;
-            const entry = inZone(t.pitEntry, lapCell(t, q));
-            const lane = corner ? "#3b2a2c" : "#2f2f37";
-            const slot = (l: Lane) => {
-              const isGhost = ghost && ghost.progress === q && ghost.lane === l;
-              const isMe = q === from && l === d.lane && d.pit === null;
-              const other = carAt(q, l);
-              return (
-                <div
-                  className="flex h-8 items-center justify-center rounded-md"
-                  style={{ background: lane, outline: isGhost ? "2px dashed #fff" : undefined, outlineOffset: -2 }}
-                >
-                  {isGhost ? (
-                    <Car color={look(d).color} ink={look(d).ink} num={d.num} ghost width={28} className="bg-ghost" />
-                  ) : isMe ? (
-                    <span className={`rounded-md ${ghost ? "opacity-40" : "bg-live"}`}>
-                      <Car color={look(d).color} ink={look(d).ink} num={d.num} tyre={tyreOf(d)} width={28} />
-                    </span>
-                  ) : other ? (
-                    <Car color={look(other).color} ink={look(other).ink} num={other.num} tyre={tyreOf(other)} width={other.ai ? 24 : 28} />
-                  ) : null}
-                </div>
-              );
-            };
-            const lc = lapCell(t, q);
-            return (
-              <div key={q} className="flex min-w-0 flex-col gap-0.5">
-                <div className="h-1 rounded-sm" style={{ background: corner ? KERB : entry ? "rgba(222,222,222,.35)" : "transparent" }} />
-                {slot(0)}
-                {slot(1)}
-                <div className="h-1 rounded-sm" style={{ background: drs ? "#DEDEDE" : "transparent" }} />
-                <span className={`text-center text-[9px] tabular-nums ${lc === 0 ? "font-bold text-(--color-f1-text)" : "text-white/55"}`}>
-                  {lc === 0 ? "S" : lc}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-white/60">
-        <span className="flex items-center gap-1"><span className="h-1 w-3.5 rounded-sm" style={{ background: KERB }} />โค้ง ต้องหยุด</span>
-        <span className="flex items-center gap-1"><span className="h-1 w-3.5 rounded-sm bg-[#DEDEDE]" />DRS</span>
-        <span>แถวบน = เส้นแข่ง</span>
-      </div>
-    </section>
-  );
-}
-
-/* ---------- ชิ้นส่วนแผงนักขับ ---------- */
-
-function Meter({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
-  return (
-    <span className="flex flex-1 items-center gap-0.5" role="img" aria-label={`${label} ${value}/${max}`}>
-      {Array.from({ length: max }, (_, i) => (
-        <span key={i} className="h-2.5 flex-1 rounded-sm" style={{ background: i < value ? color : "rgba(255,255,255,0.12)" }} />
-      ))}
-    </span>
-  );
-}
-
-function Stat({ label, foot, children }: { label: string; foot: string; children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5 rounded-xl bg-[#1a1a20] p-2">
-      <span className="text-[10px] text-white/60">{label}</span>
-      <div className="flex items-center gap-1">{children}</div>
-      <span className="truncate text-[10px] text-white/60">{foot}</span>
-    </div>
-  );
-}
-
-function Coin({ n, style }: { n: number; style: CSSProperties }) {
-  return (
-    <span className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-extrabold text-white tabular-nums" style={style}>
-      {n}
-    </span>
-  );
-}
-
-/** ไพ่ตัวเลือกในมือ — ปุ่มจริง แจกเข้ามือทีละใบ */
-function HandCard({
-  i, onClick, disabled, tone, kicker, big, foot, peek = false,
-}: {
-  i: number;
-  onClick: () => void;
-  disabled?: boolean;
-  tone: "dark" | "red" | "light" | "yellow";
-  kicker: string;
-  big: ReactNode;
-  foot: string;
-  peek?: boolean;
-}) {
-  const tones = {
-    dark: "bg-[#1F1F24] text-white border-white/20",
-    red: "bg-(--color-f1) text-white border-white shadow-[4px_4px_0_#8a0400,8px_8px_0_#4d0200]",
-    light: "bg-[#DEDEDE] text-[#08080A] border-white",
-    yellow: "bg-[#facc15] text-[#08080A] border-white",
-  } as const;
-  return (
-    <div className="bg-deal" style={{ animationDelay: `${i * 0.09}s` }}>
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        className={`flex h-36 w-full flex-col justify-between rounded-2xl border-2 p-2.5 text-left transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 motion-reduce:transition-none ${tones[tone]} ${peek && !disabled ? "bg-peek" : ""}`}
-      >
-        <span className="poster text-[11px] opacity-80">{kicker}</span>
-        <span className="poster text-center text-4xl leading-none">{big}</span>
-        <span className="text-center text-[10px] leading-tight opacity-80">{foot}</span>
-      </button>
-    </div>
-  );
-}
-
-/** ไพ่ MOVE ที่เปิดแล้ว: พลิกจากหลังไพ่มาหน้าไพ่ตอนแสดงครั้งแรก */
-function MoveCard3D({ id, compound, playing }: { id: number; compound: Compound; playing: boolean }) {
-  const c = MOVE_DECK[id];
-  return (
-    <div className={`bg-stage h-[188px] w-[132px] flex-none ${playing ? "bg-play" : ""}`}>
-      <div className="bg-card3d bg-flip h-full w-full" role="img" aria-label={`ไพ่ MOVE ยางเหลือง ${c.y} ยางแดง ${c.r}${c.tires ? " มีป้ายสึก" : ""}${c.ers ? " มีสายฟ้า" : ""}`}>
-        <div className="bg-face flex flex-col items-center justify-center gap-2 border-[3px] border-white bg-(--color-f1)">
-          <span className="poster text-2xl text-white">MOVE</span>
-        </div>
-        <div className="bg-face bg-front flex flex-col gap-2 border-[3px] border-white bg-[#f4f4f2] p-2.5 text-[#08080A]">
-          <div className="flex items-center justify-between">
-            <span className="poster text-xs">MOVE</span>
-            <span className="flex gap-1">
-              {c.tires && <span className="rounded-md bg-(--color-f1) px-1.5 py-0.5 text-[10px] font-extrabold text-white">สึก</span>}
-              {c.ers && (
-                <span className="flex items-center rounded-md bg-[#08080A] px-1 py-0.5">
-                  <Zap className="h-2.5 w-2.5 fill-white text-white" aria-hidden />
-                </span>
-              )}
-            </span>
-          </div>
-          {(["yellow", "red"] as Compound[]).map((k) => (
-            <div
-              key={k}
-              className={`flex items-center justify-between rounded-lg px-2 py-0.5 ${k === compound ? "bg-[#08080A] text-white" : "bg-[#e7e7e3] text-black/55"}`}
-            >
-              <span className="flex items-center gap-1 text-[10px] font-semibold">
-                <span className="h-2.5 w-2.5 rounded-full border border-current" style={{ background: COMPOUND_COLOR[k] }} />
-                {COMPOUNDS[k].label}
-              </span>
-              <span className={`poster tabular-nums ${k === compound ? "text-4xl" : "text-2xl"}`}>{moveValue(c, k)}</span>
-            </div>
-          ))}
-          <span className="mt-auto text-[10px] leading-snug text-black/70">
-            {c.tires ? "ยางสึก (เหลือง 1 · แดง 2)" : "ไม่สึกยาง"}
-            {c.ers ? " · ชาร์จ ERS ถ้าไม่ใช้ตานี้" : ""}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SimpleCard({ kicker, value, playing }: { kicker: string; value: number; playing: boolean }) {
-  return (
-    <div className={`flex h-[188px] w-[132px] flex-none flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/25 bg-[#1F1F24] ${playing ? "bg-play" : ""}`}>
-      <span className="poster text-xs text-white/70">{kicker}</span>
-      <span className="poster text-6xl leading-none text-white tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function ExtraButton({
-  on, disabled, onClick, icon, title, foot,
-}: {
-  on: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  icon: ReactNode;
-  title: string;
-  foot: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      disabled={disabled}
-      onClick={onClick}
-      className={`flex min-h-[76px] flex-col items-center gap-1 rounded-2xl border-2 px-1.5 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        on ? "border-(--color-f1) bg-(--color-f1)/15" : "border-white/15 bg-[#1a1a20] hover:border-white/35"
-      }`}
-    >
-      {icon}
-      <span className="text-xs font-extrabold text-white">{title}</span>
-      <span className="text-center text-[10px] leading-tight text-white/60">{foot}</span>
-    </button>
-  );
-}
-
-function logText(s: GameState, l: TurnLog) {
-  const d = s.drivers[l.driver];
-  const how: Record<TurnLog["kind"], string> = {
-    base: "เดินพื้นฐาน",
-    card: l.ai ? "เดิน" : "เปิดไพ่ MOVE",
-    drs: "ใช้ DRS",
-    slip: "สลิปสตรีม",
-    worn: "ยางพังเดินเอง",
-    pitIn: "เข้าเลนพิท",
-    pitLane: "วิ่งในเลนพิท",
-    box: "เปลี่ยนยางแล้วออกจากพิท",
-  };
-  const bits = [`#${d.num} ${d.name} ${how[l.kind]} ${l.moved} ช่อง`];
-  if (l.ers) bits.push("ERS +2");
-  if (l.attacked !== null) bits.push(`ATTACK ดัน #${s.drivers[l.attacked].num} ออกนอกเส้น`);
-  if (l.block) bits.push("BLOCK คันหลัง");
-  if (l.corner) bits.push("หยุดในโค้ง");
-  if (l.blocked) bits.push("ติดรถข้างหน้า");
-  if (l.wear) bits.push(`ยางสึก ${l.wear} ขั้น`);
-  if (l.nowWorn) bits.push("ยางพัง!");
-  if (l.recharge) bits.push("ชาร์จ ERS");
-  if (l.finished) bits.push(`เข้าเส้นชัยอันดับ ${d.finished}`);
-  return bits.join(" · ");
-}
+const calm = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ---------- หน้าตั้งค่า ---------- */
+
+type Setup = {
+  players: number;
+  laps: number;
+  quali: boolean;
+  weather: "dry" | "random";
+  compounds: Compound[][];
+};
 
 function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -396,56 +53,81 @@ function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; c
   );
 }
 
-function Setup({ onStart }: { onStart: (players: number, laps: number, compounds: Compound[][]) => void }) {
-  const [players, setPlayers] = useState(2);
-  const [laps, setLaps] = useState(4);
-  const [compounds, setCompounds] = useState<Compound[][]>([
-    ["yellow", "red"],
-    ["yellow", "red"],
-  ]);
+function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
+  const [s, set] = useState<Setup>({
+    players: 2,
+    laps: 4,
+    quali: true,
+    weather: "dry",
+    compounds: [
+      ["yellow", "red"],
+      ["yellow", "red"],
+    ],
+  });
+  const up = (p: Partial<Setup>) => set((cur) => ({ ...cur, ...p }));
   return (
     <section className="card space-y-4 p-4" aria-label="ตั้งค่าการแข่ง">
-      <div>
-        <p className="mb-2 text-xs font-medium text-white/55">จำนวนผู้เล่น (ทีมละ 2 คัน ที่เหลือเป็นรถ AI จนครบ {GRID_SIZE} คัน)</p>
+      <Group label={`จำนวนผู้เล่น (ทีมละ 2 คัน ที่เหลือเป็นรถ AI จนครบ ${GRID_SIZE} คัน)`}>
         <div className="grid grid-cols-2 gap-2">
           {[1, 2].map((n) => (
-            <Toggle key={n} on={players === n} onClick={() => setPlayers(n)}>
+            <Toggle key={n} on={s.players === n} onClick={() => up({ players: n })}>
               <b>{n} คน</b> <span className="text-white/55">· AI {GRID_SIZE - n * 2} คัน</span>
             </Toggle>
           ))}
         </div>
-      </div>
-      <div>
-        <p className="mb-2 text-xs font-medium text-white/55">ระยะเรซ</p>
+      </Group>
+      <Group label="ระยะเรซ">
         <div className="grid grid-cols-3 gap-2">
           {LAP_CHOICES.map((n) => (
-            <Toggle key={n} on={laps === n} onClick={() => setLaps(n)}>
+            <Toggle key={n} on={s.laps === n} onClick={() => up({ laps: n })}>
               <b>{n} รอบ</b>
               {n === 4 && <span className="block text-[11px] text-white/55">เต็มรูปแบบ</span>}
             </Toggle>
           ))}
         </div>
+      </Group>
+      <div className="grid grid-cols-2 gap-3">
+        <Group label="กริดออกสตาร์ท">
+          <div className="grid gap-2">
+            <Toggle on={s.quali} onClick={() => up({ quali: true })}>
+              <b>ควอลิฟาย</b> <span className="block text-[11px] text-white/55">Q1 + Q2 ด้วยไพ่</span>
+            </Toggle>
+            <Toggle on={!s.quali} onClick={() => up({ quali: false })}>
+              <b>สุ่มกริด</b>
+            </Toggle>
+          </div>
+        </Group>
+        <Group label="อากาศตอนเริ่ม">
+          <div className="grid gap-2">
+            <Toggle on={s.weather === "dry"} onClick={() => up({ weather: "dry" })}>
+              <b>แดดออก</b> <span className="block text-[11px] text-white/55">เหมาะกับรอบแรก</span>
+            </Toggle>
+            <Toggle on={s.weather === "random"} onClick={() => up({ weather: "random" })}>
+              <b>ทอยเต๋าอากาศ</b>
+            </Toggle>
+          </div>
+        </Group>
       </div>
-      {HUMAN_TEAMS.slice(0, players).map((team, ti) => (
+      {HUMAN_TEAMS.slice(0, s.players).map((team, ti) => (
         <div key={ti} className="space-y-2">
           <p className="text-sm">
             <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: team.color, color: team.ink }}>
               {team.name}
             </span>{" "}
-            <span className="text-white/55">เลือกยางออกตัวของแต่ละคัน</span>
+            <span className="text-white/55">เลือกยางออกตัว</span>
           </p>
           {team.drivers.map((dr, di) => (
             <div key={di} className="grid grid-cols-[6.5rem_1fr_1fr] items-center gap-2 text-sm">
               <span className="flex items-center gap-1.5 font-bold">
-                <Car color={team.color} ink={team.ink} num={dr.num} tyre={COMPOUND_COLOR[compounds[ti][di]]} width={40} />
+                <Car color={team.color} ink={team.ink} num={dr.num} tyre={COMPOUND_COLOR[s.compounds[ti][di]]} width={40} />
                 {dr.name}
               </span>
               {(["yellow", "red"] as Compound[]).map((k) => (
                 <Toggle
                   key={k}
-                  on={compounds[ti][di] === k}
+                  on={s.compounds[ti][di] === k}
                   onClick={() =>
-                    setCompounds((cur) => cur.map((row, r) => (r === ti ? row.map((v, c) => (c === di ? k : v)) : row)))
+                    up({ compounds: s.compounds.map((row, r) => (r === ti ? row.map((v, c) => (c === di ? k : v)) : row)) })
                   }
                 >
                   <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full" style={{ background: COMPOUND_COLOR[k] }} aria-hidden />
@@ -457,23 +139,26 @@ function Setup({ onStart }: { onStart: (players: number, laps: number, compounds
           ))}
         </div>
       ))}
-      <button
-        type="button"
-        onClick={() => onStart(players, laps, compounds)}
-        className="w-full rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white"
-      >
-        ออกสตาร์ท
+      <button type="button" onClick={() => onStart(s)} className="w-full rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white">
+        {s.quali ? "ไปควอลิฟาย" : "ออกสตาร์ท"}
       </button>
     </section>
   );
 }
 
-/* ---------- เกม ---------- */
+function Group({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-white/55">{label}</p>
+      {children}
+    </div>
+  );
+}
 
-function buildCars(players: number, compounds: Compound[][]): { cars: CarSpec[]; teams: string[] } {
+function buildCars(setup: Setup): { cars: CarSpec[]; teams: string[] } {
   const cars: CarSpec[] = [];
-  HUMAN_TEAMS.slice(0, players).forEach((team, ti) =>
-    team.drivers.forEach((dr, di) => cars.push({ ...dr, team: ti, ai: false, compound: compounds[ti][di] })),
+  HUMAN_TEAMS.slice(0, setup.players).forEach((team, ti) =>
+    team.drivers.forEach((dr, di) => cars.push({ ...dr, team: ti, ai: false, compound: setup.compounds[ti][di] })),
   );
   for (const team of AI_TEAMS) {
     for (const num of team.nums) {
@@ -481,12 +166,178 @@ function buildCars(players: number, compounds: Compound[][]): { cars: CarSpec[];
       cars.push({ name: team.name, num, team: -1, ai: true });
     }
   }
-  return { cars, teams: HUMAN_TEAMS.slice(0, players).map((t) => t.name) };
+  return { cars, teams: HUMAN_TEAMS.slice(0, setup.players).map((t) => t.name) };
 }
 
-const calm = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+/* ---------- ข้อความเหตุการณ์ ---------- */
+
+const carName = (s: GameState, id: number) => `#${s.drivers[id].num} ${s.drivers[id].name}`;
+
+function eventText(s: GameState, e: GameEvent): string {
+  switch (e.t) {
+    case "action":
+      return `${carName(s, e.driver)} เปิดไพ่ ACTION: ${ACTION_INFO[e.card].title}${e.ok ? "" : " (ไม่มีผล)"}`;
+    case "pitwall":
+      return `${HUMAN_TEAMS[e.team]?.name} ได้ไพ่ PITWALL เพิ่ม`;
+    case "spin":
+      return `${carName(s, e.driver)} ลื่นหมุนออกนอกสนาม!`;
+    case "incident":
+      return `เฉี่ยวชน: ${e.rolls.map((r) => `#${s.drivers[r.driver].num} ${INCIDENT_INFO[r.face].title}`).join(" · ")}`;
+    case "sc":
+      return "SAFETY CAR ออก! จัดแถวใหม่ทุกคัน";
+    case "weather":
+      return `อากาศเปลี่ยน: ขั้น ${e.from} → ${e.to} (${weatherName(e.to)})`;
+    case "vbox":
+      return `${carName(s, e.driver)} ผ่าน V-BOX เปลี่ยนเป็นยาง${e.wet ? "ฝน" : "แห้ง"}`;
+    case "warn":
+      return `${carName(s, e.driver)} โดนใบเตือน`;
+    case "penalty":
+      return `${carName(s, e.driver)} โดนโทษ ต้องจอดเพิ่มในพิท`;
+    case "paceEnd":
+      return `${carName(s, e.driver)} หลุดจังหวะ จบโหมด PACE`;
+    case "served":
+      return `${carName(s, e.driver)} จอดรับโทษในพิท`;
+  }
+}
+
+function logText(s: GameState, l: TurnLog) {
+  const how: Record<TurnLog["kind"], string> = {
+    base: "เดินพื้นฐาน",
+    card: l.ai ? "เดิน" : "เปิดไพ่ MOVE",
+    drs: "ใช้ DRS",
+    slip: "สลิปสตรีม",
+    worn: "เดินเอง",
+    push: "PUSH",
+    pace: "PACE",
+    rejoin: "กลับเข้าสนาม",
+    pitIn: "เข้าเลนพิท",
+    pitLane: "วิ่งในเลนพิท",
+    box: "จอดพิท",
+  };
+  const bits = [`${carName(s, l.driver)} ${how[l.kind]}${l.moved ? ` ${l.moved} ช่อง` : ""}`];
+  if (l.ers) bits.push("ERS +2");
+  if (l.attacked !== null) bits.push(`ATTACK ดัน #${s.drivers[l.attacked].num} ออก`);
+  if (l.block) bits.push("BLOCK");
+  if (l.corner) bits.push("หยุดในโค้ง");
+  if (l.blocked) bits.push("ติดรถ");
+  if (l.wear) bits.push(`ยางสึก ${l.wear}`);
+  if (l.nowWorn) bits.push("ยางพัง!");
+  if (l.recharge) bits.push("ชาร์จ ERS");
+  if (l.finished) bits.push(`เข้าเส้นชัย P${s.drivers[l.driver].finished}`);
+  return bits.join(" · ");
+}
+
+const MAJOR = new Set<GameEvent["t"]>(["action", "incident", "sc", "weather", "spin", "penalty"]);
+
+const weatherName = (w: number) => (w >= RAIN_AT ? "ฝนตก" : w >= 3 ? "เมฆครึ้ม" : "แดดออก");
+
+function WeatherGauge({ w }: { w: number }) {
+  const Icon = w >= RAIN_AT ? CloudRain : w >= 3 ? Cloud : Sun;
+  return (
+    <span className="flex items-center gap-1 rounded-full bg-[#1F1F24] px-2 py-1" role="img" aria-label={`อากาศ ${weatherName(w)} ขั้น ${w}/${WEATHER_MAX}`}>
+      <Icon className={`h-3.5 w-3.5 ${w >= RAIN_AT ? "text-[#60a5fa]" : w >= 3 ? "text-white/70" : "text-yellow-300"}`} aria-hidden />
+      <span className="flex gap-px">
+        {Array.from({ length: WEATHER_MAX }, (_, i) => (
+          <i
+            key={i}
+            className="h-2.5 w-1.5 rounded-sm"
+            style={{ background: i + 1 === w ? "#fff" : i + 1 >= RAIN_AT ? "rgba(96,165,250,.35)" : "rgba(255,255,255,.15)" }}
+          />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/* ---------- ชั้นเหตุการณ์ (ทับแผนที่) ---------- */
+
+function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[]; onClose: () => void }) {
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/65 p-3 backdrop-blur-[2px]" role="dialog" aria-label="เหตุการณ์ในสนาม">
+      <div className="bg-pop max-h-full w-full max-w-sm space-y-2.5 overflow-y-auto rounded-2xl border border-white/15 bg-[#121216] p-3">
+        {events.map((e, i) => (
+          <div key={i}>
+            {e.t === "action" ? (
+              <div className="flex items-center gap-3">
+                <ActionCard3D kind={e.card} ok={e.ok} />
+                <p className="text-sm text-white">
+                  <b>{carName(s, e.driver)}</b>
+                  <br />
+                  <span className="text-white/70">เปิดไพ่เหตุการณ์</span>
+                </p>
+              </div>
+            ) : e.t === "incident" ? (
+              <div className="space-y-1.5">
+                <p className="poster text-sm text-(--color-f1-text)">เฉี่ยวชน! ทอยเต๋าอุบัติเหตุ</p>
+                {e.rolls.map((r, k) => (
+                  <div key={k} className="flex items-center gap-2 text-sm">
+                    <DieFace face={r.face} delay={k * 0.25} />
+                    <Car {...look(s.drivers[r.driver])} num={s.drivers[r.driver].num} width={30} />
+                    <span className="font-bold" style={{ color: INCIDENT_INFO[r.face].color }}>
+                      {INCIDENT_INFO[r.face].title}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : e.t === "sc" ? (
+              <div className="rounded-xl bg-[#facc15] px-3 py-2 text-center text-[#08080A]">
+                <p className="poster text-2xl">SAFETY CAR</p>
+                <p className="text-xs font-bold">รถทุกคันเรียงแถวบนเส้นแข่ง รถในพิทเปลี่ยนยางเสร็จทันที</p>
+              </div>
+            ) : (
+              <p className="flex items-center gap-2 text-sm text-white">
+                {e.t === "weather" ? <CloudRain className="h-4 w-4 flex-none text-[#60a5fa]" aria-hidden /> : <Flag className="h-4 w-4 flex-none text-yellow-400" aria-hidden />}
+                {eventText(s, e)}
+              </p>
+            )}
+          </div>
+        ))}
+        <button type="button" onClick={onClose} className="min-h-11 w-full rounded-full bg-white px-4 text-sm font-bold text-[#08080A]">
+          ไปต่อ
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Lights() {
+  return (
+    <div className="bg-lights pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/70" aria-live="polite">
+      <div className="flex gap-2 rounded-2xl bg-[#121216] p-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <span key={i} className="bg-light h-8 w-8 rounded-full bg-[#2a0a0a]" style={{ animationDelay: `${i * 0.5}s` }} />
+        ))}
+      </div>
+      <p className="bg-go poster text-3xl text-white">ไฟดับ! ออกตัว</p>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 md:items-center" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#121216] p-4 md:rounded-3xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="poster text-lg text-white">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="ปิด" className="rounded-full p-2 text-white/70 hover:bg-white/10">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- เกม ---------- */
+
+type Phase =
+  | { at: "setup" }
+  | { at: "quali"; setup: Setup; cars: CarSpec[]; teams: string[] }
+  | { at: "race" };
 
 export default function BoardGame({ board }: { board: Board }) {
+  const [phase, setPhase] = useState<Phase>({ at: "setup" });
   const [state, setState] = useState<GameState | null>(null);
   const [box, setBox] = useState(false);
   const [ers, setErs] = useState(false);
@@ -494,18 +345,59 @@ export default function BoardGame({ board }: { board: Board }) {
   const [block, setBlock] = useState(false);
   const [lane, setLane] = useState<Lane>(0);
   const [playing, setPlaying] = useState(false);
+  const [zoomed, setZoomed] = useState(true);
+  const [seen, setSeen] = useState<TurnLog[] | null>(null);
+  const [pw, setPw] = useState<number | null>(null);
+  const [lights, setLights] = useState(false);
+  const [modal, setModal] = useState<"rules" | "log" | null>(null);
+  const [startNote, setStartNote] = useState<string | null>(null);
 
-  if (!state) {
+  const racing = phase.at === "race" && state !== null;
+  // ระหว่างแข่งหน้าเกมเต็มจอ — กันหน้าเว็บข้างหลังเลื่อน
+  useEffect(() => {
+    if (!racing) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [racing]);
+
+  const track = { lapCells: CELLS_PER_LAP, corners: board.corners, drs: board.drs, pitEntry: board.pitEntry, vbox: board.vbox };
+
+  const startRace = (setup: Setup, cars: CarSpec[], teams: string[], grid?: number[], wear?: number[]) => {
+    const roll = setup.weather === "random" ? 1 + Math.floor(Math.random() * WEATHER_MAX) : 1;
+    const spec = wear ? cars.map((c, i) => ({ ...c, wear: wear[i] })) : cars;
+    setState(newGame(spec, teams, track, setup.laps, Math.random, grid, { weather: roll }));
+    setStartNote(setup.weather === "random" ? `ทอยเต๋าอากาศได้ ${roll} — ${weatherName(roll)}${roll >= RAIN_AT ? " ทุกคันออกตัวด้วยยางฝน" : ""}` : null);
+    setPhase({ at: "race" });
+    setSeen(null);
+    setZoomed(true);
+    if (!calm()) {
+      setLights(true);
+      setTimeout(() => setLights(false), LIGHTS_MS);
+    }
+  };
+
+  if (phase.at === "setup" || !state || phase.at === "quali") {
+    if (phase.at === "quali") {
+      return (
+        <div className="space-y-4">
+          <Qualifying cars={phase.cars} onDone={(grid, wear) => startRace(phase.setup, phase.cars, phase.teams, grid, wear)} />
+          <RulesCard />
+        </div>
+      );
+    }
     return (
       <div className="space-y-4">
-        <Setup
-          onStart={(players, laps, compounds) => {
-            const { cars, teams } = buildCars(players, compounds);
-            const track = { lapCells: CELLS_PER_LAP, corners: board.corners, drs: board.drs, pitEntry: board.pitEntry };
-            setState(newGame(cars, teams, track, laps, Math.random));
+        <SetupForm
+          onStart={(setup) => {
+            const { cars, teams } = buildCars(setup);
+            if (setup.quali) setPhase({ at: "quali", setup, cars, teams });
+            else startRace(setup, cars, teams);
           }}
         />
-        <Rules />
+        <RulesCard />
       </div>
     );
   }
@@ -517,8 +409,12 @@ export default function BoardGame({ board }: { board: Board }) {
     setAttack(false);
     setBlock(false);
     setLane(0);
+    setPw(null);
   };
-  const pick = (c: Choice) => setState((s) => (s ? choose(s, { ...c, box }, Math.random) : s));
+  const pick = (c: Choice) => {
+    setState((s) => (s ? choose(s, { ...c, box }, Math.random) : s));
+    setPw(null);
+  };
   const go = () => {
     if (playing) return;
     const extras = { ers, attack, block, lane };
@@ -533,8 +429,10 @@ export default function BoardGame({ board }: { board: Board }) {
       setTimeout(apply, PLAY_MS);
     }
   };
-  const restart = () => {
+  const exit = () => {
+    if (!state.over && !window.confirm("ออกจากการแข่งนี้?")) return;
     setState(null);
+    setPhase({ at: "setup" });
     resetExtras();
   };
 
@@ -542,285 +440,444 @@ export default function BoardGame({ board }: { board: Board }) {
   const pos = d ? order.findIndex((x) => x.id === d.id) + 1 : 0;
   const o = d ? options(state, d) : null;
   const p = state.pending;
+  const lim = d ? limits(state, d) : null;
+  const free = !!lim && !lim.slow && !lim.limp;
 
   // พรีวิวขั้นที่ 2: จะไปถึงไหน และ ATTACK ได้ไหม
   let preview: ReturnType<typeof travel> | null = null;
   let canAttack = false;
   if (d && p) {
-    preview = travel(state, d, p.value + (ers && d.ers > 0 ? ERS_BONUS : 0), lane);
-    canAttack = attackTarget(state, d, preview) !== null;
+    const bonus = p.kind === "drs" ? 0 : d.bonus;
+    preview = travel(state, d, p.value + bonus + (ers && free && d.ers > 0 ? ERS_BONUS : 0), lane);
+    canAttack = free && attackTarget(state, d, preview) !== null;
   }
   const atk = attack && canAttack;
   const landing = preview && atk ? { progress: preview.progress + 1, lane: 0 as Lane } : preview;
-  const canBlock = !!d && d.tokens.block > 0 && state.order[state.turn + 1] !== undefined;
+  const canBlock = free && !!d && d.tokens.block > 0 && state.order[state.turn + 1] !== undefined;
   const lap = (x: Driver) => Math.min(state.laps, Math.max(1, Math.floor(x.progress / CELLS_PER_LAP) + 1));
+  const leader = order[0];
 
-  return (
-    <div className="space-y-3">
-      <header className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="poster text-[11px] text-(--color-f1-text)">GRAND PRIX TOUR · {board.name}</p>
-          <p className="text-xs text-white/60">เทิร์นที่ {state.round} · รถ {GRID_SIZE} คัน</p>
-        </div>
-        <div className="flex flex-none items-center gap-1.5">
-          <span className="poster rounded-full bg-[#1F1F24] px-2.5 py-1.5 text-[13px] text-white tabular-nums">
-            LAP {lap(order[0])}/{state.laps}
+  const events = state.feed.flatMap((l) => l.events);
+  const majors = events.filter((e) => MAJOR.has(e.t));
+  const showEvents = state.feed !== seen && majors.length > 0 && !lights;
+  const rain = isRain(state);
+  const hand = d ? (state.teams[d.team]?.pitwall ?? []) : [];
+
+  const slowWhy = lim?.limp
+    ? d?.damage
+      ? "รถเสียหาย เดินเองช่องละ 3 — ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม"
+      : "ยางพัง เดินเองช่องละ 3 — ต้องเข้าพิท"
+    : lim?.flag
+      ? `ธงเหลือง: ได้แค่ BASE ห้ามไพ่/เหรียญ/ERS`
+      : d?.brakes
+        ? "เบรกร้อน: ได้แค่ BASE จนกว่าจะผ่าน V-BOX หรือเข้าพิท"
+        : d?.wet && !rain
+          ? "แดดออกแล้วแต่ใส่ยางฝน: ได้แค่ BASE — ผ่าน V-BOX เพื่อเปลี่ยนยาง"
+          : null;
+
+  // วาดลง body ตรง ๆ — หน้าเว็บมี transform จาก PageTransition ซึ่งทำให้ fixed ไม่เต็มจอและแถบเมนูล่างทับ
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex flex-col bg-[#08080A] text-white md:flex-row">
+      {/* ฝั่งสนาม */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <header className="flex h-12 flex-none items-center gap-1.5 border-b border-white/10 px-2">
+          <button type="button" onClick={exit} aria-label="ออกจากเกม" className="rounded-full p-2 text-white/70 hover:bg-white/10">
+            <X className="h-5 w-5" />
+          </button>
+          <span className="poster min-w-0 flex-1 truncate text-[11px] text-(--color-f1-text)">{board.name}</span>
+          <span className="poster rounded-full bg-[#1F1F24] px-2.5 py-1 text-[12px] tabular-nums">
+            LAP {lap(leader)}/{state.laps}
           </span>
-          {d && <span className="poster rounded-full bg-(--color-f1) px-2.5 py-1.5 text-[13px] text-white tabular-nums">P{pos}</span>}
-        </div>
-      </header>
+          <WeatherGauge w={state.weather} />
+          {d && <span className="poster rounded-full bg-(--color-f1) px-2.5 py-1 text-[12px] tabular-nums">P{pos}</span>}
+          <button type="button" onClick={() => setModal("rules")} aria-label="วิธีเล่น" className="rounded-full p-2 text-white/70 hover:bg-white/10">
+            <CircleHelp className="h-5 w-5" />
+          </button>
+        </header>
 
-      <MapView board={board} state={state} activeId={d?.id ?? null} />
-
-      {d && <Ribbon state={state} d={d} ghost={landing} />}
-
-      <section aria-label="อันดับ" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
-        {order.map((x, rank) => {
-          const c = look(x);
-          const me = d?.id === x.id;
-          return (
-            <span
-              key={x.id}
-              className={`flex flex-none items-center gap-1.5 rounded-full py-1 pl-1 pr-2.5 text-[11px] ${me ? "bg-(--color-f1)/20 font-extrabold text-white" : x.ai ? "bg-[#141418] text-white/70" : "bg-[#1a1a20] font-bold text-white"}`}
+        <div className="relative min-h-0 flex-1">
+          <TrackView board={board} state={state} focus={d} ghost={landing} zoomed={zoomed && !!d} onToggle={() => setZoomed((z) => !z)} />
+          {state.feed.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setModal("log")}
+              className="absolute inset-x-2 bottom-7 flex items-start gap-1.5 rounded-lg bg-[#08080A]/80 px-2 py-1 text-left text-[11px] text-white/80 backdrop-blur"
             >
-              <span className="poster text-white/60 tabular-nums">P{rank + 1}</span>
-              <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[9px] font-extrabold" style={{ background: c.color, color: c.ink }}>
-                {x.num}
+              <List className="mt-0.5 h-3 w-3 flex-none" aria-hidden />
+              <span className="line-clamp-2">
+                {state.feed
+                  .slice(-2)
+                  .map((l) => logText(state, l))
+                  .join(" / ")}
               </span>
-              {x.finished !== null
-                ? "เข้าเส้น"
-                : x.pit
-                  ? "พิท"
-                  : rank === 0
-                    ? "นำ"
-                    : `+${order[0].progress - x.progress}`}
-            </span>
-          );
-        })}
+            </button>
+          )}
+          {showEvents && <EventLayer s={state} events={majors} onClose={() => setSeen(state.feed)} />}
+          {lights && <Lights />}
+        </div>
+
+        <section aria-label="อันดับ" className="flex h-9 flex-none items-center gap-1 overflow-x-auto border-t border-white/10 px-2">
+          {order.map((x, rank) => {
+            const c = look(x);
+            const me = d?.id === x.id;
+            return (
+              <span
+                key={x.id}
+                className={`flex flex-none items-center gap-1 rounded-full py-0.5 pl-0.5 pr-2 text-[10px] ${me ? "bg-(--color-f1)/25 font-extrabold" : x.ai ? "bg-[#141418] text-white/70" : "bg-[#1a1a20] font-bold"}`}
+              >
+                <span className="poster pl-1 text-white/60 tabular-nums">P{rank + 1}</span>
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-extrabold" style={{ background: c.color, color: c.ink }}>
+                  {x.num}
+                </span>
+                {x.out ? "ชนออก" : x.finished !== null ? "จบ" : x.pit ? "พิท" : x.off ? "ข้างสนาม" : rank === 0 ? "นำ" : `+${leader.progress - x.progress}`}
+              </span>
+            );
+          })}
+        </section>
+      </div>
+
+      {/* แผงนักขับ */}
+      <section
+        aria-label="ตานักขับ"
+        className="max-h-[54dvh] flex-none space-y-2.5 overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-[#121216] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[420px] md:rounded-none md:border-l md:border-t-0"
+      >
+        {state.over ? (
+          <Results state={state} order={order} onRestart={exit} />
+        ) : d && o ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="bg-live flex-none rounded-xl bg-[#1a1a20] p-1">
+                <Car {...look(d)} num={d.num} tyre={tyreOf(d)} width={46} label={`รถหมายเลข ${d.num}`} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-extrabold">
+                  {d.name} · {HUMAN_TEAMS[d.team]?.name}
+                </p>
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  <Chip>{d.pit ? (d.pit.inBox ? "จอดในช่องพิท" : "เลนพิท") : d.off ? "ข้างสนาม" : d.lane === 0 ? "เส้นแข่ง" : "นอกเส้น"}</Chip>
+                  {d.wet && <Chip tone="blue">ยางฝน</Chip>}
+                  {lim?.flag && <Chip tone="yellow">ธงเหลือง</Chip>}
+                  {d.brakes && <Chip tone="orange">เบรกร้อน</Chip>}
+                  {d.damage && <Chip tone="orange">รถเสียหาย</Chip>}
+                  {d.penalty ? <Chip tone="red">ค้างโทษ</Chip> : d.warn ? <Chip>ใบเตือน</Chip> : null}
+                  {d.mode && <Chip tone="orange">{d.mode.kind === "push" ? "PUSH" : `PACE ${d.mode.value}`}</Chip>}
+                  {d.bonus > 0 && <Chip tone="orange">+{d.bonus} ช่อง</Chip>}
+                  {d.quick && <Chip tone="orange">พิทเร็ว</Chip>}
+                </div>
+              </div>
+              <span className="poster text-2xl tabular-nums">P{pos}</span>
+            </div>
+
+            <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 rounded-xl bg-[#1a1a20] px-2.5 py-2">
+              <div className="min-w-0">
+                <p className="text-[10px] text-white/60">
+                  ยาง{COMPOUNDS[d.compound].label} {d.worn ? "พัง!" : `${WEAR_MAX - d.wear}/${WEAR_MAX}`}
+                  {rain && " · ฝนไม่สึก"}
+                </p>
+                <Meter value={d.worn ? 0 : WEAR_MAX - d.wear} max={WEAR_MAX} color={d.wet ? WET_COLOR : COMPOUND_COLOR[d.compound]} label="ยางเหลือ" />
+              </div>
+              <div className="min-w-0">
+                <p className="flex items-center gap-0.5 text-[10px] text-white/60">
+                  <Zap className="h-2.5 w-2.5" aria-hidden /> ERS {d.ers}/{ERS_MAX}
+                </p>
+                <Meter value={d.ers} max={ERS_MAX} color="#DEDEDE" label="ERS" />
+              </div>
+              <div className="flex gap-1">
+                <Coin n={d.tokens.attack} label="ATTACK" style={{ border: "2px solid #E10600" }} />
+                <Coin n={d.tokens.block} label="BLOCK" style={{ border: "2px solid #DEDEDE" }} />
+                <Coin n={d.tokens.slip} label="SLIP" style={{ border: "2px dashed #DEDEDE" }} />
+              </div>
+            </div>
+
+            {/* ไพ่ PITWALL ของทีม */}
+            <div>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <span className="poster flex-none pr-1 text-[10px] text-[#fb923c]">PITWALL</span>
+                {hand.length === 0 && <span className="text-[11px] text-white/55">ยังไม่มีไพ่ — จั่วได้จากไพ่ MOVE ป้าย PIT</span>}
+                {hand.map((id, i) => (
+                  <PitwallChip
+                    key={`${id}-${i}`}
+                    id={id}
+                    selected={pw === i}
+                    disabled={!canPitwall(state, PITWALL_DECK[id].kind, d)}
+                    onClick={() => setPw((cur) => (cur === i ? null : i))}
+                  />
+                ))}
+              </div>
+              {pw !== null && hand[pw] !== undefined && (
+                <PitwallDetail
+                  state={state}
+                  d={d}
+                  cardId={hand[pw]}
+                  onPlay={(set) => {
+                    setState((s) => (s ? playPitwall(s, pw, Math.random, set) : s));
+                    setPw(null);
+                  }}
+                />
+              )}
+            </div>
+
+            {slowWhy && !p && <p className="rounded-lg bg-yellow-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-yellow-300">{slowWhy}</p>}
+
+            {!p && (
+              <>
+                <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 pt-1">
+                  {o.inBox ? (
+                    d.pit?.served ? (
+                      <HandCard i={0} tone="dark" kicker="PIT" big="→" foot="รับโทษครบ ออกจากพิท" onClick={() => pick({ kind: "box" })} />
+                    ) : (
+                      <>
+                        {[...new Set(d.sets)].map((k, i) => (
+                          <HandCard key={k} i={i} tone={k === "red" ? "red" : "yellow"} kicker="PIT" big={<span className="text-xl">{COMPOUNDS[k].label}</span>} foot={rain ? "ยางใหม่ (ใส่แบบฝน)" : "ใส่ยางใหม่ชุดนี้"} onClick={() => pick({ kind: "box", set: k })} />
+                        ))}
+                        {!d.worn && (
+                          <HandCard i={3} tone="dark" kicker="PIT" big={<span className="text-xl">เดิม</span>} foot={d.penalty ? "ยางเดิม · จอดรับโทษ" : "ยางเดิม ซ่อมรถ"} onClick={() => pick({ kind: "box", set: "keep" })} />
+                        )}
+                      </>
+                    )
+                  ) : o.pitLane ? (
+                    <HandCard i={0} tone="yellow" kicker="PIT LANE" big={PIT_SPEED} foot="วิ่งในเลนพิท แซงไม่ได้" onClick={() => pick({ kind: "pitLane" })} />
+                  ) : o.rejoin ? (
+                    <HandCard i={0} tone="yellow" kicker="กลับสนาม" big="↩" foot="ช่องข้างว่างก็กลับได้ (จบตา)" onClick={() => pick({ kind: "rejoin" })} />
+                  ) : (
+                    <>
+                      {o.worn ? (
+                        <HandCard i={0} tone="yellow" kicker={d.damage ? "เสียหาย" : "ยางพัง"} big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
+                      ) : (
+                        <HandCard i={0} tone="dark" kicker="BASE" big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : "ไม่สึกยาง"} onClick={() => pick({ kind: "base" })} />
+                      )}
+                      {o.push && <HandCard i={1} tone="orange" kicker="PUSH" big={<span className="text-2xl">»»</span>} foot="วิ่งสุด ยางสึก" onClick={() => pick({ kind: "push" })} />}
+                      {o.pace && d.mode?.kind === "pace" && (
+                        <HandCard i={1} tone="orange" kicker="PACE" big={d.mode.value} foot="คงที่ ไม่สึกยาง" onClick={() => pick({ kind: "pace" })} />
+                      )}
+                      {!o.worn && (
+                        <HandCard
+                          i={2}
+                          tone="red"
+                          kicker="MOVE"
+                          big={<span className="text-2xl">»»»</span>}
+                          foot={o.card ? `แตะเพื่อเปิด · เหลือ ${state.teams[d.team]?.moveDeck.length ?? 0}` : !free ? "ติดข้อจำกัด" : "ต้องอยู่บนเส้นแข่ง"}
+                          disabled={!o.card}
+                          peek
+                          onClick={() => pick({ kind: "card" })}
+                        />
+                      )}
+                      {o.drs && <HandCard i={3} tone="light" kicker="DRS" big={<span className="text-xl">แซง</span>} foot={`ขึ้นหน้า #${drsTarget(state, d)?.num}`} onClick={() => pick({ kind: "drs" })} />}
+                      {o.slip && <HandCard i={4} tone="dark" kicker="SLIP" big="→" foot={`ตามติด #${slipTargetOf(state, d)?.num} ฟรี`} onClick={() => pick({ kind: "slip" })} />}
+                      {o.pitIn && <HandCard i={5} tone="yellow" kicker="PIT" big={PIT_SPEED} foot="เข้าเลนพิท" onClick={() => pick({ kind: "pitIn" })} />}
+                    </>
+                  )}
+                </div>
+                {!o.worn && !d.pit && !d.off && (
+                  <label className="flex min-h-9 items-center gap-2 rounded-xl bg-[#1a1a20] px-3 text-xs text-white/75">
+                    <input type="checkbox" checked={box} onChange={(e) => setBox(e.target.checked)} className="h-4 w-4 accent-[#E10600]" />
+                    จะเข้าพิท — หยุดในโซนเข้าพิทถ้าวิ่งผ่าน
+                  </label>
+                )}
+              </>
+            )}
+
+            {p && preview && landing && (
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-3">
+                  {p.card !== null ? (
+                    <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} wet={d.wet} rain={rain} playing={playing} />
+                  ) : (
+                    <SimpleCard kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "BASE"} value={p.value} playing={playing} />
+                  )}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="poster text-xs text-white/70">ระยะเดิน</p>
+                    <p className="poster text-5xl leading-none tabular-nums">{landing.progress - d.progress}</p>
+                    <p className="text-xs leading-snug text-white/70">
+                      ไปช่อง {lapCell(state.track, landing.progress)}
+                      {atk && " · ดันคันหน้าออก"}
+                      {d.bonus > 0 && p.kind !== "drs" && ` · ทีมเวิร์ก +${d.bonus}`}
+                    </p>
+                    {preview.corner && <p className="text-xs font-semibold text-yellow-400">ติดโค้ง — ต้องหยุดในโค้ง</p>}
+                    {preview.blocked && <p className="text-xs font-semibold text-yellow-400">ติดรถข้างหน้า</p>}
+                    {slowWhy && <p className="text-[11px] text-yellow-300">{slowWhy}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Extra on={ers && free && d.ers > 0} disabled={!free || d.ers <= 0 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ERS_BONUS}`} foot={`เหลือ ${d.ers}/${ERS_MAX}`} />
+                  <Extra on={atk} disabled={!canAttack || playing} onClick={() => setAttack((v) => !v)} title={`ATTACK ${d.tokens.attack}`} foot={canAttack ? "ดันคันหน้าออก" : "ต้องจบติดท้าย"} />
+                  <Extra on={block && canBlock} disabled={!canBlock || playing} onClick={() => setBlock((v) => !v)} title={`BLOCK ${d.tokens.block}`} foot="คันถัดไปแซงไม่ได้" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex min-h-12 flex-none items-center gap-1.5 rounded-xl bg-[#1a1a20] px-2.5 text-[11px] text-white/75">
+                    <input type="checkbox" checked={lane === 1} onChange={(e) => setLane(e.target.checked ? 1 : 0)} className="h-4 w-4 accent-[#E10600]" />
+                    จบนอกเส้น
+                  </label>
+                  <button type="button" onClick={go} disabled={playing} className="min-h-12 flex-1 rounded-full bg-(--color-f1) px-4 text-base font-bold disabled:opacity-70">
+                    เดิน {landing.progress - d.progress} ช่อง{block && canBlock ? " + BLOCK" : ""}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : null}
+        {startNote && state.round === 1 && <p className="text-[11px] text-white/60">{startNote}</p>}
       </section>
 
-      {state.over ? (
-        <section className="card-poster space-y-3 rounded-2xl border border-white/10 p-5 text-center" role="status">
-          <Flag className="mx-auto h-6 w-6 text-(--color-f1-text)" aria-hidden />
-          <div className="flex justify-center">
-            <Car color={look(order[0]).color} ink={look(order[0]).ink} num={order[0].num} tyre={tyreOf(order[0])} width={120} label={`รถหมายเลข ${order[0].num}`} />
-          </div>
-          <p className="poster text-2xl">
-            #{order[0].num} {order[0].name} ชนะ!
-          </p>
-          <ol className="mx-auto max-w-xs space-y-0.5 text-left text-sm">
-            {order.map((x, i) => (
-              <li key={x.id} className={x.ai ? "text-white/55" : "font-bold text-white"}>
-                <span className="inline-block w-9 tabular-nums">P{i + 1}</span>#{x.num} {x.name}
+      {modal === "rules" && (
+        <Modal title="วิธีเล่น" onClose={() => setModal(null)}>
+          <RulesList />
+        </Modal>
+      )}
+      {modal === "log" && (
+        <Modal title="การเดินล่าสุด" onClose={() => setModal(null)}>
+          <ul className="space-y-1.5 text-sm text-white/80">
+            {state.feed.map((l, i) => (
+              <li key={i}>
+                {logText(state, l)}
+                {l.events.map((e, k) => (
+                  <span key={k} className="block pl-3 text-xs text-yellow-300">
+                    {eventText(state, e)}
+                  </span>
+                ))}
               </li>
             ))}
-          </ol>
-          <button type="button" onClick={restart} className="inline-flex items-center gap-2 rounded-full bg-(--color-f1) px-5 py-2.5 text-sm font-bold text-white">
-            <RotateCcw className="h-4 w-4" aria-hidden /> แข่งใหม่
-          </button>
-        </section>
-      ) : d && o ? (
-        <section aria-label="ตานักขับ" className="space-y-3 rounded-t-3xl border-t border-white/10 bg-[#121216] px-4 pb-5 pt-4">
-          <div className="flex items-center gap-2.5">
-            <span className="bg-live flex-none rounded-xl bg-[#1a1a20] p-1">
-              <Car color={look(d).color} ink={look(d).ink} num={d.num} tyre={tyreOf(d)} width={64} label={`รถหมายเลข ${d.num}`} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-extrabold text-white">{d.name} · ถึงตาคุณ</p>
-              <p className="truncate text-xs text-white/60">
-                {HUMAN_TEAMS[d.team]?.name} ·{" "}
-                {d.pit ? (d.pit.inBox ? "จอดในช่องพิท" : "อยู่ในเลนพิท") : d.lane === 0 ? "บนเส้นแข่ง" : "นอกเส้นแข่ง"}
-                {onTrack(d) && zoneAt(state.track, state.track.corners, d.progress) >= 0 && " · อยู่ในโค้ง"}
-              </p>
-            </div>
-            <span className="poster text-3xl text-white tabular-nums">P{pos}</span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            <Stat label={`ยาง${COMPOUNDS[d.compound].label}`} foot={d.worn ? "ยางพัง!" : `เหลือ ${WEAR_MAX - d.wear}/${WEAR_MAX}`}>
-              {d.worn ? (
-                <span className="text-xs font-extrabold text-yellow-400">ต้องเข้าพิท</span>
-              ) : (
-                <Meter value={WEAR_MAX - d.wear} max={WEAR_MAX} color={COMPOUND_COLOR[d.compound]} label="ยางเหลือ" />
-              )}
-            </Stat>
-            <Stat label="ERS" foot={`${d.ers}/${ERS_MAX} · +${ERS_BONUS} ช่อง`}>
-              <Meter value={d.ers} max={ERS_MAX} color="#DEDEDE" label="ERS" />
-              <Zap className="h-3 w-3 text-[#DEDEDE]" aria-hidden />
-            </Stat>
-            <Stat label="เหรียญ" foot="ATK · BLK · SLIP">
-              <Coin n={d.tokens.attack} style={{ border: "2px solid #E10600" }} />
-              <Coin n={d.tokens.block} style={{ border: "2px solid #DEDEDE" }} />
-              <Coin n={d.tokens.slip} style={{ border: "2px dashed #DEDEDE" }} />
-            </Stat>
-          </div>
-
-          {!p && (
-            <>
-              <div className="flex items-baseline justify-between">
-                <span className="poster text-sm text-white">เลือกไพ่ที่จะเล่น</span>
-                <span className="text-[11px] text-white/60">
-                  ยางสำรอง{" "}
-                  {d.sets.length === 0
-                    ? "หมด"
-                    : d.sets.map((s, i) => (
-                        <span key={i} role="img" aria-label={`ยาง${COMPOUNDS[s].label}`} className="ml-0.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: COMPOUND_COLOR[s] }} />
-                      ))}
-                </span>
-              </div>
-              {"inBox" in o ? (
-                <div className="grid grid-cols-3 gap-2.5">
-                  {o.inBox ? (
-                    d.sets.length ? (
-                      [...new Set(d.sets)].map((k, i) => (
-                        <HandCard key={k} i={i} tone={k === "red" ? "red" : "yellow"} kicker="PIT" big={<span className="text-2xl">{COMPOUNDS[k].label}</span>} foot="ใส่ยางชุดนี้แล้วออก" onClick={() => pick({ kind: "box", set: k })} />
-                      ))
-                    ) : (
-                      <HandCard i={0} tone="dark" kicker="PIT" big="→" foot="ยางหมด ออกจากพิท" onClick={() => pick({ kind: "box" })} />
-                    )
-                  ) : (
-                    <HandCard i={0} tone="yellow" kicker="PIT LANE" big={PIT_SPEED} foot="วิ่งในเลนพิท แซงไม่ได้" onClick={() => pick({ kind: "pitLane" })} />
-                  )}
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {o.worn ? (
-                      <HandCard i={0} tone="yellow" kicker="ยางพัง" big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
-                    ) : (
-                      <HandCard i={0} tone="dark" kicker="BASE" big={BASE_MOVE} foot="ไม่สึกยาง" onClick={() => pick({ kind: "base" })} />
-                    )}
-                    <HandCard
-                      i={1}
-                      tone="red"
-                      kicker="MOVE"
-                      big={<span className="text-2xl">»»»</span>}
-                      foot={o.card ? `แตะเพื่อเปิด · เหลือ ${state.teams[d.team]?.moveDeck.length ?? 0} ใบ` : "ต้องอยู่บนเส้นแข่ง"}
-                      disabled={!o.card}
-                      peek
-                      onClick={() => pick({ kind: "card" })}
-                    />
-                    {o.drs && (
-                      <HandCard i={2} tone="light" kicker="DRS" big={<span className="text-xl">แซง</span>} foot={`ขึ้นหน้า #${drsTarget(state, d)?.num}`} onClick={() => pick({ kind: "drs" })} />
-                    )}
-                    {o.slip && (
-                      <HandCard i={3} tone="dark" kicker="SLIP" big="→" foot={`ตามติด #${slipTargetOf(state, d)?.num} ฟรี`} onClick={() => pick({ kind: "slip" })} />
-                    )}
-                    {o.pitIn && (
-                      <HandCard i={4} tone="yellow" kicker="PIT" big={PIT_SPEED} foot="เข้าเลนพิท" onClick={() => pick({ kind: "pitIn" })} />
-                    )}
-                  </div>
-                  {!o.worn && (
-                    <label className="flex min-h-11 items-center gap-2 rounded-xl bg-[#1a1a20] px-3 text-xs text-white/75">
-                      <input type="checkbox" checked={box} onChange={(e) => setBox(e.target.checked)} className="h-4 w-4 accent-[#E10600]" />
-                      จะเข้าพิท — หยุดในโซนเข้าพิทถ้าวิ่งผ่าน
-                    </label>
-                  )}
-                </>
-              )}
-            </>
-          )}
-
-          {p && preview && landing && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-4">
-                {p.card !== null ? (
-                  <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} playing={playing} />
-                ) : (
-                  <SimpleCard kicker={p.kind === "drs" ? "DRS" : "BASE"} value={p.value} playing={playing} />
-                )}
-                <div className="min-w-0 space-y-1">
-                  <p className="poster text-xs text-white/70">ระยะเดิน</p>
-                  <p className="poster text-6xl leading-none text-white tabular-nums">{landing.progress - d.progress}</p>
-                  <p className="text-xs leading-snug text-white/70">
-                    ไปช่อง {lapCell(state.track, landing.progress)}
-                    {atk && " · ดันคันหน้าออกนอกเส้น"}
-                  </p>
-                  {preview.corner && <p className="text-xs font-semibold text-yellow-400">ติดโค้ง — ต้องหยุดในโค้ง</p>}
-                  {preview.blocked && <p className="text-xs font-semibold text-yellow-400">ติดรถข้างหน้า</p>}
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <ExtraButton
-                  on={ers && d.ers > 0}
-                  disabled={d.ers <= 0 || playing}
-                  onClick={() => setErs((v) => !v)}
-                  icon={<span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#DEDEDE]"><Zap className="h-4 w-4 fill-[#08080A] text-[#08080A]" aria-hidden /></span>}
-                  title={`ERS +${ERS_BONUS}`}
-                  foot={`เหลือ ${d.ers}/${ERS_MAX}`}
-                />
-                <ExtraButton
-                  on={atk}
-                  disabled={d.tokens.attack <= 0 || !canAttack || playing}
-                  onClick={() => setAttack((v) => !v)}
-                  icon={<Coin n={d.tokens.attack} style={{ border: "3px solid #E10600", width: 32, height: 32 }} />}
-                  title="ATTACK"
-                  foot={canAttack ? "ดันคันหน้าออก" : "ต้องจบติดท้ายคันหน้า"}
-                />
-                <ExtraButton
-                  on={block}
-                  disabled={!canBlock || playing}
-                  onClick={() => setBlock((v) => !v)}
-                  icon={<Coin n={d.tokens.block} style={{ border: "3px solid #DEDEDE", width: 32, height: 32 }} />}
-                  title="BLOCK"
-                  foot="คันถัดไปแซงไม่ได้"
-                />
-              </div>
-              <label className="flex min-h-11 items-center gap-2 rounded-xl bg-[#1a1a20] px-3 text-xs text-white/75">
-                <input type="checkbox" checked={lane === 1} onChange={(e) => setLane(e.target.checked ? 1 : 0)} className="h-4 w-4 accent-[#E10600]" />
-                จบนอกเส้นแข่ง (ใช้ขวางทาง)
-              </label>
-              <button type="button" onClick={go} disabled={playing} className="min-h-[52px] w-full rounded-full bg-(--color-f1) px-5 text-base font-bold text-white disabled:opacity-70">
-                เดิน {landing.progress - d.progress} ช่อง{block ? " + BLOCK" : ""}
-              </button>
-            </div>
-          )}
-        </section>
-      ) : null}
-
-      {state.feed.length > 0 && (
-        <section className="card p-3" aria-label="การเดินล่าสุด">
-          <p className="mb-1.5 text-xs font-medium text-white/55">การเดินล่าสุด</p>
-          <ul className="space-y-0.5 text-xs text-white/70">
-            {state.feed.map((l, i) => (
-              <li key={i}>{logText(state, l)}</li>
-            ))}
           </ul>
-        </section>
+        </Modal>
       )}
+    </div>,
+    document.body,
+  );
+}
 
-      <Rules />
+function Chip({ children, tone }: { children: ReactNode; tone?: "blue" | "yellow" | "orange" | "red" }) {
+  const c = {
+    blue: "bg-[#60a5fa]/20 text-[#93c5fd]",
+    yellow: "bg-yellow-400/20 text-yellow-300",
+    orange: "bg-[#fb923c]/20 text-[#fdba74]",
+    red: "bg-(--color-f1)/25 text-(--color-f1-text)",
+  };
+  return <span className={`rounded-full px-1.5 py-px text-[10px] font-bold ${tone ? c[tone] : "bg-white/10 text-white/75"}`}>{children}</span>;
+}
+
+function Extra({ on, disabled, onClick, title, foot }: { on: boolean; disabled: boolean; onClick: () => void; title: string; foot: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex min-h-14 flex-col items-center justify-center rounded-xl border-2 px-1 py-1.5 disabled:cursor-not-allowed disabled:opacity-40 ${
+        on ? "border-(--color-f1) bg-(--color-f1)/15" : "border-white/15 bg-[#1a1a20] hover:border-white/35"
+      }`}
+    >
+      <span className="text-xs font-extrabold">{title}</span>
+      <span className="text-center text-[10px] leading-tight text-white/60">{foot}</span>
+    </button>
+  );
+}
+
+function PitwallDetail({ state, d, cardId, onPlay }: { state: GameState; d: Driver; cardId: number; onPlay: (set?: Compound | "keep") => void }) {
+  const c = PITWALL_DECK[cardId];
+  const info = PITWALL_INFO[c.kind];
+  const ok = canPitwall(state, c.kind, d);
+  const why: Partial<Record<typeof c.kind, string>> = {
+    attack: `เหรียญ ATTACK เต็ม ${TOKEN_USES} แล้ว`,
+    block: `เหรียญ BLOCK เต็ม ${TOKEN_USES} แล้ว`,
+    slip: `เหรียญ SLIP เต็ม ${TOKEN_USES} แล้ว`,
+    charge: "ERS เต็มแล้ว",
+    tires: d.worn ? "ยางพังแล้ว" : "ยางยังใหม่",
+    report: "ต้องอยู่ติดท้ายรถต่างทีมในเลนเดียวกัน",
+    quickBox: "ใช้ตอนอยู่ในโซนเข้าพิทหรือเลนพิท",
+    push: "ใช้ได้ก่อนเลือกวิธีเดิน และไม่ติดข้อจำกัด",
+    pace: "ใช้ได้ก่อนเลือกวิธีเดิน และไม่ติดข้อจำกัด",
+    teamSpeed: "ใช้ได้ตอนอยู่บนสนาม",
+  };
+  const target = c.kind === "report" ? reportTarget(state, d) : null;
+  return (
+    <div className="mt-1 space-y-2 rounded-xl border border-[#fb923c]/40 bg-[#1f160f] p-2.5">
+      <p className="text-xs text-white">
+        <b className="text-[#fdba74]">
+          {info.title}
+          {c.value ? ` ${c.value}` : ""}
+        </b>{" "}
+        — {info.text}
+        {target && ` (เป้า #${target.num})`}
+      </p>
+      {!ok ? (
+        <p className="text-[11px] text-white/60">ตอนนี้ใช้ไม่ได้: {why[c.kind] ?? "ไม่เข้าเงื่อนไข"}</p>
+      ) : c.kind === "quickBox" ? (
+        <div className="flex flex-wrap gap-1.5">
+          {[...new Set(d.sets)].map((k) => (
+            <button key={k} type="button" onClick={() => onPlay(k)} className="rounded-full bg-[#fb923c] px-3 py-1.5 text-xs font-bold text-[#08080A]">
+              เปลี่ยนเป็นยาง{COMPOUNDS[k].label}
+            </button>
+          ))}
+          {!d.worn && (
+            <button type="button" onClick={() => onPlay("keep")} className="rounded-full border border-[#fb923c] px-3 py-1.5 text-xs font-bold text-[#fdba74]">
+              ยางเดิม
+            </button>
+          )}
+        </div>
+      ) : (
+        <button type="button" onClick={() => onPlay()} className="min-h-9 rounded-full bg-[#fb923c] px-4 text-xs font-bold text-[#08080A]">
+          ใช้ไพ่ใบนี้
+        </button>
+      )}
     </div>
   );
 }
 
-function Rules() {
+function Results({ state, order, onRestart }: { state: GameState; order: Driver[]; onRestart: () => void }) {
+  const win = order[0];
+  return (
+    <div className="card-poster space-y-3 rounded-2xl p-3 text-center" role="status">
+      <div className="flex justify-center">
+        <Car {...look(win)} num={win.num} tyre={tyreOf(win)} width={110} label={`รถหมายเลข ${win.num}`} />
+      </div>
+      <p className="poster text-2xl">
+        #{win.num} {win.name} ชนะ!
+      </p>
+      <ol className="mx-auto max-w-xs space-y-0.5 text-left text-sm">
+        {order.map((x, i) => (
+          <li key={x.id} className={x.ai ? "text-white/60" : "font-bold text-white"}>
+            <span className="inline-block w-9 tabular-nums">{x.out ? "DNF" : `P${i + 1}`}</span>#{x.num} {x.name}
+            {x.penalty && x.finished !== null && <span className="text-xs text-(--color-f1-text)"> · โทษ +{PENALTY_PLACES} อันดับ</span>}
+          </li>
+        ))}
+      </ol>
+      <button type="button" onClick={onRestart} className="inline-flex items-center gap-2 rounded-full bg-(--color-f1) px-5 py-2.5 text-sm font-bold">
+        <RotateCcw className="h-4 w-4" aria-hidden /> แข่งใหม่
+      </button>
+      <p className="text-[11px] text-white/55">ใช้ไป {state.round} เทิร์น</p>
+    </div>
+  );
+}
+
+function RulesCard() {
   return (
     <details className="card p-4 text-sm text-white/75">
       <summary className="cursor-pointer font-bold text-white">วิธีเล่น</summary>
-      <ol className="mt-3 list-decimal space-y-1.5 pl-5">
-        <li>ทีมละ 2 คัน แข่งกับรถ AI จนครบ {GRID_SIZE} คัน แต่ละรอบเทิร์นเดินตามอันดับ คันนำก่อน รถ AI เดินเอง</li>
-        <li>
-          ทุกตาเลือกไพ่: <b>BASE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> ใบบนสุดของทีม ซึ่งเร็วกว่าแต่ไม่รู้ค่าก่อนเปิด
-          ค่าตามยาง (เหลือง/แดง) — เปิดได้เฉพาะรถบนเส้นแข่ง (ตาแรกของเกมนอกเส้นก็ได้)
-        </li>
-        <li>
-          ไพ่ที่มีป้าย “สึก” ทำให้ยางเสื่อม (เหลือง 1 ขั้น แดง 2 ขั้น จากราง {WEAR_MAX} ขั้น) สุดรางแล้วเจออีกใบ = ยางพัง
-          เดินเองช่องละ {WORN_MOVE} ใช้ไพ่และเหรียญไม่ได้ ต้องเข้าพิท
-        </li>
-        <li>เปิดไพ่แล้วค่อยเลือกเสริม: ERS +{ERS_BONUS} (ตาละครั้ง ไพ่สายฟ้าชาร์จคืน), ATTACK, BLOCK และจะจบนอกเส้นไหม — แถบสนามข้างหน้าขึ้นรถเส้นประตรงช่องที่จะไปถึง</li>
-        <li>ช่องหนึ่งจุ 2 คัน ช่องเต็มผ่านไม่ได้ และแซงแนวทแยงผ่านรถ 2 คันที่อยู่เยื้องกันไม่ได้ — เข้าโค้ง (ขอบแดงขาว) ต้องหยุดในโค้งก่อน แล้วออกในตาถัดไป</li>
-        <li>
-          เหรียญคันละ {TOKEN_USES} ครั้ง: <b>ATTACK</b> จบติดท้ายคันหน้าบนเส้นแข่งแล้วดันมันออกนอกเส้น · <b>BLOCK</b>{" "}
-          คันที่เดินต่อจากคุณแซงหรือขึ้นคู่ไม่ได้ · <b>SLIPSTREAM</b> ถ้าตามติดคันหน้าในเลนเดียวกันตอนมันออกตัว ตามไปติดท้ายได้ฟรี
-        </li>
-        <li>DRS: อยู่ในโซน DRS (แถบขาว) และมีรถติดหน้าในเลนเดียวกัน → ขึ้นไปอยู่หน้ามันแทนการเดินปกติ (ใช้ไม่ได้ตาแรก)</li>
-        <li>
-          พิท: ติ๊ก “จะเข้าพิท” ให้หยุดในโซนเข้าพิท แล้วตาถัดไปเข้าเลนพิท (ช่องละ {PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก
-          กลับเข้าสนามนอกเส้นแข่ง
-        </li>
-        <li>ข้ามเส้นชัยแล้วไม่ถูกแซง อันดับตามลำดับที่ข้ามเส้น จบเมื่อทุกคันเข้าเส้น</li>
-      </ol>
+      <div className="mt-3">
+        <RulesList />
+      </div>
     </details>
+  );
+}
+
+function RulesList() {
+  return (
+    <ol className="list-decimal space-y-1.5 pl-5 text-sm text-white/75">
+      <li>ทีมละ 2 คัน แข่งกับรถ AI จนครบ {GRID_SIZE} คัน เดินตามอันดับ คันนำก่อน · ควอลิฟาย: ไพ่ 2 ใบ เลือกใบ Q1 อีกใบใช้ Q2 (เลขน้อยเร็ว) รอบพิเศษได้คันละครั้งแต่ยางสึกครึ่งราง</li>
+      <li>
+        ทุกตาเลือก <b>BASE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> (เร็วกว่า ค่าตามยาง เหลือง/แดง/ฝน) — เปิดได้เฉพาะรถบนเส้นแข่ง ยกเว้นตาแรก
+      </li>
+      <li>ไพ่ป้าย “สึก” ทำยางเสื่อม (เหลือง 1 แดง 2 จาก {WEAR_MAX} ขั้น) สุดรางแล้วเจออีก = ยางพัง เดินเองช่องละ {WORN_MOVE} ต้องเข้าพิท</li>
+      <li>เปิดไพ่แล้วเลือกเสริม: ERS +{ERS_BONUS} · ATTACK (ดันคันหน้าออก) · BLOCK (คันถัดไปแซงไม่ได้) · SLIP ตามติดคันหน้าฟรี · DRS ในโซนแซงขึ้นหน้า</li>
+      <li>เข้าโค้ง (แดง) ต้องหยุดในโค้งก่อน ช่องหนึ่งจุ 2 คัน แซงทแยงผ่านรถเยื้องกันไม่ได้</li>
+      <li>
+        ไพ่ป้าย <b>ACT</b> เปิดไพ่เหตุการณ์: พลาดเอง อากาศเปลี่ยน ยางช้ำ ERS ดับ เสียสมาธิ ออกนอกขอบสนาม (ใบเตือน 2 ใบ = โทษจอดพิทเพิ่ม 1 ตา ไม่ชดใช้ถอย {PENALTY_PLACES} อันดับ) เบรกร้อน และเฉี่ยวชน (ทอยเต๋าทุกคันที่อยู่ติดกัน)
+      </li>
+      <li>หลุดนอกสนาม/รถเสียหาย = ธงเหลือง {FLAG_LEN} ช่อง 1 รอบ (ในเขตได้แค่ BASE) · ชนออก = SAFETY CAR จัดแถวใหม่ทุกคัน</li>
+      <li>ฝน (มาตรอากาศขั้น {RAIN_AT}–{WEATHER_MAX}): ยางไม่สึก ไพ่รูปเมฆทำให้หมุน — ผ่าน V-BOX เปลี่ยนเป็นยางฝน แดดออกต้องผ่าน V-BOX อีกครั้ง V-BOX/พิทซ่อมรถและเบรกด้วย</li>
+      <li>ไพ่ป้าย <b>PIT</b> จั่ว PITWALL ของทีม (เริ่ม 3 ใบ): เติมเหรียญ ชาร์จแบต ถนอมยาง เรดาร์ฝน ร้องเรียน ทีมเวิร์ก พิทสต็อปเร็ว โหมด PUSH/PACE</li>
+      <li>พิท: ติ๊ก “จะเข้าพิท” หยุดในโซนเข้าพิท ตาถัดไปเข้าเลน (ช่องละ {PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก</li>
+      <li>ข้ามเส้นชัยแล้วไม่ถูกแซง จบเมื่อทุกคันเข้าเส้น</li>
+    </ol>
   );
 }

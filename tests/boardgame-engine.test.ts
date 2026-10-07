@@ -17,6 +17,7 @@ const track = (patch: Partial<Track> = {}): Track => ({
   corners: [],
   drs: [],
   pitEntry: { start: 33, end: 35 },
+  vbox: 18,
   ...patch,
 });
 
@@ -51,7 +52,9 @@ const deck = (s: GameState, ...ids: number[]): GameState => ({
 /** ทำให้ถึงรอบ 2 (บางกติกาใช้ไม่ได้ในตาแรก) แล้วให้ A เป็นคนเดิน */
 const round2 = (s: GameState): GameState => ({ ...s, round: 2, order: [0, 1], turn: 0 });
 
-const idx = (pred: (c: (typeof MOVE_DECK)[number]) => boolean) => MOVE_DECK.findIndex(pred);
+/** ไพ่ที่ไม่มีผลหลังเดิน (ACTION / PITWALL) — เทสต์การเดินล้วน ๆ */
+const idx = (pred: (c: (typeof MOVE_DECK)[number]) => boolean) =>
+  MOVE_DECK.findIndex((c) => !c.action && !c.pitwall && pred(c));
 const TIRES_ERS = idx((c) => c.tires && c.ers);
 const TIRES_ONLY = idx((c) => c.tires && !c.ers);
 const PLAIN = idx((c) => !c.tires && !c.ers && c.y === 6 && c.r === 7);
@@ -320,7 +323,9 @@ describe("จำลองเรซเต็ม", () => {
         }
         const o = options(s);
         const kind =
-          "inBox" in o ? (o.inBox ? "box" : "pitLane")
+          o.inBox ? "box"
+          : o.pitLane ? "pitLane"
+          : o.rejoin ? "rejoin"
           : o.pitIn && (o.worn || activeDriver(s).wear >= WEAR_MAX - 1) ? "pitIn"
           : o.worn ? "worn"
           : o.drs ? "drs"
@@ -331,7 +336,8 @@ describe("จำลองเรซเต็ม", () => {
         s = next;
       }
       expect(s.over).toBe(true);
-      expect(new Set(s.finishOrder).size).toBe(GRID_SIZE);
+      const out = s.drivers.filter((d) => d.out).length;
+      expect(new Set(s.finishOrder).size + out).toBe(GRID_SIZE);
     }
   });
 });
