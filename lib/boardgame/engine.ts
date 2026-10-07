@@ -16,7 +16,7 @@
 
 import type { Zone } from "./board";
 import {
-  ACTION_DECK, ACTION_OURS, AI_DECK, INCIDENT_DIE, INCIDENT_DIE_OURS, MOVE_DECK, PITWALL_DECK, PITWALL_OURS,
+  ACTION_DECK, ACTION_OURS, WEATHER_ACTIONS, WEATHER_PITWALL, AI_DECK, INCIDENT_DIE, INCIDENT_DIE_OURS, MOVE_DECK, PITWALL_DECK, PITWALL_OURS,
   type ActionKind, type AiCard, type IncidentFace, type MoveCard, type PitwallKind,
 } from "./cards";
 
@@ -385,8 +385,13 @@ export function newGame(
       pits: 0,
     };
   });
-  const pwIds = ids(PITWALL_DECK.length).filter((i) => rules === "full" || PITWALL_OURS.includes(PITWALL_DECK[i].kind));
-  const acIds = ids(ACTION_DECK.length).filter((i) => rules === "full" || ACTION_OURS.includes(ACTION_DECK[i]));
+  // เกมแข่งแดดออกอย่างเดียว: ไม่มีไพ่ที่เปลี่ยนอากาศในกอง (ระบบอากาศในเอนจินยังอยู่ เผื่อเปิดใช้ภายหลัง)
+  const pwIds = ids(PITWALL_DECK.length).filter(
+    (i) => !WEATHER_PITWALL.includes(PITWALL_DECK[i].kind) && (rules === "full" || PITWALL_OURS.includes(PITWALL_DECK[i].kind)),
+  );
+  const acIds = ids(ACTION_DECK.length).filter(
+    (i) => !WEATHER_ACTIONS.includes(ACTION_DECK[i]) && (rules === "full" || ACTION_OURS.includes(ACTION_DECK[i])),
+  );
   let pwDeck = shuffle(pwIds, rng);
   const teams: Team[] = teamNames.map((name) => {
     const pitwall = pwDeck.slice(0, PITWALL_START);

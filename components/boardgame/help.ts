@@ -24,7 +24,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "tyre":
       return {
         title: "ยาง",
-        text: `ไพ่ป้าย “สึก” ทำยางเสื่อม เหลือง 1 ขั้น แดง 2 ขั้น จาก ${WEAR_MAX} ขั้น หมดรางแล้วโดนอีกใบ = ยางพัง เดินเองช่องละ ${WORN_MOVE} ต้องเข้าพิท · ยางแดงเร็วกว่าแต่สึกไว ช่วงฝนตกยางไม่สึก`,
+        text: `ไพ่ป้าย “สึก” ทำยางเสื่อม เหลือง 1 ขั้น แดง 2 ขั้น จาก ${WEAR_MAX} ขั้น หมดรางแล้วโดนอีกใบ = ยางพัง เดินเองช่องละ ${WORN_MOVE} ต้องเข้าพิท · ยางแดงเร็วกว่าแต่สึกไว`,
       };
     case "ers":
       return {
@@ -58,7 +58,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "pitwall":
       return { title: "ไพ่ PITWALL", text: "ไพ่กลยุทธ์ของทีม ใช้กับคันไหนก็ได้ตอนถึงตา ใช้แล้วทิ้ง ได้เพิ่มจากไพ่ MOVE ที่มีป้าย PIT — แตะไพ่เพื่อดูว่าทำอะไร" };
     case "vbox":
-      return { title: "V-BOX", text: "ช่องกลางสนาม วิ่งผ่านแล้วเปลี่ยนยางฝน/ยางแห้งให้ตรงกับอากาศ และซ่อมเบรกกับรถให้ฟรี" };
+      return { title: "V-BOX", text: "ช่องกลางสนาม วิ่งผ่านแล้วซ่อมเบรกร้อนและรถเสียหายให้ฟรี ไม่ต้องเข้าพิท" };
     case "flag":
       return { title: "ธงเหลือง", text: `มีรถหลุดหรือเสียหาย — ${FLAG_LEN} ช่องนั้นได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ หายเองเมื่อจบเทิร์นถัดไป` };
     case "wet":

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, CircleHelp, Cloud, CloudRain, Flag, Info, List, RotateCcw, Sun, X, Zap } from "lucide-react";
+import { ChevronDown, CircleHelp, CloudRain, Flag, Info, List, RotateCcw, X, Zap } from "lucide-react";
 import Car from "@/components/boardgame/Car";
 import Qualifying from "@/components/boardgame/Qualifying";
 import TrackView from "@/components/boardgame/TrackView";
@@ -15,8 +15,8 @@ import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
   ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
-  DAMP, DAMP_ROUNDS, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, OURS_WEATHER, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
-  NEUTRAL_ROUNDS, PIT_SPEED, RAIN_AT, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WEATHER_MAX, WORN_MOVE,
+  DAMP, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
+  NEUTRAL_ROUNDS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
   activeDriver, aiStep, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
   moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
   type CarSpec, type Choice, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
@@ -41,7 +41,6 @@ type Setup = {
   players: number;
   laps: number;
   quali: boolean;
-  weather: "dry" | "random";
   rules: Rules;
   /** ทีม (ลำดับใน TEAMS) ของผู้เล่นแต่ละคน */
   teams: number[];
@@ -53,7 +52,6 @@ const QUICK: Setup = {
   players: 1,
   laps: 2,
   quali: false,
-  weather: "dry",
   rules: "ours",
   teams: [0, 1],
   compounds: [
@@ -142,16 +140,6 @@ function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
                 </Toggle>
                 <Toggle on={!s.quali} onClick={() => up({ quali: false })}>
                   <b>สุ่มกริด</b>
-                </Toggle>
-              </div>
-            </Group>
-            <Group label="อากาศตอนเริ่ม">
-              <div className="grid gap-2">
-                <Toggle on={s.weather === "dry"} onClick={() => up({ weather: "dry" })}>
-                  <b>แดดออก</b>
-                </Toggle>
-                <Toggle on={s.weather === "random"} onClick={() => up({ weather: "random" })}>
-                  <b>สุ่มอากาศ</b> <span className="block text-[11px] text-white/55">อาจเริ่มด้วยฝน</span>
                 </Toggle>
               </div>
             </Group>
@@ -328,71 +316,22 @@ function worthPopup(s: GameState, e: GameEvent): boolean {
   }
 }
 
-/** แถบสถานะใต้หัวจอ: เซฟตี้คาร์ / VSC และพยากรณ์อากาศ */
+/** แถบสถานะใต้หัวจอ: เซฟตี้คาร์ / VSC */
 function StatusStrip({ s, onHelp }: { s: GameState; onHelp: (k: HelpKey) => void }) {
   const n = s.neutral;
-  const ours = s.rules === "ours";
-  const wx =
-    ours && s.weather >= RAIN_AT
-      ? `ฝนตก · อีก ${s.rainLeft} เทิร์นเริ่มหยุด`
-      : ours && s.weather === DAMP
-        ? `ทางหมาด · อีก ${s.rainLeft} เทิร์นแห้ง`
-        : s.weather === 3 && ours
-          ? "เมฆครึ้ม · ฝนอาจมา"
-          : null;
-  if (!n && !wx) return null;
+  if (!n) return null;
   return (
     <div className="flex flex-none items-center gap-2 border-b border-white/10 px-2 py-1">
-      {n && (
-        <button
-          type="button"
-          onClick={() => onHelp(n.kind)}
-          className={`poster flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] ${n.left > 1 ? "bg-[#facc15] text-[#08080A]" : "bg-[#facc15]/20 text-[#facc15]"}`}
-          aria-live="polite"
-        >
-          {n.kind === "sc" ? "SAFETY CAR" : "VSC"}
-          {n.left > 1 ? <span className="font-sans text-[10px] font-bold normal-case">ได้แค่ BASE</span> : <span className="font-sans text-[10px] font-bold">ENDING · จบเทิร์นนี้</span>}
-        </button>
-      )}
-      {wx && (
-        <button type="button" onClick={() => onHelp("weather")} className="truncate text-[11px] text-[#93c5fd]">
-          {wx}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => onHelp(n.kind)}
+        className={`poster flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] ${n.left > 1 ? "bg-[#facc15] text-[#08080A]" : "bg-[#facc15]/20 text-[#facc15]"}`}
+        aria-live="polite"
+      >
+        {n.kind === "sc" ? "SAFETY CAR" : "VSC"}
+        {n.left > 1 ? <span className="font-sans text-[10px] font-bold normal-case">ได้แค่ BASE</span> : <span className="font-sans text-[10px] font-bold">ENDING · จบเทิร์นนี้</span>}
+      </button>
     </div>
-  );
-}
-
-function WeatherGauge({ s }: { s: GameState }) {
-  const w = s.weather;
-  const Icon = w >= RAIN_AT ? CloudRain : w >= 3 ? Cloud : Sun;
-  const color = w >= RAIN_AT ? "text-[#60a5fa]" : w >= 3 ? "text-white/70" : "text-yellow-300";
-  const steps: readonly number[] = Array.from({ length: WEATHER_MAX }, (_, i) => i + 1);
-  if (s.rules === "ours") {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-[#1F1F24] px-2 py-1" role="img" aria-label={`อากาศ ${weatherName(w)}`}>
-        <Icon className={`h-3.5 w-3.5 ${w === DAMP ? "text-[#93c5fd]" : color}`} aria-hidden />
-        <span className="text-[10px] font-bold text-white/85">{weatherName(w)}</span>
-      </span>
-    );
-  }
-  return (
-    <span
-      className="flex items-center gap-1 rounded-full bg-[#1F1F24] px-2 py-1"
-      role="img"
-      aria-label={`อากาศ ${w >= RAIN_AT ? "ฝนตก" : w >= 3 ? "เมฆครึ้ม" : "แดดออก"} ขั้น ${w}/${WEATHER_MAX}`}
-    >
-      <Icon className={`h-3.5 w-3.5 ${color}`} aria-hidden />
-      <span className="flex gap-px">
-        {steps.map((x) => (
-          <i
-            key={x}
-            className="h-2.5 w-1.5 rounded-sm"
-            style={{ background: x === w ? "#fff" : x >= RAIN_AT ? "rgba(96,165,250,.35)" : "rgba(255,255,255,.15)" }}
-          />
-        ))}
-      </span>
-    </span>
   );
 }
 
@@ -512,7 +451,6 @@ export default function BoardGame({ board }: { board: Board }) {
   const [pw, setPw] = useState<number | null>(null);
   const [lights, setLights] = useState(false);
   const [modal, setModal] = useState<"rules" | "log" | null>(null);
-  const [startNote, setStartNote] = useState<string | null>(null);
   const [help, setHelp] = useState<HelpKey | null>(null);
 
   const racing = phase.at === "race" && state !== null;
@@ -540,15 +478,8 @@ export default function BoardGame({ board }: { board: Board }) {
   const track = { lapCells: CELLS_PER_LAP, corners: board.corners, drs: board.drs, pitEntry: board.pitEntry, vbox: board.vbox };
 
   const startRace = (setup: Setup, cars: CarSpec[], teams: string[], grid?: number[], wear?: number[]) => {
-    const roll =
-      setup.weather === "dry"
-        ? 1
-        : setup.rules === "ours"
-          ? OURS_WEATHER[Math.floor(Math.random() * OURS_WEATHER.length)]
-          : 1 + Math.floor(Math.random() * WEATHER_MAX);
     const spec = wear ? cars.map((c, i) => ({ ...c, wear: wear[i] })) : cars;
-    setState(newGame(spec, teams, track, setup.laps, Math.random, grid, { weather: roll, rules: setup.rules, stepAI: true }));
-    setStartNote(setup.weather === "random" ? `สุ่มอากาศได้ ${weatherName(roll)}${roll >= RAIN_AT ? " — ทุกคันออกตัวด้วยยางฝน" : ""}` : null);
+    setState(newGame(spec, teams, track, setup.laps, Math.random, grid, { rules: setup.rules, stepAI: true }));
     setPhase({ at: "race" });
     setSeen(null);
     setZoomed(true);
@@ -715,9 +646,6 @@ export default function BoardGame({ board }: { board: Board }) {
           <span className="poster rounded-full bg-[#1F1F24] px-2.5 py-1 text-[12px] tabular-nums">
             LAP {lap(leader)}/{state.laps}
           </span>
-          <button type="button" onClick={() => ask("weather")} aria-label="อากาศ">
-            <WeatherGauge s={state} />
-          </button>
           {d && <span className="poster rounded-full bg-(--color-f1) px-2.5 py-1 text-[12px] tabular-nums">P{pos}</span>}
           <button type="button" onClick={() => setModal("rules")} aria-label="วิธีเล่น" className="rounded-full p-2 text-white/70 hover:bg-white/10">
             <CircleHelp className="h-5 w-5" />
@@ -841,7 +769,6 @@ export default function BoardGame({ board }: { board: Board }) {
               <div className="min-w-0">
                 <Term k="tyre" ask={ask} className="text-[10px] text-white/60">
                   ยาง{COMPOUNDS[d.compound].label} {d.worn ? "พัง!" : `${WEAR_MAX - d.wear}/${WEAR_MAX}`}
-                  {rain && " · ฝนไม่สึก"}
                 </Term>
                 <Meter value={d.worn ? 0 : WEAR_MAX - d.wear} max={WEAR_MAX} color={d.wet ? WET_COLOR : COMPOUND_COLOR[d.compound]} label="ยางเหลือ" />
               </div>
@@ -975,7 +902,7 @@ export default function BoardGame({ board }: { board: Board }) {
               <div className="space-y-2.5">
                 <div className="flex items-center gap-3">
                   {p.card !== null ? (
-                    <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} wet={d.wet} rain={rain} playing={playing} />
+                    <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} playing={playing} />
                   ) : (
                     <SimpleCard kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "BASE"} value={p.value} playing={playing} />
                   )}
@@ -1032,7 +959,6 @@ export default function BoardGame({ board }: { board: Board }) {
             )}
           </>
         ) : null}
-        {startNote && state.round === 1 && <p className="text-[11px] text-white/60">{startNote}</p>}
       </section>
 
       {modal === "rules" && (
@@ -1200,7 +1126,7 @@ function RulesList({ rules }: { rules: Rules }) {
           ยางสึกจาก {WEAR_MAX} ขั้น (เหลือง 1 แดง 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
         </RuleBlock>
         <RuleBlock title="เหตุการณ์">
-          ไพ่ป้าย ACT เปิดเหตุการณ์ (อากาศ ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · ฝนตก {RAIN_ROUNDS} เทิร์น แล้วทางหมาด {DAMP_ROUNDS} เทิร์นก่อนแห้ง — ใส่ยางผิดสภาพแค่ช้าลง (ยางแห้งในฝน −2 ทางหมาด −1) เปลี่ยนที่ V-BOX หรือพิท · รถเสียหาย = VSC · ชนออก = SAFETY CAR (ทุกคันได้แค่ BASE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
+          ไพ่ป้าย ACT เปิดเหตุการณ์ (ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · รถเสียหาย = VSC (ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม) · ชนออก = SAFETY CAR (ทุกคันได้แค่ BASE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
         </RuleBlock>
       </div>
     );
@@ -1209,17 +1135,17 @@ function RulesList({ rules }: { rules: Rules }) {
     <ol className="list-decimal space-y-1.5 pl-5 text-sm text-white/75">
       <li>ทีมละ 2 คัน แข่งกับรถ AI จนครบ {GRID_SIZE} คัน เดินตามอันดับ คันนำก่อน · ควอลิฟาย: ไพ่ 2 ใบ เลือกใบ Q1 อีกใบใช้ Q2 (เลขน้อยเร็ว) รอบพิเศษได้คันละครั้งแต่ยางสึกครึ่งราง</li>
       <li>
-        ทุกตาเลือก <b>BASE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> (เร็วกว่า ค่าตามยาง เหลือง/แดง/ฝน) — เปิดได้เฉพาะรถบนเส้นแข่ง ยกเว้นตาแรก
+        ทุกตาเลือก <b>BASE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> (เร็วกว่า ค่าตามยาง เหลือง/แดง) — เปิดได้เฉพาะรถบนเส้นแข่ง ยกเว้นตาแรก
       </li>
       <li>ไพ่ป้าย “สึก” ทำยางเสื่อม (เหลือง 1 แดง 2 จาก {WEAR_MAX} ขั้น) สุดรางแล้วเจออีก = ยางพัง เดินเองช่องละ {WORN_MOVE} ต้องเข้าพิท</li>
       <li>เปิดไพ่แล้วเลือกเสริม: ERS +{ERS_BONUS} · ATTACK (ดันคันหน้าออก) · BLOCK (คันถัดไปแซงไม่ได้) · SLIP ตามติดคันหน้าฟรี · DRS ในโซนแซงขึ้นหน้า</li>
       <li>เข้าโค้ง (แดง) ต้องหยุดในโค้งก่อน ช่องหนึ่งจุ 2 คัน แซงทแยงผ่านรถเยื้องกันไม่ได้</li>
       <li>
-        ไพ่ป้าย <b>ACT</b> เปิดไพ่เหตุการณ์: พลาดเอง อากาศเปลี่ยน ยางช้ำ ERS ดับ เสียสมาธิ ออกนอกขอบสนาม (ใบเตือน 2 ใบ = โทษจอดพิทเพิ่ม 1 ตา ไม่ชดใช้ถอย {PENALTY_PLACES} อันดับ) เบรกร้อน และเฉี่ยวชน (ทอยเต๋าทุกคันที่อยู่ติดกัน)
+        ไพ่ป้าย <b>ACT</b> เปิดไพ่เหตุการณ์: พลาดเอง ยางช้ำ ERS ดับ เสียสมาธิ ออกนอกขอบสนาม (ใบเตือน 2 ใบ = โทษจอดพิทเพิ่ม 1 ตา ไม่ชดใช้ถอย {PENALTY_PLACES} อันดับ) เบรกร้อน และเฉี่ยวชน (ทอยเต๋าทุกคันที่อยู่ติดกัน)
       </li>
       <li>หลุดนอกสนาม/รถเสียหาย = ธงเหลือง {FLAG_LEN} ช่อง 1 รอบ (ในเขตได้แค่ BASE) · ชนออก = SAFETY CAR จัดแถวใหม่ทุกคัน</li>
-      <li>ฝน (มาตรอากาศขั้น {RAIN_AT}–{WEATHER_MAX}): ยางไม่สึก ไพ่รูปเมฆทำให้หมุน — ผ่าน V-BOX เปลี่ยนเป็นยางฝน แดดออกต้องผ่าน V-BOX อีกครั้ง V-BOX/พิทซ่อมรถและเบรกด้วย</li>
-      <li>ไพ่ป้าย <b>PIT</b> จั่ว PITWALL ของทีม (เริ่ม 3 ใบ): เติมเหรียญ ชาร์จแบต ถนอมยาง เรดาร์ฝน ร้องเรียน ทีมเวิร์ก พิทสต็อปเร็ว โหมด PUSH/PACE</li>
+      <li>ผ่าน V-BOX หรือเข้าพิท ซ่อมรถเสียหายและเบรกร้อน</li>
+      <li>ไพ่ป้าย <b>PIT</b> จั่ว PITWALL ของทีม (เริ่ม 3 ใบ): เติมเหรียญ ชาร์จแบต ถนอมยาง ร้องเรียน ทีมเวิร์ก พิทสต็อปเร็ว โหมด PUSH/PACE</li>
       <li>พิท: ติ๊ก “จะเข้าพิท” หยุดในโซนเข้าพิท ตาถัดไปเข้าเลน (ช่องละ {PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก</li>
       <li>ข้ามเส้นชัยแล้วไม่ถูกแซง จบเมื่อทุกคันเข้าเส้น</li>
     </ol>

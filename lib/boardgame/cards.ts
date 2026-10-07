@@ -167,7 +167,9 @@ export const ACTION_TEXT_OURS: Partial<Record<ActionKind, string>> = {
 };
 
 /** ไพ่ ACTION ที่ใช้ในกติกาของเรา (ผลชัด เข้าใจทันที) */
-export const ACTION_OURS: ActionKind[] = ["weather", "tires", "ersFail", "brakes", "trackLimits", "incident"];
+export const ACTION_OURS: ActionKind[] = ["tires", "ersFail", "brakes", "trackLimits", "incident"];
+/** ไพ่ที่เกี่ยวกับอากาศ — ตอนนี้เกมแข่งแดดออกอย่างเดียว จึงไม่ใส่ในกอง */
+export const WEATHER_ACTIONS: ActionKind[] = ["weather", "storm"];
 
 export const ACTION_DECK: ActionKind[] = [
   ...times(3, "mistake" as const),
@@ -234,7 +236,8 @@ export const PITWALL_INFO: Record<PitwallKind, { title: string; text: string }> 
 };
 
 /** ไพ่ PITWALL ที่ใช้ในกติกาของเรา */
-export const PITWALL_OURS: PitwallKind[] = ["charge", "tires", "radar", "teamSpeed", "quickBox", "push"];
+export const PITWALL_OURS: PitwallKind[] = ["charge", "tires", "teamSpeed", "quickBox", "push"];
+export const WEATHER_PITWALL: PitwallKind[] = ["radar"];
 
 export const PITWALL_DECK: PitwallCard[] = [
   ...times(2, { kind: "attack" as const }),

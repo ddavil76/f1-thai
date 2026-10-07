@@ -134,6 +134,16 @@ describe("กติกาของเรา", () => {
     expect(travel(s, s.drivers[0], 4)).toMatchObject({ progress: 2, blocked: true });
   });
 
+  it("แข่งแดดออกอย่างเดียว: ทั้งสองกติกาไม่มีไพ่ที่เปลี่ยนอากาศในกอง", () => {
+    for (const rules of ["ours", "full"] as const) {
+      const s = newGame(cars.slice(0, 2), ["ทีม"], track(), 4, () => 0.5, [0, 1], { rules });
+      expect(s.weather).toBe(1);
+      expect(s.actionDeck.some((i) => ["weather", "storm"].includes(ACTION_DECK[i]))).toBe(false);
+      const pw = [...s.pwDeck, ...s.teams.flatMap((t) => t.pitwall)];
+      expect(pw.some((i) => PITWALL_DECK[i].kind === "radar")).toBe(false);
+    }
+  });
+
   it("กองไพ่ ACTION / PITWALL มีเฉพาะแบบที่เข้าใจง่าย", () => {
     const s = game();
     expect(s.actionDeck.every((i) => ACTION_OURS.includes(ACTION_DECK[i]))).toBe(true);

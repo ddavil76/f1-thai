@@ -1,10 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
-import { CloudRain, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 import {
   ACTION_INFO, COMPOUNDS, INCIDENT_INFO, MOVE_DECK, PITWALL_DECK, PITWALL_INFO, moveValue,
   type ActionKind, type Compound, type IncidentFace,
 } from "@/lib/boardgame/engine";
-import { COMPOUND_COLOR, WET_COLOR } from "@/components/boardgame/look";
+import { COMPOUND_COLOR } from "@/components/boardgame/look";
 
 export function Meter({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
   return (
@@ -66,27 +66,24 @@ export function HandCard({
 }
 
 /** ไพ่ MOVE ที่เปิดแล้ว: พลิกจากหลังไพ่มาหน้าไพ่ตอนแสดงครั้งแรก */
-export function MoveCard3D({ id, compound, wet, rain, playing }: { id: number; compound: Compound; wet: boolean; rain: boolean; playing: boolean }) {
+export function MoveCard3D({ id, compound, playing }: { id: number; compound: Compound; playing: boolean }) {
   const c = MOVE_DECK[id];
-  const rows: { k: Compound | "wet"; label: string; color: string; v: number }[] = [
+  const rows: { k: Compound; label: string; color: string; v: number }[] = [
     { k: "yellow", label: COMPOUNDS.yellow.label, color: COMPOUND_COLOR.yellow, v: moveValue(c, "yellow") },
     { k: "red", label: COMPOUNDS.red.label, color: COMPOUND_COLOR.red, v: moveValue(c, "red") },
-    { k: "wet", label: "ฝน", color: WET_COLOR, v: c.w },
   ];
-  const use = rain && wet ? "wet" : compound;
-  const spin = rain && (wet ? c.spinWet : c.spinDry);
   return (
     <div className={`bg-stage h-[148px] w-[104px] flex-none ${playing ? "bg-play" : ""}`}>
       <div
         className="bg-card3d bg-flip h-full w-full"
         role="img"
-        aria-label={`ไพ่ MOVE เหลือง ${c.y} แดง ${c.r} ฝน ${c.w}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall ? " จั่ว PITWALL" : ""}${spin ? " หมุนในฝน" : ""}`}
+        aria-label={`ไพ่ MOVE เหลือง ${c.y} แดง ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall ? " จั่ว PITWALL" : ""}`}
       >
         <div className="bg-face flex items-center justify-center border-[3px] border-white bg-(--color-f1)">
           <span className="poster text-xl text-white">MOVE</span>
         </div>
-        <div className="bg-face bg-front flex flex-col gap-1 border-[3px] border-white bg-[#f4f4f2] p-1.5 text-[#08080A]">
-          <div className="flex flex-wrap items-center gap-0.5">
+        <div className="bg-face bg-front flex flex-col gap-1.5 border-[3px] border-white bg-[#f4f4f2] p-1.5 text-[#08080A]">
+          <div className="flex min-h-4 flex-wrap items-center gap-0.5">
             {c.tires && <Tag className="bg-(--color-f1) text-white">สึก</Tag>}
             {c.ers && (
               <Tag className="bg-[#08080A] text-white">
@@ -99,18 +96,15 @@ export function MoveCard3D({ id, compound, wet, rain, playing }: { id: number; c
           {rows.map((r) => (
             <div
               key={r.k}
-              className={`flex items-center justify-between rounded-md px-1.5 ${r.k === use ? "bg-[#08080A] text-white" : "bg-[#e7e7e3] text-black/55"}`}
+              className={`flex items-center justify-between rounded-md px-1.5 py-0.5 ${r.k === compound ? "bg-[#08080A] text-white" : "bg-[#e7e7e3] text-black/55"}`}
             >
-              <span className="flex items-center gap-1 text-[9px] font-semibold">
+              <span className="flex items-center gap-1 text-[10px] font-semibold">
                 <span className="h-2 w-2 rounded-full border border-current" style={{ background: r.color }} />
                 {r.label}
-                {r.k !== "wet" && rain && (c.spinDry ? <CloudRain className="h-2.5 w-2.5" aria-label="หมุน" /> : null)}
-                {r.k === "wet" && c.spinWet ? <CloudRain className="h-2.5 w-2.5" aria-label="หมุน" /> : null}
               </span>
-              <span className={`poster tabular-nums ${r.k === use ? "text-2xl" : "text-base"}`}>{r.v}</span>
+              <span className={`poster tabular-nums ${r.k === compound ? "text-3xl" : "text-lg"}`}>{r.v}</span>
             </div>
           ))}
-          {spin && <span className="mt-auto text-center text-[9px] font-bold text-(--color-f1)">ลื่น! หมุนออกนอกสนาม</span>}
         </div>
       </div>
     </div>
