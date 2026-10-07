@@ -381,3 +381,27 @@ describe("จำลองเรซเต็มพร้อมเหตุกา�
     }
   });
 });
+
+describe("รถ AI เดินทีละคัน (stepAI)", () => {
+  it("ผู้เล่นเดินแล้วรถ AI ยังไม่ขยับ จนกว่าจะเรียก aiStep ทีละคัน", async () => {
+    const { aiStep, aiTurnPending } = await import("@/lib/boardgame/engine");
+    const field: CarSpec[] = [
+      { name: "P", num: 1, team: 0, ai: false },
+      { name: "B1", num: 8, team: -1, ai: true },
+      { name: "B2", num: 9, team: -1, ai: true },
+    ];
+    let s = newGame(field, ["ทีม"], track(), 4, () => 0.5, [0, 1, 2], { stepAI: true });
+    expect(activeDriver(s).id).toBe(0);
+    s = playBase(s, () => 0.5);
+    expect(aiTurnPending(s)).toBe(true);
+    expect(s.feed).toHaveLength(1);
+    // เดินทีละคัน: แต่ละครั้งเพิ่มบันทึก 1 บรรทัด จนวนกลับมาถึงผู้เล่น
+    let n = 1;
+    while (aiTurnPending(s)) {
+      s = aiStep(s, () => 0.5);
+      expect(s.feed).toHaveLength(++n);
+    }
+    expect(n).toBeGreaterThan(2);
+    expect(activeDriver(s).id).toBe(0);
+  });
+});

@@ -241,6 +241,8 @@ export default function TrackView({
                   opacity={d.pit ? 0.75 : 1}
                 >
                   {me && <circle r={3.3} fill="none" stroke="#E10600" strokeWidth={0.35} className="bg-blink" />}
+                  {/* รถที่ผู้เล่นคุม: ฐานขาวจาง ๆ ให้แยกจากรถ AI ที่สีคล้ายกันได้ */}
+                  {!d.ai && <ellipse rx={2.9} ry={1.5} fill="#ffffff" fillOpacity={0.22} stroke="#ffffff" strokeOpacity={0.7} strokeWidth={0.18} />}
                   <g transform={`scale(${CAR_SCALE}) translate(-30 -13)`}>
                     <CarBody color={c.color} ink={c.ink} num={d.num} tyre={tyreOf(d)} ghost={!!d.pit} />
                   </g>

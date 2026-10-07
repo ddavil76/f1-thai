@@ -17,8 +17,8 @@ import {
   ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
   GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, OURS_WEATHER, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
   PIT_SPEED, RAIN_AT, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WEATHER_MAX, WORN_MOVE,
-  activeDriver, attackTarget, canPitwall, cardValue, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
-  offlinePenalty, options, playPitwall, reportTarget, slipTargetOf, standings, travel,
+  activeDriver, aiStep, aiTurnPending, attackTarget, canPitwall, cardValue, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
+  offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
   type CarSpec, type Choice, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
   type TurnLog,
 } from "@/lib/boardgame/engine";
@@ -28,6 +28,8 @@ const LAP_CHOICES = [4, 2, 1];
 const PLAY_MS = 550;
 /** ไฟสตาร์ท 5 ดวงแล้วดับ (ตรงกับ .bg-lights ใน globals.css) */
 const LIGHTS_MS = 3400;
+/** รถ AI ขยับทีละคัน ห่างกันเท่านี้ (ms) — ให้ทันเห็นว่าใครแซงใคร */
+const AI_STEP_MS = 550;
 /** โชว์ช่อง "จะเข้าพิท" เมื่ออยู่ห่างโซนเข้าพิทไม่เกินเท่านี้ */
 const PIT_HINT_CELLS = 12;
 
@@ -448,6 +450,17 @@ export default function BoardGame({ board }: { board: Board }) {
     };
   }, [racing]);
 
+  // รถ AI เดินทีละคันจนถึงคันที่ผู้เล่นคุม (ลดการเคลื่อนไหว = เดินรวดเดียว)
+  const aiBusy = phase.at === "race" && !!state && aiTurnPending(state);
+  useEffect(() => {
+    if (!aiBusy || lights) return;
+    const t = setTimeout(
+      () => setState((s) => (s ? (calm() ? runAI(s, Math.random) : aiStep(s, Math.random)) : s)),
+      calm() ? 0 : AI_STEP_MS,
+    );
+    return () => clearTimeout(t);
+  }, [state, aiBusy, lights]);
+
   const track = { lapCells: CELLS_PER_LAP, corners: board.corners, drs: board.drs, pitEntry: board.pitEntry, vbox: board.vbox };
 
   const startRace = (setup: Setup, cars: CarSpec[], teams: string[], grid?: number[], wear?: number[]) => {
@@ -458,7 +471,7 @@ export default function BoardGame({ board }: { board: Board }) {
           ? OURS_WEATHER[Math.floor(Math.random() * OURS_WEATHER.length)]
           : 1 + Math.floor(Math.random() * WEATHER_MAX);
     const spec = wear ? cars.map((c, i) => ({ ...c, wear: wear[i] })) : cars;
-    setState(newGame(spec, teams, track, setup.laps, Math.random, grid, { weather: roll, rules: setup.rules }));
+    setState(newGame(spec, teams, track, setup.laps, Math.random, grid, { weather: roll, rules: setup.rules, stepAI: true }));
     setStartNote(setup.weather === "random" ? `สุ่มอากาศได้ ${weatherName(roll)}${roll >= RAIN_AT ? " — ทุกคันออกตัวด้วยยางฝน" : ""}` : null);
     setPhase({ at: "race" });
     setSeen(null);
@@ -536,7 +549,10 @@ export default function BoardGame({ board }: { board: Board }) {
   };
   const ask = (k: HelpKey) => setHelp((cur) => (cur === k ? null : k));
 
-  const d = state.over ? null : activeDriver(state);
+  const d = state.over || aiBusy ? null : activeDriver(state);
+  // ระหว่างรถ AI เดิน กล้องตามคันที่เพิ่งขยับ
+  const lastMover = state.feed.at(-1)?.driver;
+  const focusCar = d ?? (state.over ? null : lastMover !== undefined ? state.drivers[lastMover] : activeDriver(state));
   const pos = d ? order.findIndex((x) => x.id === d.id) + 1 : 0;
   const o = d ? options(state, d) : null;
   const p = state.pending;
@@ -564,7 +580,7 @@ export default function BoardGame({ board }: { board: Board }) {
   const leader = order[0];
 
   const popups = state.feed.flatMap((l) => l.events).filter((e) => worthPopup(state, e));
-  const showEvents = state.feed !== seen && popups.length > 0 && !lights;
+  const showEvents = state.feed !== seen && popups.length > 0 && !lights && !aiBusy;
   const hand = d ? (state.teams[d.team]?.pitwall ?? []) : [];
 
   // ช่วงระยะของไพ่ MOVE ก่อนเปิด
@@ -615,7 +631,7 @@ export default function BoardGame({ board }: { board: Board }) {
         </header>
 
         <div className="relative min-h-0 flex-1">
-          <TrackView board={board} state={state} focus={d} ghost={landing} zoomed={zoomed && !!d} onToggle={() => setZoomed((z) => !z)} onHelp={ask} />
+          <TrackView board={board} state={state} focus={focusCar} ghost={landing} zoomed={zoomed && !!focusCar} onToggle={() => setZoomed((z) => !z)} onHelp={ask} />
           {state.feed.length > 0 && (
             <button
               type="button"
@@ -671,10 +687,34 @@ export default function BoardGame({ board }: { board: Board }) {
       {/* แผงนักขับ */}
       <section
         aria-label="ตานักขับ"
-        className="max-h-[54dvh] flex-none space-y-2.5 overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-[#121216] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[420px] md:rounded-none md:border-l md:border-t-0"
+        className="max-h-[54dvh] min-h-[16rem] flex-none space-y-2.5 overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-[#121216] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[420px] md:rounded-none md:border-l md:border-t-0"
       >
         {state.over ? (
           <Results state={state} order={order} onRestart={exit} />
+        ) : aiBusy ? (
+          <div className="space-y-2" aria-live="polite">
+            <div className="flex items-center justify-between gap-2">
+              <p className="poster text-sm text-white">รถคันอื่นกำลังเดิน…</p>
+              <button
+                type="button"
+                onClick={() => setState((s) => (s ? runAI(s, Math.random) : s))}
+                className="rounded-full border border-white/25 px-3 py-1.5 text-xs font-bold text-white hover:border-white/60"
+              >
+                ข้าม ▸▸
+              </button>
+            </div>
+            <ul className="space-y-1 text-xs text-white/75">
+              {state.feed.slice(-6).map((l, i) => {
+                const c = state.drivers[l.driver];
+                return (
+                  <li key={i} className="flex items-center gap-2">
+                    <Car {...look(c)} num={c.num} tyre={tyreOf(c)} width={28} />
+                    <span className="min-w-0 flex-1 truncate">{logText(state, l)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         ) : d && o ? (
           <>
             <div className="flex items-center gap-2">

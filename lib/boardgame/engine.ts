@@ -202,6 +202,8 @@ export type GameState = {
   /** กติกาของเรา: ฝนจะหยุดในอีกกี่เทิร์น */
   rainLeft: number;
   rules: Rules;
+  /** รถ AI รอให้หน้าจอสั่งเดินทีละคัน (aiStep) */
+  stepAI: boolean;
   flags: Flag[];
   /** id ตามลำดับที่ข้ามเส้นชัย */
   finishOrder: number[];
@@ -317,7 +319,8 @@ export type CarSpec = {
 /** ยางทั้งหมดต่อคัน: เหลือง 2 แดง 2 — ใส่ออกตัว 1 ชุด ที่เหลือรอในพิท */
 const SETS: Compound[] = ["yellow", "yellow", "red", "red"];
 
-export type GameOptions = { weather?: number; rules?: Rules };
+/** stepAI = ไม่ให้รถ AI เดินรวดเดียว — หน้าจอเรียก aiStep ทีละคันเพื่อทำแอนิเมชัน */
+export type GameOptions = { weather?: number; rules?: Rules; stepAI?: boolean };
 
 export function newGame(
   cars: CarSpec[],
@@ -399,12 +402,13 @@ export function newGame(
     weather,
     rainLeft: rules === "ours" && wet ? RAIN_ROUNDS : 0,
     rules,
+    stepAI: !!opts.stepAI,
     flags: [],
     finishOrder: [],
     feed: [],
     over: false,
   };
-  return runAI(state, rng);
+  return state.stepAI ? state : runAI(state, rng);
 }
 
 /* ---------- สิ่งที่ทำได้ในตานี้ ---------- */
@@ -928,7 +932,7 @@ function finishMove(
   const entry: TurnLog = { ...log, events, driver: d.id, ai: d.ai, finished: crossed };
   next = { ...next, feed: d.ai ? [...s.feed, entry] : [entry] };
   if (done(next)) next = { ...next, over: true };
-  return next.over ? next : runAI(next, rng);
+  return next.over || next.stepAI ? next : runAI(next, rng);
 }
 
 /** ATTACK: เราอยู่เส้นแข่งติดท้ายรถคันหน้า และข้างมันว่าง → เราเข้าที่ มันถูกดันออกนอกเส้น */
@@ -1301,6 +1305,14 @@ function aiTurn(s: GameState, rng: Rng): GameState {
   const value = (l.rain && d.wet ? card.w : card.v) - offlinePenalty(s, d);
   const extras = s.rules === "ours" ? { pass: card.attack } : { attack: card.attack, block: card.block };
   return resolve(replace(st, x), x, "card", value, aiFx(card, d, l.rain), r.id, extras, rng);
+}
+
+/** ถึงตารถ AI อยู่ไหม (โหมด stepAI) */
+export const aiTurnPending = (s: GameState) => !s.over && activeDriver(s).ai;
+
+/** ให้รถ AI ที่ถึงตาเดิน 1 คัน */
+export function aiStep(s: GameState, rng: Rng): GameState {
+  return aiTurnPending(s) ? aiTurn(s, rng) : s;
 }
 
 /** ให้รถ AI ที่ต่อคิวอยู่เดินไปจนถึงตาผู้เล่น (หรือจบเรซ) */
