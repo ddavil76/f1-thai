@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CELLS_PER_LAP, buildBoard, findCorners, parsePolyline, resampleLoop } from "@/lib/boardgame/board";
+import { CELLS_PER_LAP, PIT_ENTRY_CELLS, buildBoard, findCorners, parsePolyline, resampleLoop } from "@/lib/boardgame/board";
 import { CIRCUIT_TRACKS } from "@/lib/circuits";
 
 describe("resampleLoop", () => {
@@ -39,11 +39,11 @@ describe("buildBoard", () => {
 });
 
 describe("findCorners", () => {
-  it("ทุกสนามมีโค้ง 1–4 โค้ง ไม่ทับเส้นสตาร์ท และไม่กินเกินครึ่งรอบ", () => {
+  it("ทุกสนามมีโค้ง 1–6 โค้ง ไม่ทับเส้นสตาร์ท และไม่กินเกินครึ่งรอบ", () => {
     for (const id of Object.keys(CIRCUIT_TRACKS)) {
       const { corners } = buildBoard(id, id)!;
       expect(corners.length, id).toBeGreaterThanOrEqual(1);
-      expect(corners.length, id).toBeLessThanOrEqual(4);
+      expect(corners.length, id).toBeLessThanOrEqual(6);
       let cells = 0;
       for (const z of corners) {
         const len = z.start <= z.end ? z.end - z.start + 1 : CELLS_PER_LAP - z.start + z.end + 1;
@@ -64,5 +64,20 @@ describe("findCorners", () => {
       { start: 10, end: 10 },
       { start: 14, end: 14 },
     ]);
+  });
+});
+
+describe("โซน DRS และโซนเข้าพิท", () => {
+  it("ทุกสนามมีโซน DRS 1–2 ช่วง ยาวอย่างน้อย 3 ช่อง ไม่ทับโค้งหรือโซนเข้าพิท", () => {
+    for (const id of Object.keys(CIRCUIT_TRACKS)) {
+      const b = buildBoard(id, id)!;
+      expect(b.drs.length, id).toBeGreaterThanOrEqual(1);
+      expect(b.drs.length, id).toBeLessThanOrEqual(2);
+      for (const z of b.drs) {
+        expect(z.end - z.start + 1, id).toBeGreaterThanOrEqual(3);
+        expect(z.end, id).toBeLessThan(CELLS_PER_LAP - PIT_ENTRY_CELLS);
+      }
+      expect(b.pitEntry).toEqual({ start: CELLS_PER_LAP - PIT_ENTRY_CELLS, end: CELLS_PER_LAP - 1 });
+    }
   });
 });

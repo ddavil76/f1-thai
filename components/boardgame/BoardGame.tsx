@@ -1,66 +1,40 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
-import {
-  CloudDrizzle, CloudRain, Droplets, Flag, Gauge, RotateCcw, Sun, TriangleAlert, X, Zap,
-} from "lucide-react";
+import { useState } from "react";
+import { Flag, RotateCcw } from "lucide-react";
 import OsmCredit from "@/components/OsmCredit";
 import type { Board, Pt } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
-  ACTIONS, CARD_EVENTS, OFFLINE_PENALTY, cornerAt, lapCell, COL_LABEL, CRUISE_MOVE, EVENTS, MAX_PER_COMPOUND, PIT_COST, SURE_AHEAD, TYRES, TYRE_SLOTS,
-  SPEED_CARDS, WEATHER, WORN_MOVE, YELLOW_TO_SC, activePlayer, canPlay, canSwap, columnAvg,
-  forecastAt, isWorn, makeWeatherPlan, mustCruise, newGame, pitCost, playTurn, standings, validTyres, weatherEffect,
-  weatherNow,
-  type Action, type CarSpec, type Col, type GameState, type Player, type Mode, type SkyShift, type Tyre, type Weather,
-  type WeatherPlan,
+  BASE_MOVE, BOX_AT, COMPOUNDS, ERS_BONUS, ERS_MAX, GRID_SIZE, MOVE_DECK, PIT_LEN, PIT_SPEED,
+  TOKEN_USES, WEAR_MAX, WORN_MOVE,
+  activeDriver, attackTarget, choose, commit, drsTarget, inZone, lapCell, moveValue, newGame,
+  onTrack, options, slipTargetOf, standings, travel, zoneAt,
+  type CarSpec, type Choice, type Compound, type Driver, type GameState, type Lane, type TurnLog,
 } from "@/lib/boardgame/engine";
 
-const LAPS = 3;
-const COMPOUNDS = Object.keys(TYRES) as Tyre[];
-const COLS: Col[] = ["soft", "medium", "hard"];
-
-/** ผู้เล่นสมมติ — ไม่ใช้ชื่อทีม/นักขับจริง สีแดงกับขาวให้ตัดกันบนพื้นดำ */
-const SEATS = [
-  { name: "เมเทียร์ เรซซิ่ง", num: 7, color: "#E10600", ink: "#fff" },
-  { name: "ไอซ์ไบรท์ เรซซิ่ง", num: 21, color: "#DEDEDE", ink: "#08080A" },
+/** ทีมของผู้เล่น — ชื่อทีม/นักขับสมมติ สีแดงกับขาวให้ตัดกันบนพื้นดำ */
+const HUMAN_TEAMS = [
+  { name: "เมเทียร์ เรซซิ่ง", color: "#E10600", ink: "#fff", drivers: [{ name: "ภูมิ", num: 7 }, { name: "นาวิน", num: 17 }] },
+  { name: "ไอซ์ไบรท์ เรซซิ่ง", color: "#DEDEDE", ink: "#08080A", drivers: [{ name: "มีนา", num: 21 }, { name: "ธาม", num: 27 }] },
 ] as const;
 
-/** รถ AI ให้กริดเต็ม 8 คัน — ทีมและเลขรถสมมติทั้งหมด สีเทาเพื่อให้รถผู้เล่นเด่น */
-const AI_CARS = [
-  { name: "ไลท์สปีด", num: 3 },
-  { name: "ทาสคาน", num: 11 },
-  { name: "โอไรออน", num: 19 },
-  { name: "บลูเฟิร์น", num: 24 },
-  { name: "ซันเดอร์", num: 38 },
-  { name: "คอปเปอร์ฮอว์ก", num: 63 },
+/** ทีม AI สมมติ เติมให้กริดครบ 12 คัน */
+const AI_TEAMS = [
+  { name: "ไลท์สปีด", nums: [3, 4] },
+  { name: "ทาสคาน", nums: [11, 12] },
+  { name: "โอไรออน", nums: [19, 20] },
+  { name: "บลูเฟิร์น", nums: [24, 25] },
+  { name: "ซันเดอร์", nums: [38, 39] },
 ];
 const AI_LOOK = { color: "#4a4a55", ink: "#DEDEDE" };
-const look = (p: Player) => (p.ai ? AI_LOOK : SEATS[p.id]);
+const look = (d: Driver) => (d.ai ? AI_LOOK : HUMAN_TEAMS[d.team]);
+const COMPOUND_COLOR: Record<Compound, string> = { yellow: "#facc15", red: "#E10600" };
 
-/**
- * แผนอากาศที่ยังไม่เริ่มเกม เก็บไว้นอก React เพื่อให้ฝั่งเซิร์ฟเวอร์ไม่ต้องสุ่ม (ผลคงที่ต่อ build)
- * แล้ว client ค่อยสุ่มของจริงตอน hydrate — `resetPlan` ใช้ตอนเริ่มเกมใหม่
- */
-let planCache: WeatherPlan | null = null;
-const planListeners = new Set<() => void>();
-const subscribePlan = (cb: () => void) => {
-  planListeners.add(cb);
-  return () => {
-    planListeners.delete(cb);
-  };
-};
-const getPlan = (): WeatherPlan | null => (planCache ??= makeWeatherPlan(Math.random));
-const getServerPlan = (): WeatherPlan | null => null;
-function resetPlan() {
-  planCache = null;
-  planListeners.forEach((l) => l());
-}
+const LAP_CHOICES = [4, 2, 1];
 
-const lapOf = (progress: number) =>
-  Math.min(LAPS, Math.max(1, Math.floor(progress / CELLS_PER_LAP) + 1));
+/* ---------- กระดาน ---------- */
 
-/** ตำแหน่งบนจอของเลน: ขยับออกจากแนวกลางสนามตั้งฉากกับทิศวิ่ง */
 function lanePoints(cells: Pt[], off: number) {
   const n = cells.length;
   return cells.map((c, i) => {
@@ -71,76 +45,73 @@ function lanePoints(cells: Pt[], off: number) {
     const len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len;
     const ny = dx / len;
-    return {
-      lanes: [
-        { x: c.x - nx * off, y: c.y - ny * off },
-        { x: c.x + nx * off, y: c.y + ny * off },
-      ] as const,
-      label: { x: c.x + nx * off * 3, y: c.y + ny * off * 3 },
-      edge: { x: c.x + nx * off * 2, y: c.y + ny * off * 2 },
-    };
+    const at = (k: number) => ({ x: c.x + nx * off * k, y: c.y + ny * off * k });
+    return { lanes: [at(-1), at(1)] as const, edge: at(2.1), label: at(3.2), pit: at(-3.4) };
   });
 }
 
 function BoardView({ board, state }: { board: Board; state: GameState }) {
-  const pad = 8;
-  const off = 1.5;
+  const pad = 9;
+  const off = 1.4;
   const geo = lanePoints(board.cells, off);
-  const inCorner = (i: number) => cornerAt(state.track, i) >= 0;
+  const t = state.track;
   const racing = geo.map((g) => `${g.lanes[0].x},${g.lanes[0].y}`).join(" ");
+  const pitCells = Array.from({ length: PIT_LEN }, (_, k) => lapCell(t, t.pitEntry.start + k));
+  const pitLine = pitCells.map((c) => `${geo[c].pit.x},${geo[c].pit.y}`).join(" ");
+  const pos = (d: Driver) => {
+    if (d.pit) return geo[lapCell(t, d.pit.base + d.pit.pos)].pit;
+    return geo[lapCell(t, d.progress)].lanes[d.lane];
+  };
+  const racers = state.drivers.filter((d) => d.finished === null);
   return (
     <div className="card-poster relative rounded-2xl border border-white/10 p-3">
       <svg
         viewBox={`${-pad} ${-pad} ${board.w + pad * 2} ${board.h + pad * 2}`}
         className="mx-auto block max-h-[26rem] w-full"
         role="img"
-        aria-label={`กระดานสนาม${board.name} ${CELLS_PER_LAP} ช่องต่อรอบ 2 เลน มีรถ ${state.players.length} คัน`}
+        aria-label={`กระดานสนาม${board.name} ${CELLS_PER_LAP} ช่องต่อรอบ 2 เลน มีรถ ${racers.length} คันบนสนาม`}
       >
-        <path d={board.d} fill="none" stroke="#2a2a31" strokeWidth={off * 4.4} strokeLinejoin="round" strokeLinecap="round" />
-        {/* เส้นแข่ง */}
-        <polygon points={racing} fill="none" stroke="#E10600" strokeOpacity={0.35} strokeWidth={0.35} strokeDasharray="1.2 1" />
-        {/* ขอบโค้ง: แถบแดงขาวด้านนอก */}
-        {geo.map((g, i) =>
-          inCorner(i) ? (
-            <circle key={`k${i}`} cx={g.edge.x} cy={g.edge.y} r={0.9} fill="#E10600" stroke="#fff" strokeWidth={0.35} />
-          ) : null,
-        )}
-        {geo.map((g, i) => (
-          <g key={i}>
-            {g.lanes.map((l, k) => (
-              <circle key={k} cx={l.x} cy={l.y} r={0.45} fill={i === 0 ? "#fff" : "#5a5a64"} />
-            ))}
-            {(i === 0 || i % 2 === 0) && (
-              <text
-                x={g.label.x}
-                y={g.label.y}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize={1.9}
-                fontWeight={700}
-                fill={i === 0 ? "#E10600" : "#8a8a94"}
-              >
-                {i === 0 ? "S" : i}
-              </text>
-            )}
-          </g>
-        ))}
-        {[...state.players]
-          .sort((a, b) => Number(a.ai) - Number(b.ai))
-          .reverse()
-          .map((p) => {
-            const pos = geo[lapCell(state.track, p.progress)].lanes[p.lane];
-            const c = look(p);
-            const r = p.ai ? 1.15 : 1.45;
+        <path d={board.d} fill="none" stroke="#2a2a31" strokeWidth={off * 4.6} strokeLinejoin="round" strokeLinecap="round" />
+        <polyline points={pitLine} fill="none" stroke="#DEDEDE" strokeOpacity={0.35} strokeWidth={0.6} strokeDasharray="1 0.8" />
+        <text x={geo[pitCells[BOX_AT]].pit.x} y={geo[pitCells[BOX_AT]].pit.y - 1.6} textAnchor="middle" fontSize={1.6} fontWeight={800} fill="#DEDEDE" fillOpacity={0.7}>
+          PIT
+        </text>
+        <polygon points={racing} fill="none" stroke="#E10600" strokeOpacity={0.4} strokeWidth={0.3} strokeDasharray="1.2 1" />
+        {geo.map((g, i) => {
+          const corner = zoneAt(t, t.corners, i) >= 0;
+          const drs = zoneAt(t, t.drs, i) >= 0;
+          const entry = inZone(t.pitEntry, i);
+          return (
+            <g key={i}>
+              {corner && <circle cx={g.edge.x} cy={g.edge.y} r={0.8} fill="#E10600" stroke="#fff" strokeWidth={0.3} />}
+              {drs && <rect x={g.edge.x - 0.6} y={g.edge.y - 0.6} width={1.2} height={1.2} fill="#DEDEDE" fillOpacity={0.8} />}
+              {entry && <circle cx={g.edge.x} cy={g.edge.y} r={0.7} fill="none" stroke="#DEDEDE" strokeWidth={0.35} />}
+              {g.lanes.map((l, k) => (
+                <circle key={k} cx={l.x} cy={l.y} r={0.35} fill={i === 0 ? "#fff" : "#5a5a64"} />
+              ))}
+              {(i === 0 || i % 3 === 0) && (
+                <text x={g.label.x} y={g.label.y} textAnchor="middle" dominantBaseline="central" fontSize={1.7} fontWeight={700} fill={i === 0 ? "#E10600" : "#8a8a94"}>
+                  {i === 0 ? "S" : i}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {[...racers]
+          .sort((a, b) => Number(b.ai) - Number(a.ai))
+          .map((d) => {
+            const p = pos(d);
+            const c = look(d);
+            const r = d.ai ? 1.05 : 1.35;
             return (
               <g
-                key={p.id}
+                key={d.id}
                 className="transition-transform duration-500 ease-out motion-reduce:transition-none"
-                style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+                style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
               >
-                <circle r={r} fill={c.color} stroke={p.ai ? "#08080A" : "#fff"} strokeWidth={p.ai ? 0.3 : 0.45} />
+                <circle r={r} fill={c.color} stroke={d.ai ? "#08080A" : "#fff"} strokeWidth={d.ai ? 0.3 : 0.4} />
                 <text textAnchor="middle" dominantBaseline="central" fontSize={r * 1.05} fontWeight={800} fill={c.ink}>
-                  {p.num}
+                  {d.num}
                 </text>
               </g>
             );
@@ -148,8 +119,13 @@ function BoardView({ board, state }: { board: Board; state: GameState }) {
       </svg>
       <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/60">
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-(--color-f1)" aria-hidden />
-          โค้ง (ต้องหยุดในโค้ง)
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-(--color-f1)" aria-hidden />โค้ง
+        </span>
+        <span>
+          <span className="mr-1 inline-block h-2 w-2 bg-[#DEDEDE]" aria-hidden />โซน DRS
+        </span>
+        <span>
+          <span className="mr-1 inline-block h-2 w-2 rounded-full border border-[#DEDEDE]" aria-hidden />โซนเข้าพิท
         </span>
         <span>เส้นประแดง = เส้นแข่ง</span>
       </p>
@@ -158,453 +134,325 @@ function BoardView({ board, state }: { board: Board; state: GameState }) {
   );
 }
 
-/**
- * ไพ่เร่ง — หงายแล้วเห็นค่าก้าวสามแถว (แถวของยางที่ใส่อยู่ไฮไลต์) กับสัญลักษณ์:
- * สึก = ยางเสื่อม, หยดน้ำ = เสี่ยงหมุนในฝน, ทีม/เหตุการณ์ = ผลพิเศษหลังเดิน
- * id = null แสดงไพ่คว่ำก่อนพลิกครั้งแรก, tilt ใช้เอียงตอนกำลังพลิก
- */
-function SpeedCardView({ id, col, tilt }: { id: number | null; col: Col; tilt: number }) {
-  const c = id === null ? null : SPEED_CARDS[id];
+/* ---------- ชิ้นส่วนแผงนักขับ ---------- */
+
+function Meter({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
   return (
-    <div
-      role="img"
-      aria-label={
-        c
-          ? `ไพ่เร่ง ค่านิ่ม ${c.v[0]} กลาง ${c.v[1]} แข็ง ${c.v[2]}`
-          : "ยังไม่ได้พลิกไพ่เร่ง"
-      }
-      className="flex h-24 w-28 shrink-0 flex-col justify-between rounded-xl border-2 border-white/25 bg-[#17171c] p-2 shadow-[0_6px_16px_-4px_rgba(0,0,0,0.7)] transition-transform duration-75 motion-reduce:transition-none"
-      style={{ transform: `rotate(${tilt}deg)` }}
-    >
-      {c ? (
-        <>
-          <div className="grid grid-cols-3 gap-1 text-center">
-            {COLS.map((k, i) => (
-              <div
-                key={k}
-                className={`rounded-md py-1 ${
-                  k === col ? "bg-[#DEDEDE] text-[#08080A]" : "bg-white/10 text-white/70"
-                }`}
-              >
-                <span className="block text-[9px] leading-none">{COL_LABEL[k]}</span>
-                <span className="poster block text-lg leading-tight tabular-nums">{c.v[i]}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-1 text-[10px] font-bold">
-            {c.wear && <span className="rounded bg-red-500/80 px-1 text-white">สึก</span>}
-            {c.risk > 0 && (
-              <span className="flex items-center gap-0.5 rounded bg-sky-500/30 px-1 text-sky-200">
-                <Droplets className="h-3 w-3" aria-hidden />
-                {c.risk}
-              </span>
-            )}
-            {c.icon === "team" && <span className="rounded bg-yellow-400/80 px-1 text-black">ทีม</span>}
-            {c.icon === "event" && <span className="rounded bg-white/25 px-1 text-white">เหตุการณ์</span>}
-          </div>
-        </>
-      ) : (
-        <span className="poster m-auto text-3xl text-white/25">?</span>
-      )}
+    <span className="inline-flex items-center gap-0.5" role="img" aria-label={`${label} ${value}/${max}`}>
+      {Array.from({ length: max }, (_, i) => (
+        <span key={i} className="h-2.5 w-2 rounded-sm" style={{ background: i < value ? color : "rgba(255,255,255,0.12)" }} />
+      ))}
+    </span>
+  );
+}
+
+function DriverPanel({ d, pos }: { d: Driver; pos: number }) {
+  const c = look(d);
+  return (
+    <div className="space-y-2">
+      <p className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: c.color, color: c.ink }}>
+          #{d.num} {d.name}
+        </span>
+        <span className="text-white/60">{HUMAN_TEAMS[d.team]?.name}</span>
+        <span className="poster tabular-nums text-white">P{pos}</span>
+      </p>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-white/70">
+        <span className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-full" style={{ background: COMPOUND_COLOR[d.compound] }} aria-hidden />
+          ยาง{COMPOUNDS[d.compound].label}
+          {d.worn ? (
+            <b className="text-yellow-400">พัง</b>
+          ) : (
+            <Meter value={WEAR_MAX - d.wear} max={WEAR_MAX} color={COMPOUND_COLOR[d.compound]} label="ยางเหลือ" />
+          )}
+        </span>
+        <span className="flex items-center gap-1.5">
+          ERS <Meter value={d.ers} max={ERS_MAX} color="#DEDEDE" label="ERS" />
+        </span>
+        <span className="tabular-nums">
+          ATTACK {d.tokens.attack}/{TOKEN_USES} · BLOCK {d.tokens.block}/{TOKEN_USES} · SLIP {d.tokens.slip}/{TOKEN_USES}
+        </span>
+        <span>
+          ยางสำรอง:{" "}
+          {d.sets.length === 0
+            ? "หมด"
+            : d.sets.map((s, i) => (
+                <span
+                  key={i}
+                  role="img"
+                  aria-label={`ยาง${COMPOUNDS[s].label}`}
+                  className="mr-0.5 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                  style={{ background: COMPOUND_COLOR[s] }}
+                />
+              ))}
+        </span>
+      </div>
     </div>
   );
 }
 
-/** สีขอบตามชนิดยาง (ตามธรรมเนียมสีแถบยางในการแข่งจริง) */
-const TYRE_TONE: Record<Tyre, string> = {
-  soft: "border-red-500/70",
-  medium: "border-yellow-400/70",
-  hard: "border-white/60",
-  inter: "border-green-500/70",
-  wet: "border-sky-400/70",
-};
-
-function WeatherIcon({ weather, className = "h-5 w-5" }: { weather: Weather; className?: string }) {
-  if (weather === "dry") return <Sun className={`${className} text-yellow-300`} aria-hidden />;
-  if (weather === "light_rain") return <CloudDrizzle className={`${className} text-sky-300`} aria-hidden />;
-  return <CloudRain className={`${className} text-sky-400`} aria-hidden />;
-}
-
-/** แถบพยากรณ์อากาศ 5 รอบเทิร์น — ใกล้แม่น ไกลคลาดเคลื่อนได้ (เส้นประ) */
-function ForecastStrip({ plan, round }: { plan: WeatherPlan; round: number }) {
+function MoveCardView({ id, compound }: { id: number; compound: Compound }) {
+  const c = MOVE_DECK[id];
   return (
-    <section className="space-y-2" aria-label="พยากรณ์อากาศ">
-      <p className="text-xs font-medium text-white/55">
-        พยากรณ์อากาศ · แม่นใน {SURE_AHEAD} รอบแรก ไกลกว่านั้นคลาดเคลื่อนได้
-      </p>
-      <ul className="grid grid-cols-5 gap-1.5">
-        {Array.from({ length: 5 }, (_, ahead) => {
-          const f = forecastAt(plan, round, ahead);
-          return (
-            <li
-              key={ahead}
-              className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 text-center ${
-                f.sure ? "border-white/20 bg-white/5" : "border-dashed border-white/20"
-              }`}
-            >
-              <span className="text-[10px] font-bold tabular-nums text-white/55">
-                {ahead === 0 ? "ตอนนี้" : `R${round + ahead}`}
-              </span>
-              <WeatherIcon weather={f.weather} />
-              <span className="text-[11px] leading-tight text-white/75">
-                {f.sure ? "" : "~"}
-                {WEATHER[f.weather].label}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+    <div role="img" aria-label={`ไพ่ MOVE ยางเหลือง ${c.y} ยางแดง ${c.r}`} className="w-28 shrink-0 space-y-1 rounded-xl border-2 border-white/25 bg-[#17171c] p-2">
+      <p className="poster text-[10px] text-white/60">MOVE</p>
+      {(["yellow", "red"] as Compound[]).map((k) => (
+        <div
+          key={k}
+          className={`flex items-center justify-between rounded-md px-2 py-0.5 ${k === compound ? "bg-[#DEDEDE] text-[#08080A]" : "bg-white/10 text-white/60"}`}
+        >
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: COMPOUND_COLOR[k] }} aria-hidden />
+          <span className="poster text-lg tabular-nums">{moveValue(c, k)}</span>
+        </div>
+      ))}
+      <div className="flex gap-1 text-[10px] font-bold">
+        {c.tires && <span className="rounded bg-red-500/80 px-1 text-white">สึก</span>}
+        {c.ers && <span className="rounded bg-white/25 px-1 text-white">⚡ ชาร์จ</span>}
+      </div>
+    </div>
   );
 }
 
-/** การ์ดยาง — ใช้ทั้งตอนเลือกและตอนแสดงยางที่ใส่ไว้ */
-function TyreCard({
-  tyre, label, life, hint, active = false, onClick, disabled,
+function Toggle({
+  on, disabled, onClick, children,
 }: {
-  tyre: Tyre;
-  label?: string;
-  /** อายุที่เหลือ (ถ้าไม่ส่ง = แสดงอายุเต็ม) */
-  life?: number;
-  /** ข้อความผลของอากาศปัจจุบันต่อยางใบนี้ */
-  hint?: { text: string; good: boolean } | null;
-  active?: boolean;
-  onClick?: () => void;
+  on: boolean;
   disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
-  const t = TYRES[tyre];
-  const body = (
-    <>
-      {label && <span className="mb-1 block text-[10px] font-bold text-white/55">{label}</span>}
-      <span className="block font-bold">{t.label}</span>
-      <span className="block text-xs tabular-nums text-white/60">
-        ~{columnAvg(t.col)} · {life ?? t.life}/{t.life}
-      </span>
-      <span className="block text-[10px] text-white/50">เหมาะ: {t.best}</span>
-      {hint && (
-        <span className={`block text-[10px] font-bold ${hint.good ? "text-green-400" : "text-yellow-400"}`}>
-          {hint.text}
-        </span>
-      )}
-    </>
-  );
-  const cls = `rounded-xl border-2 bg-white/5 px-2.5 py-2 text-left text-sm ${TYRE_TONE[tyre]} ${
-    active ? "bg-white/10 ring-2 ring-white/40" : ""
-  }`;
-  if (!onClick) return <div className={cls}>{body}</div>;
   return (
     <button
       type="button"
-      onClick={onClick}
+      aria-pressed={on}
       disabled={disabled}
-      className={`${cls} transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40`}
+      onClick={onClick}
+      className={`rounded-xl border-2 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        on ? "border-(--color-f1) bg-(--color-f1)/15 text-white" : "border-white/15 bg-white/5 text-white/75 hover:border-white/35"
+      }`}
     >
-      {body}
+      {children}
     </button>
   );
 }
 
-/** ขั้นเลือกยางก่อนแข่ง — ผู้เล่นทีละคน */
-function TyreSetup({
-  plan, onDone,
-}: {
-  plan: WeatherPlan;
-  onDone: (tyres: Tyre[][]) => void;
-}) {
-  const [picked, setPicked] = useState<Tyre[][]>([]);
-  const [draft, setDraft] = useState<Tyre[]>([]);
-  const who = picked.length;
-  const seat = SEATS[who];
+function logText(s: GameState, l: TurnLog) {
+  const d = s.drivers[l.driver];
+  const how: Record<TurnLog["kind"], string> = {
+    base: "เดินพื้นฐาน",
+    card: l.ai ? "เดิน" : "เปิดไพ่ MOVE",
+    drs: "ใช้ DRS",
+    slip: "สลิปสตรีม",
+    worn: "ยางพังเดินเอง",
+    pitIn: "เข้าเลนพิท",
+    pitLane: "วิ่งในเลนพิท",
+    box: "เปลี่ยนยางแล้วออกจากพิท",
+  };
+  const bits = [`#${d.num} ${d.name} ${how[l.kind]} ${l.moved} ช่อง`];
+  if (l.ers) bits.push("ERS +2");
+  if (l.attacked !== null) bits.push(`ATTACK ดัน #${s.drivers[l.attacked].num} ออกนอกเส้น`);
+  if (l.block) bits.push("BLOCK คันหลัง");
+  if (l.corner) bits.push("หยุดในโค้ง");
+  if (l.blocked) bits.push("ติดรถข้างหน้า");
+  if (l.wear) bits.push(`ยางสึก ${l.wear} ขั้น`);
+  if (l.nowWorn) bits.push("ยางพัง!");
+  if (l.recharge) bits.push("ชาร์จ ERS");
+  if (l.finished) bits.push(`เข้าเส้นชัยอันดับ ${d.finished}`);
+  return bits.join(" · ");
+}
 
-  const count = (t: Tyre) => draft.filter((x) => x === t).length;
+/* ---------- หน้าตั้งค่า ---------- */
 
-  function confirm() {
-    const all = [...picked, draft];
-    if (all.length === SEATS.length) onDone(all);
-    else {
-      setPicked(all);
-      setDraft([]);
-    }
-  }
-
+function Setup({ onStart }: { onStart: (players: number, laps: number, compounds: Compound[][]) => void }) {
+  const [players, setPlayers] = useState(2);
+  const [laps, setLaps] = useState(4);
+  const [compounds, setCompounds] = useState<Compound[][]>([
+    ["yellow", "red"],
+    ["yellow", "red"],
+  ]);
   return (
-    <section className="card space-y-4 p-4" aria-label="เลือกยางก่อนแข่ง">
-      <p className="flex flex-wrap items-center gap-2 text-sm">
-        <span
-          className="rounded-full px-2.5 py-0.5 text-xs font-bold"
-          style={{ background: seat.color, color: seat.ink }}
-        >
-          {seat.name}
-        </span>
-        <span className="text-white/60">เลือกการ์ดยาง {TYRE_SLOTS} ใบ ใส่ไว้ก่อนออกตัว</span>
-      </p>
-
-      <ForecastStrip plan={plan} round={1} />
-
-      <div className="grid grid-cols-3 gap-2">
-        {COMPOUNDS.map((t) => (
-          <TyreCard
-            key={t}
-            tyre={t}
-            onClick={() => setDraft((d) => [...d, t])}
-            disabled={draft.length >= TYRE_SLOTS || count(t) >= MAX_PER_COMPOUND}
-          />
-        ))}
-      </div>
-      <p className="text-xs text-white/55">
-        ตัวเลขบนการ์ด = โบนัสก้าวตอนเร่ง · อายุ (จำนวนเทิร์นที่เร่งได้) · ยางแต่ละชนิดเลือกได้ไม่เกิน {MAX_PER_COMPOUND} ใบ
-      </p>
-
+    <section className="card space-y-4 p-4" aria-label="ตั้งค่าการแข่ง">
       <div>
-        <p className="mb-2 text-xs font-medium text-white/55">ยางที่ใส่ไว้ (ใบแรกใช้ออกตัว ที่เหลือเป็นยางสำรองไว้เข้าพิท)</p>
-        <div className="grid grid-cols-4 gap-2">
-          {Array.from({ length: TYRE_SLOTS }, (_, i) => {
-            const t = draft[i];
-            return t ? (
-              <div key={i} className="relative">
-                <TyreCard tyre={t} label={i === 0 ? "ออกตัว" : `สำรอง ${i}`} />
-                <button
-                  type="button"
-                  aria-label={`เอายางใบที่ ${i + 1} ออก`}
-                  onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}
-                  className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white/80 hover:text-white"
-                >
-                  <X className="h-3 w-3" aria-hidden />
-                </button>
-              </div>
-            ) : (
-              <div
-                key={i}
-                className="flex min-h-[5.5rem] items-center justify-center rounded-xl border-2 border-dashed border-white/15 text-xs text-white/40"
-              >
-                {i === 0 ? "ออกตัว" : `สำรอง ${i}`}
-              </div>
-            );
-          })}
+        <p className="mb-2 text-xs font-medium text-white/55">
+          จำนวนผู้เล่น (ทีมละ 2 คัน ที่เหลือเป็นรถ AI จนครบ {GRID_SIZE} คัน)
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {[1, 2].map((n) => (
+            <Toggle key={n} on={players === n} onClick={() => setPlayers(n)}>
+              <b>{n} คน</b> <span className="text-white/55">· AI {GRID_SIZE - n * 2} คัน</span>
+            </Toggle>
+          ))}
         </div>
       </div>
-
+      <div>
+        <p className="mb-2 text-xs font-medium text-white/55">ระยะเรซ</p>
+        <div className="grid grid-cols-3 gap-2">
+          {LAP_CHOICES.map((n) => (
+            <Toggle key={n} on={laps === n} onClick={() => setLaps(n)}>
+              <b>{n} รอบ</b>
+              {n === 4 && <span className="block text-[11px] text-white/55">เต็มรูปแบบ</span>}
+            </Toggle>
+          ))}
+        </div>
+      </div>
+      {HUMAN_TEAMS.slice(0, players).map((team, ti) => (
+        <div key={ti} className="space-y-2">
+          <p className="text-sm">
+            <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: team.color, color: team.ink }}>
+              {team.name}
+            </span>{" "}
+            <span className="text-white/55">เลือกยางออกตัวของแต่ละคัน</span>
+          </p>
+          {team.drivers.map((dr, di) => (
+            <div key={di} className="grid grid-cols-[5.5rem_1fr_1fr] items-center gap-2 text-sm">
+              <span className="font-bold">
+                #{dr.num} {dr.name}
+              </span>
+              {(["yellow", "red"] as Compound[]).map((k) => (
+                <Toggle
+                  key={k}
+                  on={compounds[ti][di] === k}
+                  onClick={() =>
+                    setCompounds((cur) => cur.map((row, r) => (r === ti ? row.map((v, c) => (c === di ? k : v)) : row)))
+                  }
+                >
+                  <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full" style={{ background: COMPOUND_COLOR[k] }} aria-hidden />
+                  {COMPOUNDS[k].label}
+                  <span className="block text-[11px] text-white/55">{k === "red" ? "เร็ว สึกเร็ว" : "ช้ากว่า ทน"}</span>
+                </Toggle>
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
       <button
         type="button"
-        disabled={!validTyres(draft)}
-        onClick={confirm}
-        className="w-full rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+        onClick={() => onStart(players, laps, compounds)}
+        className="w-full rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white"
       >
-        {who + 1 < SEATS.length ? `ยืนยัน แล้วให้ ${SEATS[who + 1].name} เลือก` : "ยืนยัน เริ่มแข่ง"}
+        ออกสตาร์ท
       </button>
     </section>
   );
 }
 
-function ActionCard({
-  action, selected, disabled, onClick, note,
-}: {
-  action: Action;
-  selected: boolean;
-  disabled: boolean;
-  onClick: () => void;
-  /** ข้อความกำกับพิเศษ เช่นการเข้าพิทฉุกเฉินที่ไม่ต้องใช้การ์ด */
-  note?: string;
-}) {
-  const a = ACTIONS[action];
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      disabled={disabled}
-      onClick={onClick}
-      className={`flex min-h-28 flex-col rounded-xl border-2 p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        selected
-          ? "border-(--color-f1) bg-(--color-f1)/15"
-          : "border-white/15 bg-white/5 hover:border-white/35"
-      }`}
-    >
-      <span className="poster text-sm">{a.label}</span>
-      {note && <span className="text-[10px] font-bold text-yellow-400">{note}</span>}
-      <span className="mt-1 text-xs leading-snug text-white/65">{a.desc}</span>
-    </button>
+/* ---------- เกม ---------- */
+
+function buildCars(players: number, compounds: Compound[][]): { cars: CarSpec[]; teams: string[] } {
+  const cars: CarSpec[] = [];
+  HUMAN_TEAMS.slice(0, players).forEach((team, ti) =>
+    team.drivers.forEach((dr, di) => cars.push({ ...dr, team: ti, ai: false, compound: compounds[ti][di] })),
   );
+  for (const team of AI_TEAMS) {
+    for (const num of team.nums) {
+      if (cars.length >= GRID_SIZE) break;
+      cars.push({ name: team.name, num, team: -1, ai: true });
+    }
+  }
+  return { cars, teams: HUMAN_TEAMS.slice(0, players).map((t) => t.name) };
 }
 
 export default function BoardGame({ board }: { board: Board }) {
   const [state, setState] = useState<GameState | null>(null);
-  const [action, setAction] = useState<Action | null>(null);
-  /** ผลเทิร์นที่คำนวณไว้แล้ว รอให้ไพ่พลิกจบก่อนค่อยใช้จริง */
-  const [rolling, setRolling] = useState<{ next: GameState; settled: boolean } | null>(null);
-  /** ไพ่เร่งที่โชว์ระหว่างพลิก (ลำดับใน SPEED_CARDS) */
-  const [face, setFace] = useState<number | null>(null);
-  const [tilt, setTilt] = useState(0);
-  /** แผนอากาศของเรซนี้ — เซิร์ฟเวอร์ได้ null (ยังไม่สุ่ม) ฝั่ง client สุ่มหลัง hydrate */
-  const plan = useSyncExternalStore(subscribePlan, getPlan, getServerPlan);
-  /** ยางสำรองที่จะเปลี่ยนไปใช้เมื่อเล่นการ์ดเข้าพิท (ลำดับใน me.tyres) */
-  const [pitTo, setPitTo] = useState(1);
-  const [mode, setMode] = useState<Mode>("push");
-  const [sky, setSky] = useState<SkyShift>("earlier");
-  /** สลับยางด่วน (ลำดับยางสำรอง) ในรอบที่อากาศพลิก */
-  const [swap, setSwap] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!rolling) return;
-    if (rolling.settled) {
-      // หยุดที่ค่าจริงแป๊บหนึ่งให้เห็นผล แล้วค่อยเดินรถ
-      const t = setTimeout(() => {
-        setState(rolling.next);
-        setRolling(null);
-      }, 650);
-      return () => clearTimeout(t);
-    }
-    const tick = setInterval(() => {
-      setFace(Math.floor(Math.random() * SPEED_CARDS.length));
-      setTilt((Math.random() - 0.5) * 70);
-    }, 90);
-    const stop = setTimeout(() => {
-      setFace(rolling.next.lastTurn?.card ?? 0);
-      setTilt(0);
-      setRolling({ next: rolling.next, settled: true });
-    }, 850);
-    return () => {
-      clearInterval(tick);
-      clearTimeout(stop);
-    };
-  }, [rolling]);
+  const [box, setBox] = useState(false);
+  const [ers, setErs] = useState(false);
+  const [attack, setAttack] = useState(false);
+  const [block, setBlock] = useState(false);
+  const [lane, setLane] = useState<Lane>(0);
 
   if (!state) {
     return (
       <div className="space-y-4">
-        {plan ? (
-          <TyreSetup
-            plan={plan}
-            onDone={(tyres) =>
-              setState(
-                newGame(
-                  [
-                    ...SEATS.map((seat, i): CarSpec => ({ name: seat.name, num: seat.num, ai: false, tyres: tyres[i] })),
-                    ...AI_CARS.map((car): CarSpec => ({ ...car, ai: true })),
-                  ],
-                  { lapCells: CELLS_PER_LAP, corners: board.corners },
-                  LAPS,
-                  plan,
-                  Math.random,
-                ),
-              )
-            }
-          />
-        ) : (
-          <p className="card p-4 text-center text-sm text-white/60">กำลังเตรียมพยากรณ์อากาศ…</p>
-        )}
+        <Setup
+          onStart={(players, laps, compounds) => {
+            const { cars, teams } = buildCars(players, compounds);
+            const track = { lapCells: CELLS_PER_LAP, corners: board.corners, drs: board.drs, pitEntry: board.pitEntry };
+            setState(newGame(cars, teams, track, laps, Math.random));
+          }}
+        />
         <Rules />
       </div>
     );
   }
 
-  const me = activePlayer(state);
-  const seat = look(me);
   const order = standings(state);
-  const worn = isWorn(me);
-  /** ยางพังหรือเบรกร้อน = เทิร์นนี้ขับคุมเท่านั้น */
-  const forced = mustCruise(me);
-  const over = state.winner !== null;
-  const log = state.lastTurn;
-  /** โหมดจริง: ยางพังหรือเข้าพิทบังคับขับคุม */
-  const effMode: Mode = forced || action === "pit" ? "cruise" : mode;
-  const weather = weatherNow(state);
-  const swapSpots = me.tyres.map((_, i) => canSwap(state, me, i));
-  const canSwapNow = swapSpots.some(Boolean);
-
-  /** ในมือ + การ์ดเข้าพิทฉุกเฉินเมื่อยางพังและไม่มีการ์ดพิท (ไม่ต้องใช้การ์ด) */
-  const hand: { card: Action; emergency: boolean }[] = me.hand.map((card) => ({
-    card,
-    emergency: false,
-  }));
-  if (worn && me.tyres.length > 1 && !me.hand.includes("pit")) {
-    hand.push({ card: "pit", emergency: true });
-  }
-
-  function pickAction(next: Action | null) {
-    setAction(next);
-    // เข้าพิทกับสลับยางด่วนใช้ด้วยกันไม่ได้
-    if (next === "pit") setSwap(null);
-  }
-
-  function pickMode(next: Mode) {
-    setMode(next);
-    // การ์ดที่ใช้ได้เฉพาะตอนเร่ง ต้องถอดออกเมื่อสลับไปขับคุม
-    if (next === "cruise" && (action === "boost" || action === "save" || action === "reroll")) {
-      setAction(null);
-    }
-  }
-
-  function clickTyre(i: number) {
-    if (i < 1) return;
-    if (action === "pit") setPitTo(i);
-    else if (swapSpots[i]) setSwap((cur) => (cur === i ? null : i));
-  }
-
-  function roll() {
-    if (rolling || !state) return;
-    const next = playTurn(state, { mode, action, pitTo, sky, swap }, Math.random);
-    if (next === state) return; // ไม่ถูกกติกา (ปุ่มควรกันไว้แล้ว)
-    setAction(null);
-    setPitTo(1);
-    setSwap(null);
-    setSky("earlier");
-    const calm =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // ขับคุมไม่พลิกไพ่ — ไม่ต้องรอแอนิเมชัน
-    if (calm || next.lastTurn?.card == null) {
-      setState(next);
-    } else {
-      setRolling({ next, settled: false });
-    }
-  }
-
-  function restart() {
+  const resetExtras = () => {
+    setBox(false);
+    setErs(false);
+    setAttack(false);
+    setBlock(false);
+    setLane(0);
+  };
+  const pick = (c: Choice) => setState((s) => (s ? choose(s, { ...c, box }, Math.random) : s));
+  const go = () => {
+    setState((s) => (s ? commit(s, { ers, attack, block, lane }, Math.random) : s));
+    resetExtras();
+  };
+  const restart = () => {
     setState(null);
-    resetPlan();
-    setAction(null);
-    setPitTo(1);
-    setSwap(null);
-    setSky("earlier");
-    setMode("push");
-    setFace(null);
-  }
+    resetExtras();
+  };
 
-  const shownCard = rolling ? face : (state.lastTurn?.card ?? null);
+  const d = state.over ? null : activeDriver(state);
+  const pos = d ? order.findIndex((x) => x.id === d.id) + 1 : 0;
+  const o = d ? options(state, d) : null;
+  const p = state.pending;
+
+  // พรีวิวขั้นที่ 2: จะไปถึงไหน และ ATTACK ได้ไหม
+  let preview: ReturnType<typeof travel> | null = null;
+  let canAttack = false;
+  if (d && p) {
+    preview = travel(state, d, p.value + (ers && d.ers > 0 ? ERS_BONUS : 0), lane);
+    canAttack = attackTarget(state, d, preview) !== null;
+  }
+  const canBlock = !!d && d.tokens.block > 0 && state.order[state.turn + 1] !== undefined;
 
   return (
     <div className="space-y-4">
       <BoardView board={board} state={state} />
 
       <section className="card p-3" aria-label="อันดับ">
-        <ol className="space-y-1 text-xs">
-          {order.map((p, rank) => {
-            const c = look(p);
-            const gap = order[0].progress - p.progress;
+        <p className="mb-1.5 text-xs text-white/55">
+          รอบเทิร์นที่ {state.round} · ระยะเรซ {state.laps} รอบสนาม
+        </p>
+        <ol className="space-y-0.5 text-xs">
+          {order.map((x, rank) => {
+            const c = look(x);
+            const lap = Math.min(state.laps, Math.max(1, Math.floor(x.progress / CELLS_PER_LAP) + 1));
             return (
               <li
-                key={p.id}
-                className={`flex items-center gap-2 rounded-lg px-2 py-1 ${p.ai ? "" : "bg-white/8"}`}
+                key={x.id}
+                className={`flex items-center gap-2 rounded-lg px-2 py-0.5 ${x.ai ? "" : "bg-white/8"} ${d?.id === x.id ? "ring-1 ring-(--color-f1)" : ""}`}
               >
-                <span className="poster w-6 text-right tabular-nums text-white/70">P{rank + 1}</span>
+                <span className="poster w-7 text-right tabular-nums text-white/70">P{rank + 1}</span>
                 <span
-                  className="flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[11px] font-black tabular-nums"
-                  style={{ background: c.color, color: c.ink, outline: p.ai ? undefined : "1.5px solid #fff" }}
+                  className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-black tabular-nums"
+                  style={{ background: c.color, color: c.ink }}
                   aria-hidden
                 >
-                  {p.num}
+                  {x.num}
                 </span>
-                <span className={`min-w-0 flex-1 truncate ${p.ai ? "text-white/70" : "font-bold text-white"}`}>
-                  {p.name}
-                  {p.ai && <span className="ml-1 text-[10px] text-white/45">AI</span>}
+                <span className={`min-w-0 flex-1 truncate ${x.ai ? "text-white/65" : "font-bold text-white"}`}>
+                  {x.name}
+                  {x.ai && <span className="ml-1 text-[10px] text-white/45">AI</span>}
                 </span>
-                {!p.ai && (
-                  <span className="tabular-nums text-white/60">
-                    {TYRES[p.tyres[0]].label} {p.life}/{TYRES[p.tyres[0]].life}
-                  </span>
+                {!x.ai && (
+                  <span
+                    role="img"
+                    aria-label={`ยาง${COMPOUNDS[x.compound].label}`}
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ background: COMPOUND_COLOR[x.compound] }}
+                  />
                 )}
-                <span className="w-14 text-right tabular-nums text-white/60">
-                  {rank === 0 ? `รอบ ${lapOf(p.progress)}/${LAPS}` : `+${gap} ช่อง`}
+                <span className="w-24 text-right tabular-nums text-white/55">
+                  {x.finished !== null
+                    ? "เข้าเส้นแล้ว"
+                    : x.pit
+                      ? "อยู่ในพิท"
+                      : rank === 0
+                        ? `รอบ ${lap}/${state.laps}`
+                        : `+${order[0].progress - x.progress} ช่อง`}
                 </span>
               </li>
             );
@@ -612,306 +460,166 @@ export default function BoardGame({ board }: { board: Board }) {
         </ol>
       </section>
 
-      {!over && (
-        <div className="card p-3">
-          <ForecastStrip plan={state} round={state.round} />
-        </div>
-      )}
-
-      {state.event && !over && (
-        <p role="status" className="card-poster rounded-xl border border-(--color-f1)/40 px-4 py-3 text-sm">
-          <span className="poster text-(--color-f1-text)">{EVENTS[state.event].label}</span>{" "}
-          <span className="text-white/75">{EVENTS[state.event].desc}</span>
-        </p>
-      )}
-
-      {state.yellow && !over && (
-        <p
-          role="status"
-          className="flex items-start gap-2 rounded-xl border border-yellow-400/50 bg-yellow-400/10 px-4 py-3 text-sm"
-        >
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" aria-hidden />
-          <span className="text-white/80">
-            <span className="poster text-yellow-400">ธงเหลือง</span> รอบหน้ามีโอกาสราว{" "}
-            {Math.round(YELLOW_TO_SC * 100)}% เป็นเซฟตี้คาร์ — ถ้าเกิดขึ้นเข้าพิทฟรี
-            แต่ถ้าพลาดช่วงนั้นต้องเสียเวลา {PIT_COST} ช่องตามปกติ
-          </span>
-        </p>
-      )}
-
-      {over ? (
+      {state.over ? (
         <section className="card-poster space-y-3 rounded-2xl border border-white/10 p-5 text-center" role="status">
           <Flag className="mx-auto h-6 w-6 text-(--color-f1-text)" aria-hidden />
           <p className="poster text-2xl">
-            #{state.players[state.winner!].num} {state.players[state.winner!].name} ชนะ!
+            #{order[0].num} {order[0].name} ชนะ!
           </p>
           <ol className="mx-auto max-w-xs space-y-0.5 text-left text-sm">
-            {(state.finish ?? []).map((id, i) => {
-              const p = state.players[id];
-              return (
-                <li key={id} className={p.ai ? "text-white/60" : "font-bold text-white"}>
-                  <span className="inline-block w-8 tabular-nums">P{i + 1}</span>#{p.num} {p.name}
-                </li>
-              );
-            })}
+            {order.map((x, i) => (
+              <li key={x.id} className={x.ai ? "text-white/55" : "font-bold text-white"}>
+                <span className="inline-block w-9 tabular-nums">P{i + 1}</span>#{x.num} {x.name}
+              </li>
+            ))}
           </ol>
           <button
             type="button"
             onClick={restart}
             className="inline-flex items-center gap-2 rounded-full bg-(--color-f1) px-5 py-2.5 text-sm font-bold text-white"
           >
-            <RotateCcw className="h-4 w-4" aria-hidden /> เล่นอีกรอบ
+            <RotateCcw className="h-4 w-4" aria-hidden /> แข่งใหม่
           </button>
         </section>
-      ) : (
-        <section className="card space-y-4 p-4" aria-label="เทิร์นของคุณ">
-          <p className="flex flex-wrap items-center gap-2 text-sm">
-            <span
-              className="rounded-full px-2.5 py-0.5 text-xs font-bold"
-              style={{ background: seat.color, color: seat.ink }}
-            >
-              ตา {me.name}
-            </span>
-            <span className="tabular-nums text-white/55">
-              รอบเทิร์นที่ {state.round} · เดินที่ {state.turn + 1}/{state.order.length}
-            </span>
-            {me.debuff > 0 && (
-              <span className="font-medium text-yellow-400">โดนขวางทาง −{me.debuff} ช่อง</span>
-            )}
-          </p>
+      ) : d && o ? (
+        <section className="card space-y-4 p-4" aria-label="ตานักขับ">
+          <DriverPanel d={d} pos={pos} />
           <p className="text-xs text-white/60">
-            รถ #{me.num} อันดับ P{order.findIndex((p) => p.id === me.id) + 1} ·{" "}
-            {me.lane === 0 ? (
-              <span className="font-bold text-white">อยู่บนเส้นแข่ง</span>
-            ) : (
-              <span className="font-bold text-yellow-400">อยู่เลนนอก — เร่งได้ −{OFFLINE_PENALTY}</span>
-            )}
-            {cornerAt(state.track, me.progress) >= 0 && " · อยู่ในโค้ง ออกได้เลย"}
+            {d.pit
+              ? d.pit.inBox
+                ? "จอดอยู่ในช่องพิท — เลือกยางชุดใหม่แล้ววิ่งออก"
+                : `อยู่ในเลนพิท วิ่งช่องละ ${PIT_SPEED} แซงในเลนพิทไม่ได้`
+              : d.lane === 0
+                ? "อยู่บนเส้นแข่ง — เปิดไพ่ MOVE ได้"
+                : state.round === 1
+                  ? "ตาแรก: นอกเส้นแข่งก็เปิดไพ่ได้"
+                  : "อยู่นอกเส้นแข่ง — เดินได้แค่พื้นฐาน (กลับเข้าเส้นแข่งตอนจบตาได้ถ้าว่าง)"}
+            {onTrack(d) && zoneAt(state.track, state.track.corners, d.progress) >= 0 && " · อยู่ในโค้ง ออกได้เลย"}
           </p>
 
-          {worn && (
-            <p
-              role="status"
-              className="rounded-xl border border-yellow-400/50 bg-yellow-400/10 px-3 py-2 text-sm text-white/85"
-            >
-              <span className="poster text-yellow-400">ยางพัง!</span> ขับได้แค่ {WORN_MOVE} ช่อง ใช้การ์ดไม่ได้
-              นอกจากเข้าพิท (ไม่ต้องมีการ์ด)
-            </p>
-          )}
-
-          {me.limp && !worn && (
-            <p
-              role="status"
-              className="rounded-xl border border-yellow-400/50 bg-yellow-400/10 px-3 py-2 text-sm text-white/85"
-            >
-              <span className="poster text-yellow-400">เบรกร้อน!</span> เทิร์นนี้ขับคุมเท่านั้น
-            </p>
-          )}
-
-          {canSwapNow && (
-            <p
-              role="status"
-              className="rounded-xl border border-sky-400/50 bg-sky-400/10 px-3 py-2 text-sm text-white/85"
-            >
-              <span className="poster text-sky-300">อากาศเปลี่ยน!</span> ยางสำรองที่เหมาะกับสภาพใหม่
-              สลับด่วนได้ฟรี 1 ครั้งโดยไม่ต้องเข้าพิท (ยางเดิมถูกทิ้ง) — แตะยางสำรองที่มีป้าย “สลับด่วน”
-            </p>
-          )}
-
-          <div>
-            <p className="mb-2 text-xs font-medium text-white/55">ยางของคุณ (ใบที่ใช้อยู่ + สำรอง)</p>
-            <div className="grid grid-cols-4 gap-2">
-              {me.tyres.map((t, i) => {
-                const fx = weatherEffect(weather, t);
-                const picking = action === "pit" && i >= 1;
-                const swapping = !picking && swapSpots[i];
-                return (
-                  <TyreCard
-                    key={i}
-                    tyre={t}
-                    active={i === 0 || (picking && pitTo === i) || (swapping && swap === i)}
-                    label={
-                      i === 0
-                        ? "ใช้อยู่"
-                        : picking
-                          ? `เปลี่ยนเป็น ${i}`
-                          : swapping
-                            ? "สลับด่วน"
-                            : `สำรอง ${i}`
-                    }
-                    life={i === 0 ? me.life : undefined}
-                    hint={
-                      fx.spin > 0
-                        ? { text: `เร่งเสี่ยงหมุน ${Math.round(fx.spin * 100)}%`, good: false }
-                        : fx.move === 0
-                          ? null
-                          : { text: `${fx.move > 0 ? "+" : ""}${fx.move} ตอนเร่ง`, good: fx.move > 0 }
-                    }
-                    onClick={picking || swapping ? () => clickTyre(i) : undefined}
-                  />
-                );
-              })}
-            </div>
-            {action === "pit" && (
-              <p className="mt-2 text-xs text-white/65">
-                แตะยางสำรองที่จะเปลี่ยนไปใช้ ·{" "}
-                {pitCost(state) === 0 ? (
-                  <span className="font-bold text-green-400">เซฟตี้คาร์: เข้าพิทฟรี</span>
+          {!p && (
+            <div className="space-y-2">
+              {"inBox" in o ? (
+                o.inBox ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {[...new Set(d.sets)].map((k) => (
+                      <Toggle key={k} on={false} onClick={() => pick({ kind: "box", set: k })}>
+                        <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full" style={{ background: COMPOUND_COLOR[k] }} aria-hidden />
+                        ใส่ยาง{COMPOUNDS[k].label} แล้วออก
+                      </Toggle>
+                    ))}
+                    {d.sets.length === 0 && (
+                      <Toggle on={false} onClick={() => pick({ kind: "box" })}>
+                        ยางหมด — ออกจากพิท
+                      </Toggle>
+                    )}
+                  </div>
                 ) : (
-                  <span>เสียเวลา {PIT_COST} ช่อง</span>
-                )}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <p className="mb-2 text-xs font-medium text-white/55">เลือกจังหวะเทิร์นนี้</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                aria-pressed={effMode === "cruise"}
-                disabled={forced || action === "pit"}
-                onClick={() => pickMode("cruise")}
-                className={`rounded-xl border-2 p-3 text-left transition-colors disabled:cursor-not-allowed ${
-                  effMode === "cruise"
-                    ? "border-(--color-f1) bg-(--color-f1)/15"
-                    : "border-white/15 bg-white/5 hover:border-white/35"
-                }`}
-              >
-                <span className="poster flex items-center gap-1.5 text-sm">
-                  <Gauge className="h-4 w-4" aria-hidden /> ขับคุม
-                </span>
-                <span className="mt-1 block text-xs leading-snug text-white/65">
-                  เดิน {worn ? WORN_MOVE : CRUISE_MOVE} ช่องคงที่ ไม่พลิกไพ่ ยางไม่สึก
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-pressed={effMode === "push"}
-                disabled={forced || action === "pit"}
-                onClick={() => pickMode("push")}
-                className={`rounded-xl border-2 p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                  effMode === "push"
-                    ? "border-(--color-f1) bg-(--color-f1)/15"
-                    : "border-white/15 bg-white/5 hover:border-white/35"
-                }`}
-              >
-                <span className="poster flex items-center gap-1.5 text-sm">
-                  <Zap className="h-4 w-4" aria-hidden /> เร่ง
-                </span>
-                <span className="mt-1 block text-xs leading-snug text-white/65">
-                  พลิกไพ่เร่ง ค่าตามแถวยาง ยางสึกถ้าไพ่มีสัญลักษณ์สึก (ฝนไม่สึกแต่ไพ่หยดน้ำเสี่ยงหมุน)
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-2 text-xs font-medium text-white/55">
-              การ์ดในมือ — เลือกเล่นได้ 1 ใบ (ไม่เล่นก็ได้) · สำรับเหลือ {me.deck.length} ใบ
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {hand.map(({ card, emergency }, i) => (
-                <ActionCard
-                  key={`${card}-${i}`}
-                  action={card}
-                  note={emergency ? "ฉุกเฉิน ไม่ใช้การ์ด" : undefined}
-                  selected={action === card && hand.findIndex((h) => h.card === card) === i}
-                  disabled={!canPlay(state, me, card, forced ? "cruise" : mode)}
-                  onClick={() => pickAction(action === card ? null : card)}
-                />
-              ))}
-            </div>
-            {action === "sky" && (
-              <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label="ทิศทางการปรับฟ้า">
-                {(
-                  [
-                    ["earlier", "ลัดฟ้า", "อากาศถัดไปมาเร็วขึ้น 1 รอบ"],
-                    ["later", "ยืดฟ้า", "อากาศตอนนี้อยู่ต่ออีก 1 รอบ"],
-                  ] as const
-                ).map(([k, label, desc]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    aria-pressed={sky === k}
-                    onClick={() => setSky(k)}
-                    className={`rounded-xl border-2 p-2.5 text-left text-xs transition-colors ${
-                      sky === k
-                        ? "border-sky-400 bg-sky-400/15"
-                        : "border-white/15 bg-white/5 hover:border-white/35"
-                    }`}
-                  >
-                    <span className="block text-sm font-bold">{label}</span>
-                    <span className="text-white/65">{desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-4">
-            <SpeedCardView id={shownCard} col={TYRES[me.tyres[0]].col} tilt={rolling ? tilt : 0} />
-            <button
-              type="button"
-              onClick={roll}
-              disabled={rolling !== null}
-              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {effMode === "push" ? (
-                <Zap className="h-5 w-5 shrink-0" aria-hidden />
+                  <Toggle on={false} onClick={() => pick({ kind: "pitLane" })}>
+                    วิ่งในเลนพิท {PIT_SPEED} ช่อง
+                  </Toggle>
+                )
               ) : (
-                <Gauge className="h-5 w-5 shrink-0" aria-hidden />
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    {o.worn ? (
+                      <Toggle on={false} onClick={() => pick({ kind: "worn" })}>
+                        <b>ยางพัง</b>
+                        <span className="block text-xs text-white/60">เดินเอง {WORN_MOVE} ช่อง ใช้ไพ่/เหรียญไม่ได้</span>
+                      </Toggle>
+                    ) : (
+                      <Toggle on={false} onClick={() => pick({ kind: "base" })}>
+                        <b>พื้นฐาน {BASE_MOVE} ช่อง</b>
+                        <span className="block text-xs text-white/60">ไม่สึกยาง ปลอดภัย</span>
+                      </Toggle>
+                    )}
+                    <Toggle on={false} disabled={!o.card} onClick={() => pick({ kind: "card" })}>
+                      <b>เปิดไพ่ MOVE</b>
+                      <span className="block text-xs text-white/60">{o.card ? "เร็วกว่า เสี่ยงยางสึก" : "ต้องอยู่บนเส้นแข่ง"}</span>
+                    </Toggle>
+                    {o.drs && (
+                      <Toggle on={false} onClick={() => pick({ kind: "drs" })}>
+                        <b>DRS</b>
+                        <span className="block text-xs text-white/60">แซงขึ้นหน้า #{drsTarget(state, d)?.num}</span>
+                      </Toggle>
+                    )}
+                    {o.slip && (
+                      <Toggle on={false} onClick={() => pick({ kind: "slip" })}>
+                        <b>สลิปสตรีม</b>
+                        <span className="block text-xs text-white/60">ตามติดท้าย #{slipTargetOf(state, d)?.num} ฟรี</span>
+                      </Toggle>
+                    )}
+                    {o.pitIn && (
+                      <Toggle on={false} onClick={() => pick({ kind: "pitIn" })}>
+                        <b>เข้าเลนพิท</b>
+                        <span className="block text-xs text-white/60">เปลี่ยนยางตาหน้า</span>
+                      </Toggle>
+                    )}
+                  </div>
+                  {!o.worn && (
+                    <label className="flex items-center gap-2 text-xs text-white/70">
+                      <input type="checkbox" checked={box} onChange={(e) => setBox(e.target.checked)} className="accent-[#E10600]" />
+                      ตั้งใจเข้าพิท — หยุดในโซนเข้าพิทถ้าวิ่งผ่าน
+                    </label>
+                  )}
+                </>
               )}
-              {rolling
-                ? "กำลังพลิกไพ่…"
-                : effMode === "push"
-                  ? action
-                    ? `เล่น “${ACTIONS[action].label}” แล้วเร่ง พลิกไพ่`
-                    : "เร่ง พลิกไพ่"
-                  : action
-                    ? `เล่น “${ACTIONS[action].label}” แล้วขับ`
-                    : worn
-                      ? "ขับต่อ (ยางพัง)"
-                      : "ขับคุม"}
-            </button>
-          </div>
-        </section>
-      )}
-
-      {log && (
-        <p className="text-center text-sm text-white/65" aria-live="polite">
-          {state.players[log.player].name}{" "}
-          {log.card === null ? (
-            log.worn ? "ขับต่อด้วยยางพัง" : log.mode === "cruise" ? "ขับคุม" : "ขับ"
-          ) : (
-            <>
-              พลิกไพ่เร่ง{log.cardEvent ? ` · ${CARD_EVENTS[log.cardEvent].label}: ${CARD_EVENTS[log.cardEvent].desc}` : ""}
-            </>
+            </div>
           )}
-          {log.action ? ` · ใช้ “${ACTIONS[log.action].label}”` : ""} · เดิน{" "}
-          <span className="font-bold tabular-nums text-white">{log.moved}</span> ช่อง
-          {log.corner && <span className="text-white/60"> · หยุดในโค้ง</span>}
-          {log.blocked && <span className="text-white/60"> · ติดรถข้างหน้า</span>}
-          {log.spun && <span className="font-bold text-yellow-400"> · หมุนในฝน! ธงเหลืองรอบหน้า</span>}
-        </p>
-      )}
 
-      {state.feed.some((l) => l.ai) && (
-        <section className="card p-3" aria-label="รถคันอื่นเดิน">
-          <p className="mb-1.5 text-xs font-medium text-white/55">รถ AI ที่เดินไปแล้ว</p>
+          {p && preview && (
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                {p.card !== null ? (
+                  <MoveCardView id={p.card} compound={d.compound} />
+                ) : (
+                  <div className="w-28 shrink-0 rounded-xl border-2 border-white/25 bg-[#17171c] p-2 text-center">
+                    <p className="poster text-[10px] text-white/60">{p.kind === "drs" ? "DRS" : "พื้นฐาน"}</p>
+                    <p className="poster text-3xl tabular-nums">{p.value}</p>
+                  </div>
+                )}
+                <p className="text-sm text-white/75">
+                  จะไปถึงช่อง <b className="tabular-nums text-white">{lapCell(state.track, preview.progress)}</b> (
+                  {preview.progress - d.progress} ช่อง)
+                  {preview.corner && <span className="block text-xs text-yellow-400">ติดโค้ง — ต้องหยุดในโค้ง</span>}
+                  {preview.blocked && <span className="block text-xs text-yellow-400">ติดรถข้างหน้า</span>}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Toggle on={ers} disabled={d.ers <= 0} onClick={() => setErs((v) => !v)}>
+                  <b>ERS +{ERS_BONUS}</b>
+                  <span className="block text-xs text-white/60">
+                    เหลือ {d.ers}/{ERS_MAX}
+                  </span>
+                </Toggle>
+                <Toggle on={attack && canAttack} disabled={d.tokens.attack <= 0 || !canAttack} onClick={() => setAttack((v) => !v)}>
+                  <b>ATTACK</b>
+                  <span className="block text-xs text-white/60">{canAttack ? "ดันคันหน้าออกนอกเส้น" : "ต้องจบติดท้ายคันหน้าบนเส้นแข่ง"}</span>
+                </Toggle>
+                <Toggle on={block} disabled={!canBlock} onClick={() => setBlock((v) => !v)}>
+                  <b>BLOCK</b>
+                  <span className="block text-xs text-white/60">คันถัดไปแซงไม่ได้</span>
+                </Toggle>
+                <Toggle on={lane === 1} onClick={() => setLane((l) => (l === 0 ? 1 : 0))}>
+                  <b>จบนอกเส้นแข่ง</b>
+                  <span className="block text-xs text-white/60">ใช้ขวางทาง</span>
+                </Toggle>
+              </div>
+              <button type="button" onClick={go} className="w-full rounded-full bg-(--color-f1) px-5 py-3 text-base font-bold text-white">
+                เดิน
+              </button>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {state.feed.length > 0 && (
+        <section className="card p-3" aria-label="การเดินล่าสุด">
+          <p className="mb-1.5 text-xs font-medium text-white/55">การเดินล่าสุด</p>
           <ul className="space-y-0.5 text-xs text-white/70">
-            {state.feed
-              .filter((l) => l.ai)
-              .map((l, i) => {
-                const p = state.players[l.player];
-                return (
-                  <li key={i} className="tabular-nums">
-                    #{p.num} {p.name} {l.mode === "cruise" ? "ขับคุม" : "เร่ง"} เดิน {l.moved} ช่อง
-                    {l.corner ? " · หยุดในโค้ง" : ""}
-                    {l.blocked ? " · ติดรถข้างหน้า" : ""}
-                  </li>
-                );
-              })}
+            {state.feed.map((l, i) => (
+              <li key={i}>{logText(state, l)}</li>
+            ))}
           </ul>
         </section>
       )}
@@ -924,48 +632,32 @@ export default function BoardGame({ board }: { board: Board }) {
 function Rules() {
   return (
     <details className="card p-4 text-sm text-white/75">
-      <summary className="cursor-pointer font-bold text-white">วิธีเล่น (1 นาที)</summary>
+      <summary className="cursor-pointer font-bold text-white">วิธีเล่น</summary>
       <ol className="mt-3 list-decimal space-y-1.5 pl-5">
+        <li>ทีมละ 2 คัน แข่งกับรถ AI จนครบ {GRID_SIZE} คัน แต่ละรอบเทิร์นเดินตามอันดับ คันนำก่อน รถ AI เดินเอง</li>
         <li>
-          แข่งกับรถ AI อีก {AI_CARS.length} คัน ใครข้ามเส้นชัยก่อนชนะทันที (ครบ {LAPS} รอบ) แต่ละรอบเทิร์นคนนำเดินก่อน
-          รถ AI เดินเองต่อจากคุณ
+          ทุกตาเลือก <b>พื้นฐาน {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> ใบบนสุดของทีม ซึ่งเร็วกว่าแต่ไม่รู้ค่าก่อนเปิด
+          ไพ่มีค่าตามยาง (เหลือง/แดง) — เปิดไพ่ได้เฉพาะรถบนเส้นแข่ง (ตาแรกของเกมนอกเส้นก็ได้)
         </li>
         <li>
-          สนามมี 2 เลน: เส้นแข่ง (เส้นประแดง) กับเลนนอก — เร่งจากเลนนอกได้ −{OFFLINE_PENALTY} ช่อง
-          ช่องหนึ่งจุรถได้ 2 คัน ถ้าเต็มทั้งสองเลนแซงผ่านไม่ได้ ต้องหยุดหลัง และลงจอดเส้นแข่งก่อนถ้าว่าง
+          ไพ่ที่มีป้าย “สึก” ทำให้ยางเสื่อม (เหลือง 1 ขั้น แดง 2 ขั้น จากราง {WEAR_MAX} ขั้น) สุดรางแล้วเจออีกใบ = ยางพัง
+          เดินเองช่องละ {WORN_MOVE} ใช้ไพ่และเหรียญไม่ได้ ต้องเข้าพิท
+        </li>
+        <li>เห็นระยะแล้วค่อยเลือกเสริม: ERS +{ERS_BONUS} (ตาละครั้ง ไพ่สายฟ้าชาร์จคืน), ATTACK, BLOCK และจะจบที่เลนไหน</li>
+        <li>
+          ช่องหนึ่งจุ 2 คัน ช่องเต็มผ่านไม่ได้ และแซงแนวทแยงผ่านรถ 2 คันที่อยู่เยื้องกันไม่ได้ — เข้าโค้ง (จุดแดง)
+          ต้องหยุดในโค้งก่อน แล้วออกในตาถัดไป
         </li>
         <li>
-          โค้ง (จุดแดงขอบสนาม) คำนวณจากรูปสนามจริง: ถ้าเดินเข้าโค้งต้องหยุดอยู่ในโค้งก่อน แล้วออกได้ในตาถัดไป
+          เหรียญคันละ {TOKEN_USES} ครั้ง: <b>ATTACK</b> จบติดท้ายคันหน้าบนเส้นแข่งแล้วดันมันออกนอกเส้น · <b>BLOCK</b>{" "}
+          คันที่เดินต่อจากคุณแซงหรือขึ้นคู่ไม่ได้ · <b>SLIPSTREAM</b> ถ้าตามติดคันหน้าในเลนเดียวกันตอนมันออกตัว ตามไปติดท้ายได้ฟรี
         </li>
+        <li>DRS: อยู่ในโซน DRS (สี่เหลี่ยมขาว) และมีรถติดหน้าในเลนเดียวกัน → ขึ้นไปอยู่หน้ามันแทนการเดินปกติ (ใช้ไม่ได้ตาแรก)</li>
         <li>
-          ก่อนแข่ง ดูพยากรณ์อากาศแล้วเลือกการ์ดยาง {TYRE_SLOTS} ใบ ใบแรกใช้ออกตัว อีก {TYRE_SLOTS - 1} ใบเป็นสำรองไว้เข้าพิท
+          พิท: ติ๊ก “ตั้งใจเข้าพิท” ให้หยุดในโซนเข้าพิท แล้วตาถัดไปเข้าเลนพิท (ช่องละ {PIT_SPEED}) ถึงช่องพิทจอด
+          ตาหน้าเปลี่ยนยางแล้ววิ่งออก กลับเข้าสนามนอกเส้นแข่ง
         </li>
-        <li>
-          ทุกเทิร์นเลือกจังหวะ: <b>ขับคุม</b> เดิน {CRUISE_MOVE} ช่องคงที่ ไม่พลิกไพ่ ยางไม่สึก หรือ <b>เร่ง</b>{" "}
-          พลิกไพ่เร่งใบบนสุดของกองคุณ ใช้ค่าตามแถวยาง (นิ่ม/กลาง/แข็ง) ยางนิ่มแรงแต่หมดเร็ว ยางแข็งช้าแต่ทน
-          ไพ่มี “สึก” (ยางเสื่อม 1) หยดน้ำ (เสี่ยงหมุนในฝน) และบางใบมีไอคอนทีม/เหตุการณ์
-        </li>
-        <li>
-          ยางสึกถึง 0 = <b>ยางพัง</b>: ขับได้แค่ {WORN_MOVE} ช่อง ใช้การ์ดไม่ได้ ต้องเข้าพิทเท่านั้น
-          (เข้าพิทฉุกเฉินได้โดยไม่ต้องมีการ์ด เสียเวลา {PIT_COST} ช่อง)
-        </li>
-        <li>
-          ในมือมีการ์ด action 3 ใบ เทิร์นละเล่นได้ 1 ใบ (ไม่เล่นก็ได้) แล้วจั่วเติมให้ครบ — การ์ดบางใบใช้ได้เฉพาะตอนเร่ง
-          การ์ด “ปรับฟ้า” ขยับตารางอากาศ: ลัดฟ้าให้อากาศถัดไปมาเร็วขึ้น หรือยืดฟ้าให้อากาศตอนนี้อยู่ต่อ
-        </li>
-        <li>
-          ฝนตกตามพยากรณ์ (2 รอบแรกแม่นเสมอ ไกลกว่านั้นเส้นประอาจคลาดเคลื่อน) ในฝนยางไม่สึก
-          แต่ถ้าเร่งด้วยยางที่ไม่เหมาะมีโอกาสหมุน — หมุนแล้วเดินแค่ 1 ช่องและรอบหน้าขึ้นธงเหลือง
-          ยางอินเตอร์เหมาะกับฝนเบา เว็ทเหมาะกับฝนหนัก ส่วนขับคุมปลอดภัยเสมอ
-        </li>
-        <li>
-          รอบที่อากาศพลิกระหว่างแห้งกับฝน ทุกทีมสลับเป็นยางสำรองที่เหมาะกับอากาศใหม่ได้ฟรี 1 ครั้งโดยไม่ต้องเข้าพิท
-        </li>
-        <li>
-          เห็นธงเหลืองแปลว่ารอบหน้าอาจเกิดเซฟตี้คาร์: ช่องว่างจากผู้นำลดครึ่ง ไพ่เร่งมีค่าสูงสุด 5
-          และเข้าพิทฟรีเฉพาะรอบนั้น ถ้ารอไว้แล้วพลาดต้องเสียเวลาเต็ม
-        </li>
-        <li>บางครั้งเกิดธงแดง: ทุกคนได้ยางที่ใช้อยู่กลับมาใหม่ และคันท้ายสุดได้ +3 ช่อง</li>
+        <li>ข้ามเส้นชัยแล้วไม่ถูกแซง อันดับตามลำดับที่ข้ามเส้น จบเมื่อทุกคันเข้าเส้น</li>
       </ol>
     </details>
   );
