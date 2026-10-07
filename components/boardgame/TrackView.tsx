@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import OsmCredit from "@/components/OsmCredit";
 import { CarBody } from "@/components/boardgame/Car";
 import type { Board, Pt } from "@/lib/boardgame/board";
@@ -21,7 +21,44 @@ const CAR_SCALE = 0.075;
 /** พิกเซลต่อหน่วยแผนที่สูงสุดตอนซูม */
 const MAX_ZOOM = 11;
 
+/** รถวิ่งจากช่องเดิมถึงช่องใหม่ใช้เวลาเท่าไร (ms) — ยิ่งไกลยิ่งนาน แต่ไม่เกินเพดาน */
+const DRIVE_BASE_MS = 220;
+const DRIVE_PER_CELL_MS = 70;
+const DRIVE_MAX_MS = 820;
+
 type Cell = { c: Pt; n: Pt; deg: number };
+type Geo = ReturnType<typeof geometry>;
+
+/** ท่าทางรถบนแผนที่แบบต่อเนื่อง: pos = ระยะสะสม (มีทศนิยมได้ระหว่างวิ่ง) · k = ระยะห่างจากเส้นกลาง · spin = หมุนเพิ่ม */
+type Pose = { pos: number; k: number; spin: number };
+
+const laneOffset = (l: Lane) => (l === 0 ? -LANE : LANE);
+
+function poseOf(d: Driver): Pose {
+  if (d.pit) return { pos: d.pit.base + d.pit.pos, k: PIT, spin: 0 };
+  if (d.off) return { pos: d.progress, k: OFF, spin: 35 };
+  return { pos: d.progress, k: laneOffset(d.lane), spin: 0 };
+}
+
+/** แปลงท่าทางเป็นจุดบนแผนที่ — ระหว่างช่องเกลี่ยตำแหน่งและทิศหัวรถให้วิ่งตามโค้ง */
+function placePose(g: Geo, t: GameState["track"], q: Pose) {
+  const i = Math.floor(q.pos);
+  const f = q.pos - i;
+  const ca = g.cell[lapCell(t, i)];
+  const cb = g.cell[lapCell(t, i + 1)];
+  const a = add(ca.c, ca.n, q.k);
+  const b = add(cb.c, cb.n, q.k);
+  const ra = (ca.deg * Math.PI) / 180;
+  const rb = (cb.deg * Math.PI) / 180;
+  const deg = (Math.atan2(Math.sin(ra) * (1 - f) + Math.sin(rb) * f, Math.cos(ra) * (1 - f) + Math.cos(rb) * f) * 180) / Math.PI;
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, deg: deg + q.spin };
+}
+
+const poseTransform = (p: { x: number; y: number; deg: number }) =>
+  `translate(${p.x.toFixed(3)} ${p.y.toFixed(3)}) rotate(${p.deg.toFixed(2)})`;
+
+/** เร่งออกตัวแล้วเบรกเข้าจุดจอด */
+const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2);
 
 const add = (a: Pt, n: Pt, k: number): Pt => ({ x: a.x + n.x * k, y: a.y + n.y * k });
 const fmt = (p: Pt) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
@@ -89,7 +126,45 @@ export default function TrackView({
     const x = g.cell[lapCell(t, p)];
     return add(x.c, x.n, k);
   };
-  const laneK = (l: Lane) => (l === 0 ? -LANE : LANE);
+  const laneK = laneOffset;
+
+  // แอนิเมชันรถวิ่งไปตามสนามทีละช่อง (ไม่ลากเส้นตรงตัดข้ามสนาม)
+  const carEls = useRef(new Map<number, SVGGElement>());
+  const shown = useRef(new Map<number, Pose>());
+  const frames = useRef(new Map<number, number>());
+  useLayoutEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const d of state.drivers) {
+      if (d.finished !== null || d.out) {
+        shown.current.delete(d.id);
+        continue;
+      }
+      const to = poseOf(d);
+      const from = shown.current.get(d.id);
+      const el = carEls.current.get(d.id);
+      cancelAnimationFrame(frames.current.get(d.id) ?? 0);
+      if (!from || !el || reduce || (from.pos === to.pos && from.k === to.k && from.spin === to.spin)) {
+        shown.current.set(d.id, to);
+        continue;
+      }
+      const dur = Math.min(DRIVE_MAX_MS, DRIVE_BASE_MS + (Math.abs(to.pos - from.pos) + Math.abs(to.k - from.k) / 3) * DRIVE_PER_CELL_MS);
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const u = Math.min(1, (now - t0) / dur);
+        const e = ease(u);
+        const q = { pos: from.pos + (to.pos - from.pos) * e, k: from.k + (to.k - from.k) * e, spin: from.spin + (to.spin - from.spin) * e };
+        shown.current.set(d.id, q);
+        el.setAttribute("transform", poseTransform(placePose(g, state.track, q)));
+        if (u < 1) frames.current.set(d.id, requestAnimationFrame(step));
+      };
+      el.setAttribute("transform", poseTransform(placePose(g, state.track, from)));
+      frames.current.set(d.id, requestAnimationFrame(step));
+    }
+  }, [state, g]);
+  useEffect(() => {
+    const f = frames.current;
+    return () => f.forEach((id) => cancelAnimationFrame(id));
+  }, []);
   const spotOf = (d: Driver): { p: Pt; deg: number } => {
     if (d.pit) {
       const q = d.pit.base + d.pit.pos;
@@ -230,14 +305,16 @@ export default function TrackView({
           {[...racers]
             .sort((a, b) => Number(a.id === focus?.id) - Number(b.id === focus?.id))
             .map((d) => {
-              const s = spotOf(d);
               const c = look(d);
               const me = d.id === focus?.id;
               return (
                 <g
                   key={d.id}
-                  className="transition-transform duration-500 ease-out motion-reduce:transition-none"
-                  style={{ transform: `translate(${s.p.x}px, ${s.p.y}px) rotate(${s.deg}deg)` }}
+                  ref={(el) => {
+                    if (el) carEls.current.set(d.id, el);
+                    else carEls.current.delete(d.id);
+                  }}
+                  transform={poseTransform(placePose(g, t, poseOf(d)))}
                   opacity={d.pit ? 0.75 : 1}
                 >
                   {me && <circle r={3.3} fill="none" stroke="#E10600" strokeWidth={0.35} className="bg-blink" />}

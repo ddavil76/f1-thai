@@ -28,8 +28,8 @@ const LAP_CHOICES = [4, 2, 1];
 const PLAY_MS = 550;
 /** ไฟสตาร์ท 5 ดวงแล้วดับ (ตรงกับ .bg-lights ใน globals.css) */
 const LIGHTS_MS = 3400;
-/** รถ AI ขยับทีละคัน ห่างกันเท่านี้ (ms) — ให้ทันเห็นว่าใครแซงใคร */
-const AI_STEP_MS = 550;
+/** รถ AI ขยับทีละคัน ห่างกันเท่านี้ (ms) — รอให้คันก่อนวิ่งถึงที่ (DRIVE_MAX_MS ใน TrackView) */
+const AI_STEP_MS = 900;
 /** โชว์ช่อง "จะเข้าพิท" เมื่ออยู่ห่างโซนเข้าพิทไม่เกินเท่านี้ */
 const PIT_HINT_CELLS = 12;
 
