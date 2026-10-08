@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, CircleHelp, CloudRain, Flag, Info, List, RotateCcw, Undo2, Volume2, VolumeX, X, Zap, ZoomIn } from "lucide-react";
 import Car from "@/components/boardgame/Car";
 import Qualifying from "@/components/boardgame/Qualifying";
+import RhythmQuali from "@/components/boardgame/RhythmQuali";
 import TrackView from "@/components/boardgame/TrackView";
 import LaunchScreen from "@/components/boardgame/Launch";
 import { PITWALL_ART, Scene } from "@/components/boardgame/art";
@@ -142,7 +143,7 @@ function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
             <Group label="กริดออกสตาร์ท">
               <div className="grid gap-2">
                 <Toggle on={s.quali} onClick={() => up({ quali: true })}>
-                  <b>ควอลิฟาย</b> <span className="block text-[11px] text-white/55">Q1 + Q2 ด้วยไพ่</span>
+                  <b>ควอลิฟาย</b> <span className="block text-[11px] text-white/55">{s.rules === "ours" ? "รอบเดียว กดคันเร่ง/เบรกตามจังหวะ" : "Q1 + Q2 ด้วยไพ่"}</span>
                 </Toggle>
                 <Toggle on={!s.quali} onClick={() => up({ quali: false })}>
                   <b>สุ่มกริด</b>
@@ -597,11 +598,21 @@ export default function BoardGame({ board }: { board: Board }) {
     if (phase.at === "quali") {
       return (
         <div className="space-y-4">
-          <Qualifying
-            cars={phase.cars}
-            extra={phase.setup.rules === "full"}
-            onDone={(grid, wear) => startRace(phase.setup, phase.cars, phase.teams, grid, wear)}
-          />
+          {phase.setup.rules === "ours" ? (
+            <RhythmQuali
+              cars={phase.cars}
+              board={board}
+              track={track}
+              level={phase.setup.aiLevel}
+              onDone={(grid, wear) => startRace(phase.setup, phase.cars, phase.teams, grid, wear)}
+            />
+          ) : (
+            <Qualifying
+              cars={phase.cars}
+              extra
+              onDone={(grid, wear) => startRace(phase.setup, phase.cars, phase.teams, grid, wear)}
+            />
+          )}
           <RulesCard rules={phase.setup.rules} />
         </div>
       );
@@ -1493,6 +1504,9 @@ function RulesList({ rules }: { rules: Rules }) {
         </RuleBlock>
         <RuleBlock title="โค้งและการแซง">
           ระยะบนไพ่คือ<b>แรง</b> ทางปกติช่องละ 1 · <b>โค้งความเร็วสูง ช่องละ {FAST_CORNER_COST}</b> · <b>โค้งความเร็วต่ำ ช่องละ {SLOW_CORNER_COST}</b> (ไม่ต้องหยุดในโค้ง) · แซง: ถึงช่องหลังคันหน้าแล้วต้องเหลือแรงมากกว่า {PASS_NEED} (ทางตรง DRS มากกว่า {PASS_NEED_DRS})
+        </RuleBlock>
+        <RuleBlock title="ควอลิฟาย">
+          วิ่งรอบเดียวแบบเกมจับจังหวะ: ทางตรงกดคันเร่ง (ค้างตามแถบ) ก่อนเข้าโค้งกดเบรก โน้ตฟ้าคือ DRS · ยาง Soft เร็วกว่าแต่โน้ตมาเร็วขึ้น · เรียงกริดตามเวลาต่อรอบ
         </RuleBlock>
         <RuleBlock title="ออกตัว">
           ไฟแดงครบ 5 ดวงแล้วดับ แตะจอให้เร็ว: ต่ำกว่า 0.2 วิ แซง 2 อันดับ · 0.2–0.3 วิ แซง 1 · ช้ากว่า 0.45 วิ หล่น 1 · แตะก่อนไฟดับ หล่น 3
