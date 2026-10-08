@@ -1034,25 +1034,25 @@ export default function BoardGame({ board }: { board: Board }) {
                 <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 pt-1">
                   {o.inBox ? (
                     d.pit?.served ? (
-                      <HandCard i={0} tone="dark" kicker="PIT" art="pit-lane" icon={<IconPitLane />} big="" foot="รับโทษครบ ออกจากพิท" onClick={() => pick({ kind: "box" })} />
+                      <HandCard i={0} tone="dark" kicker="PIT" cat="pit" back="back-pit" art="pit-lane" icon={<IconPitLane />} big="" foot="รับโทษครบ ออกจากพิท" onClick={() => pick({ kind: "box" })} />
                     ) : (
                       <>
                         {[...new Set(d.sets)].map((k, i) => (
-                          <HandCard key={k} i={i} tone="dark" kicker="PIT" art={k === "red" ? "soft" : "medium"} icon={<TyreBadge compound={k} className="h-10 w-10" />} big="" foot={`ใส่ยาง ${COMPOUNDS[k].label} ใหม่`} onClick={() => pick({ kind: "box", set: k })} />
+                          <HandCard key={k} i={i} tone="dark" kicker="PIT" cat="pit" back="back-pit" art={k === "red" ? "soft" : "medium"} icon={<TyreBadge compound={k} className="h-10 w-10" />} big="" foot={`ใส่ยาง ${COMPOUNDS[k].label} ใหม่`} onClick={() => pick({ kind: "box", set: k })} />
                         ))}
                         {!d.worn && (
-                          <HandCard i={3} tone="dark" kicker="PIT" icon={<TyreBadge compound={d.compound} className="h-10 w-10" />} big="" foot={d.penalty ? "ยางเดิม · จอดรับโทษ" : "ยางเดิม ซ่อมรถ"} onClick={() => pick({ kind: "box", set: "keep" })} />
+                          <HandCard i={3} tone="dark" kicker="PIT" cat="pit" back="back-pit" icon={<TyreBadge compound={d.compound} className="h-10 w-10" />} big="" foot={d.penalty ? "ยางเดิม · จอดรับโทษ" : "ยางเดิม ซ่อมรถ"} onClick={() => pick({ kind: "box", set: "keep" })} />
                         )}
                       </>
                     )
                   ) : o.pitLane ? (
-                    <HandCard i={0} tone="yellow" kicker="PIT LANE" art="pit-lane" icon={<IconPitLane />} big={PIT_SPEED} foot="วิ่งในเลนพิท แซงไม่ได้" onClick={() => pick({ kind: "pitLane" })} />
+                    <HandCard i={0} tone="yellow" kicker="PIT LANE" cat="pit" back="back-pit" art="pit-lane" icon={<IconPitLane />} big={PIT_SPEED} foot="วิ่งในเลนพิท แซงไม่ได้" onClick={() => pick({ kind: "pitLane" })} />
                   ) : o.rejoin ? (
-                    <HandCard i={0} tone="yellow" kicker="กลับสนาม" art="rejoin" icon={<IconRejoin />} big="" foot="ช่องข้างว่างก็กลับได้ (จบตา)" onClick={() => pick({ kind: "rejoin" })} />
+                    <HandCard i={0} tone="yellow" kicker="กลับสนาม" cat="pit" back="back-pit" art="rejoin" icon={<IconRejoin />} big="" foot="ช่องข้างว่างก็กลับได้ (จบตา)" onClick={() => pick({ kind: "rejoin" })} />
                   ) : (
                     <>
                       {o.worn ? (
-                        <HandCard i={0} tone="yellow" kicker={d.damage ? "เสียหาย" : "ยางพัง"} art="damaged" icon={<IconWorn />} big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
+                        <HandCard i={0} tone="yellow" kicker={d.damage ? "เสียหาย" : "ยางพัง"} art="damaged" cat="status" icon={<IconWorn />} big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
                       ) : (
                         <HandCard i={0} tone="dark" kicker="SAVE" art="save" icon={<IconBase />} big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : ours && d.ers < ERS_MAX ? `${BASE_MOVE} ช่องชัวร์ · ERS +${ERS_BASE_CHARGE}` : `${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง`} onClick={() => pick({ kind: "base" })} />
                       )}
@@ -1068,6 +1068,7 @@ export default function BoardGame({ board }: { board: Board }) {
                             tone="red"
                             kicker="FLAT OUT"
                             art="flat-out"
+                            back="back-flat-out"
                             icon={<IconMove />}
                             badges={<MoveBadges c={MOVE_DECK[h.id]} />}
                             big={<span className="tabular-nums">{h.value}</span>}
@@ -1082,6 +1083,7 @@ export default function BoardGame({ board }: { board: Board }) {
                           tone="red"
                           kicker="FLAT OUT"
                           art="flat-out"
+                          back="back-flat-out"
                           icon={<IconMove />}
                           big={<span className="text-lg tabular-nums">{`${moveRange.min}–${moveRange.max}`}</span>}
                           foot={
@@ -1098,7 +1100,7 @@ export default function BoardGame({ board }: { board: Board }) {
                       )}
                       {o.drs && <HandCard i={3} tone="light" kicker="DRS" art="drs" icon={<IconDrs />} big="" foot={`ขึ้นหน้า #${drsTarget(state, d)?.num}`} onClick={() => pick({ kind: "drs" })} />}
                       {o.slip && <HandCard i={4} tone="dark" kicker="SLIP" art="slipstream" icon={<IconSlip />} big="" foot={`ตามติด #${slipTargetOf(state, d)?.num} ฟรี`} onClick={() => pick({ kind: "slip" })} />}
-                      {o.pitIn && <HandCard i={5} tone="yellow" kicker="PIT" art="pit-lane" icon={<IconPitLane />} big={PIT_SPEED} foot="เข้าเลนพิทเปลี่ยนยาง" onClick={() => pick({ kind: "pitIn" })} />}
+                      {o.pitIn && <HandCard i={5} tone="yellow" kicker="PIT" cat="pit" back="back-pit" art="pit-lane" icon={<IconPitLane />} big={PIT_SPEED} foot="เข้าเลนพิทเปลี่ยนยาง" onClick={() => pick({ kind: "pitIn" })} />}
                     </>
                   )}
                 </div>

@@ -152,6 +152,14 @@ export const IconWrench = ({ className = "h-3 w-3" }: { className?: string }) =>
   </Svg>
 );
 
+export const IconHeadset = ({ className = "h-3 w-3" }: { className?: string }) => (
+  <Svg className={className}>
+    <path d="M9 30 V24 A15 15 0 0 1 39 24 V30" strokeWidth={4.5} />
+    <rect x="5" y="27" width="9" height="13" rx="3" fill="currentColor" stroke="none" />
+    <rect x="34" y="27" width="9" height="13" rx="3" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
 /* ---------- ไพ่ PITWALL ---------- */
 
 const PITWALL_ICON: Record<PitwallKind, () => ReactNode> = {

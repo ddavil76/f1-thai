@@ -34,15 +34,15 @@ export const DIE_ART: Record<IncidentFace, string> = {
 };
 
 /** ช่วงภาพฉากของไพ่ (ตัดหัวไพ่และกล่องกติกาออก) */
-export function Scene({ name, className = "", zoom = 118, children }: { name: string; className?: string; zoom?: number; children?: ReactNode }) {
+export function Scene({ name, className = "", zoom = 118, y = 40, children }: { name: string; className?: string; zoom?: number; y?: number; children?: ReactNode }) {
   const style: CSSProperties = {
     backgroundImage: `url(${artUrl(name)})`,
     backgroundSize: `${zoom}% auto`,
-    backgroundPosition: "50% 40%",
+    backgroundPosition: `50% ${y}%`,
     backgroundRepeat: "no-repeat",
   };
   return (
-    <span className={`relative block overflow-hidden bg-[#1F1F24] ${className}`} style={style} aria-hidden>
+    <span className={`block overflow-hidden bg-[#1F1F24] ${/\babsolute\b/.test(className) ? "" : "relative"} ${className}`} style={style} aria-hidden>
       {children}
     </span>
   );
