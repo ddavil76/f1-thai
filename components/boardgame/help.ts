@@ -1,12 +1,12 @@
 import {
-  BACK_CELLS, BASE_MOVE, FAST_CORNER_COST, PASS_NEED, PASS_NEED_DRS, SLOW_CORNER_COST, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
+  BACK_CELLS, BASE_MOVE, DEFEND_ERS, DEFEND_EXTRA, FAST_CORNER_COST, FRESH_TURNS, TOW, PASS_NEED, PASS_NEED_DRS, SLOW_CORNER_COST, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
   DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, WEAR_MAX, WORN_MOVE, type Rules,
 } from "@/lib/boardgame/engine";
 
 export type HelpKey =
   | "base" | "move" | "tyre" | "ers" | "pass" | "attack" | "block" | "slip" | "drs" | "line" | "corner"
   | "pitwall" | "vbox" | "flag" | "wet" | "brakes" | "damage" | "off" | "warn" | "penalty" | "push" | "pace"
-  | "quick" | "bonus" | "pit" | "weather" | "sc" | "vsc";
+  | "quick" | "bonus" | "pit" | "weather" | "sc" | "vsc" | "tow" | "fresh" | "defend";
 
 /** คำอธิบายสั้นของศัพท์ในเกม — แตะชื่อบนหน้าจอแล้วขึ้นข้อความนี้ */
 export function helpText(k: HelpKey, rules: Rules): { title: string; text: string } {
@@ -94,6 +94,15 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
         title: "พิท",
         text: `ติ๊ก “จะเข้าพิท” ก่อนถึงโซนเข้าพิท รถจะหยุดในโซน ตาถัดไปเข้าเลนพิท (ช่องละ ${PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก`,
       };
+    case "tow":
+      return {
+        title: "สลิปสตรีม / อากาศปั่นป่วน",
+        text: `จบตาติดท้ายคันหน้าในเลนเดียวกัน: ถ้าอยู่บนทางตรง ตาหน้าได้แรง +${TOW} (สลิปสตรีม) ถ้าอยู่ในโค้ง ตาหน้าแรง −${TOW} (อากาศปั่นป่วน)`,
+      };
+    case "fresh":
+      return { title: "ยางใหม่", text: `ออกจากพิทด้วยยางชุดใหม่ ${FRESH_TURNS} ตาแรกได้แรง +1 — เข้าพิทก่อนคู่แข่งเพื่อแซงตอนเขาเข้าพิท (undercut)` };
+    case "defend":
+      return { title: "ปิดไลน์", text: `กดหลังเปิดไพ่ ใช้ ERS ${DEFEND_ERS} ขั้น คันที่จะแซงเราต้องเหลือแรงมากขึ้นอีก ${DEFEND_EXTRA} จนกว่าเราจะเดินตาถัดไป` };
     case "sc":
       return {
         title: "SAFETY CAR",

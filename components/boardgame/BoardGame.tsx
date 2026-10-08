@@ -18,9 +18,9 @@ import {
   ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
   DAMP, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
   FAST_CORNER_COST, NEUTRAL_ROUNDS, SLOW_CORNER_COST, PASS_NEED, PASS_NEED_DRS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
-  LAUNCH, activeDriver, aiLaunch, aiStep, applyLaunch, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
-  moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
-  type CarSpec, type Choice, type LaunchKind, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
+  AI_LEVEL, DEFEND_ERS, LAUNCH, activeDriver, aiLaunch, aiStep, applyLaunch, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
+  moveBonus, moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
+  type AiLevel, type CarSpec, type Choice, type LaunchKind, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
   type TurnLog,
 } from "@/lib/boardgame/engine";
 
@@ -41,6 +41,7 @@ type Setup = {
   laps: number;
   quali: boolean;
   rules: Rules;
+  aiLevel: AiLevel;
   /** ทีม (ลำดับใน TEAMS) ของผู้เล่นแต่ละคน */
   teams: number[];
   compounds: Compound[][];
@@ -52,6 +53,7 @@ const QUICK: Setup = {
   laps: 2,
   quali: false,
   rules: "ours",
+  aiLevel: "normal",
   teams: [0, 1],
   compounds: [
     ["yellow", "red"],
@@ -140,6 +142,15 @@ function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
                 <Toggle on={!s.quali} onClick={() => up({ quali: false })}>
                   <b>สุ่มกริด</b>
                 </Toggle>
+              </div>
+            </Group>
+            <Group label="ความเก่งรถ AI">
+              <div className="grid gap-2">
+                {(Object.keys(AI_LEVEL) as AiLevel[]).map((k) => (
+                  <Toggle key={k} on={s.aiLevel === k} onClick={() => up({ aiLevel: k })}>
+                    <b>{AI_LEVEL[k].title}</b>
+                  </Toggle>
+                ))}
               </div>
             </Group>
           </div>
@@ -390,6 +401,27 @@ function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[];
   );
 }
 
+/** สรุปหลังรถคันอื่นเดิน: ใครแซงรถเรา และห่างคันหน้าเท่าไร + ปุ่มดูซ้ำ */
+function Recap({ s, d, order, onReplay }: { s: GameState; d: Driver; order: Driver[]; onReplay: () => void }) {
+  const hits = s.feed
+    .filter((l) => l.passed.some((id) => !s.drivers[id].ai) && l.driver !== d.id)
+    .map((l) => `#${s.drivers[l.driver].num} แซง ${l.passed.filter((id) => !s.drivers[id].ai).map((id) => `#${s.drivers[id].num}`).join(" ")}`);
+  const rank = order.findIndex((x) => x.id === d.id);
+  const ahead = rank > 0 ? order[rank - 1] : null;
+  const gap = ahead && ahead.finished === null ? ahead.progress - d.progress : null;
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-white/5 px-2.5 py-1.5 text-[11px] text-white/80">
+      <p className="min-w-0 flex-1">
+        {hits.length ? <span className="font-bold text-(--color-f1-text)">{hits.join(" · ")}</span> : <span>ไม่มีใครแซงรถคุณ</span>}
+        {gap !== null && ahead && <span className="text-white/60"> · ห่างคันหน้า #{ahead.num} {gap} ช่อง</span>}
+      </p>
+      <button type="button" onClick={onReplay} className="flex-none rounded-full border border-white/25 px-2.5 py-1 font-bold text-white">
+        ⟲ ดูซ้ำ
+      </button>
+    </div>
+  );
+}
+
 /** สรุปผลออกตัว: ใครขึ้นใครหล่น แล้วกดเริ่มเรซ */
 function LaunchSummary({ s, rows, onStart }: { s: GameState; rows: { id: number; kind: LaunchKind; from: number; to: number }[]; onStart: () => void }) {
   return (
@@ -474,6 +506,11 @@ export default function BoardGame({ board }: { board: Board }) {
   const lights = launch !== null;
   const [modal, setModal] = useState<"rules" | "log" | null>(null);
   const [help, setHelp] = useState<HelpKey | null>(null);
+  const [defend, setDefend] = useState(false);
+  /** สถานะตั้งแต่ก่อนผู้เล่นเดินตาล่าสุดจนถึงตอนนี้ — ใช้ดูซ้ำ */
+  const [history, setHistory] = useState<GameState[]>([]);
+  const [replay, setReplay] = useState<number | null>(null);
+  const [toast, setToast] = useState<{ title: string; sub: string; key: number } | null>(null);
 
   const racing = phase.at === "race" && state !== null;
   // ระหว่างแข่งหน้าเกมเต็มจอ — กันหน้าเว็บข้างหลังเลื่อน
@@ -489,19 +526,27 @@ export default function BoardGame({ board }: { board: Board }) {
   // รถ AI เดินทีละคันจนถึงคันที่ผู้เล่นคุม (ลดการเคลื่อนไหว = เดินรวดเดียว)
   const aiBusy = phase.at === "race" && !!state && aiTurnPending(state);
   useEffect(() => {
-    if (!aiBusy || lights) return;
-    const t = setTimeout(
-      () => setState((s) => (s ? (calm() ? runAI(s, Math.random) : aiStep(s, Math.random)) : s)),
-      calm() ? 0 : AI_STEP_MS,
-    );
+    if (!aiBusy || lights || !state) return;
+    const t = setTimeout(() => {
+      const next = calm() ? runAI(state, Math.random) : aiStep(state, Math.random);
+      setState(next);
+      setHistory((h) => [...h, next]);
+    }, calm() ? 0 : AI_STEP_MS);
     return () => clearTimeout(t);
   }, [state, aiBusy, lights]);
+
+  // ดูซ้ำ: เล่นสถานะที่เก็บไว้ทีละขั้น
+  useEffect(() => {
+    if (replay === null) return;
+    const t = setTimeout(() => setReplay((r) => (r === null || r + 1 >= history.length ? null : r + 1)), AI_STEP_MS);
+    return () => clearTimeout(t);
+  }, [replay, history.length]);
 
   const track = { lapCells: CELLS_PER_LAP, corners: board.corners, drs: board.drs, pitEntry: board.pitEntry, vbox: board.vbox };
 
   const startRace = (setup: Setup, cars: CarSpec[], teams: string[], grid?: number[], wear?: number[]) => {
     const spec = wear ? cars.map((c, i) => ({ ...c, wear: wear[i] })) : cars;
-    const g = newGame(spec, teams, track, setup.laps, Math.random, grid, { rules: setup.rules, stepAI: true });
+    const g = newGame(spec, teams, track, setup.laps, Math.random, grid, { rules: setup.rules, stepAI: true, aiLevel: setup.aiLevel });
     setState(g);
     setPhase({ at: "race" });
     setSeen(null);
@@ -509,6 +554,8 @@ export default function BoardGame({ board }: { board: Board }) {
     setHelp(null);
     // ไฟดับ: รถผู้เล่นทุกคันเล่นมินิเกมออกตัวตามลำดับกริด (ลดการเคลื่อนไหว = ข้าม ออกตัวปกติ)
     setLaunch(calm() ? null : { queue: g.order.filter((id) => !g.drivers[id].ai), kinds: {}, summary: null });
+    setHistory([]);
+    setReplay(null);
   };
 
   if (phase.at === "setup" || !state || phase.at === "quali") {
@@ -540,11 +587,16 @@ export default function BoardGame({ board }: { board: Board }) {
 
   const ours = state.rules === "ours";
   const order = standings(state);
+  // ดูซ้ำ: แผนที่แสดงสถานะที่เก็บไว้ กล้องตามคันที่เพิ่งขยับในขั้นนั้น
+  const shownState = replay !== null && history[replay] ? history[replay] : state;
+  const replayLast = shownState.feed.at(-1)?.driver;
+  const replayFocus = replayLast !== undefined ? shownState.drivers[replayLast] : null;
   const resetExtras = () => {
     setBox(false);
     setErs(false);
     setAttack(false);
     setBlock(false);
+    setDefend(false);
     setLane(0);
     setPw(null);
   };
@@ -555,9 +607,23 @@ export default function BoardGame({ board }: { board: Board }) {
   };
   const go = () => {
     if (playing) return;
-    const extras = { ers, attack, block, lane };
+    const extras = { ers, attack, block, defend, lane };
+    const before = state;
+    const me = activeDriver(state);
+    const rankBefore = standings(state).findIndex((x) => x.id === me.id) + 1;
     const apply = () => {
-      setState((s) => (s ? commit(s, extras, Math.random) : s));
+      const next = commit(before, extras, Math.random);
+      setState(next);
+      setHistory([before, next]);
+      setReplay(null);
+      // แซงได้: ป้าย OVERTAKE พร้อมอันดับที่เปลี่ยน
+      const mine = next.feed[0];
+      if (mine && !mine.ai && mine.passed.length > 0) {
+        const rankAfter = standings(next).findIndex((x) => x.id === me.id) + 1;
+        const key = Date.now();
+        setToast({ title: "OVERTAKE!", sub: `แซง ${mine.passed.map((id) => `#${next.drivers[id].num}`).join(" ")} · P${rankBefore} → P${rankAfter}`, key });
+        setTimeout(() => setToast((t) => (t?.key === key ? null : t)), 2200);
+      }
       resetExtras();
       setPlaying(false);
     };
@@ -610,16 +676,22 @@ export default function BoardGame({ board }: { board: Board }) {
   const useErs = ers && free && !!d && d.ers >= 1;
   let goal = 0;
   if (d && p) {
-    const bonus = p.kind === "drs" ? 0 : d.bonus;
+    const bonus = p.kind === "drs" ? 0 : moveBonus(d);
     goal = p.value + bonus + (useErs ? ersAdd : 0);
     preview = travel(state, d, goal, lane);
     canAttack = !ours && free && attackTarget(state, d, preview) !== null;
   }
   const atk = attack && canAttack;
   const landing = preview && atk ? { progress: preview.progress + 1, lane: 0 as Lane } : preview;
+  // ปิดไลน์ต้องมี ERS พอทั้งค่าปิดไลน์และค่า ERS ที่เลือกใช้เดิน
+  const canDefend = ours && free && !!d && d.ers - (useErs ? 1 : 0) >= DEFEND_ERS;
   const canBlock = !ours && free && !!d && d.tokens.block > 0 && state.order[state.turn + 1] !== undefined;
   const lap = (x: Driver) => Math.min(state.laps, Math.max(1, Math.floor(x.progress / CELLS_PER_LAP) + 1));
   const leader = order[0];
+  /** รถสองคันห่างกันไม่เกิน 2 ช่องบนสนาม และมีรถผู้เล่นอยู่ในคู่ = กำลังดวลกัน */
+  const duel = (a: Driver, b: Driver) =>
+    (!a.ai || !b.ai) &&
+    a.finished === null && b.finished === null && !a.out && !b.out && !a.pit && !b.pit && a.progress - b.progress <= 2;
 
   const popups = state.feed.flatMap((l) => l.events).filter((e) => worthPopup(state, e));
   const showEvents = state.feed !== seen && popups.length > 0 && !lights && !aiBusy;
@@ -647,6 +719,26 @@ export default function BoardGame({ board }: { board: Board }) {
           : "บางใบยางสึก";
     return { min: Math.min(...vals), max: Math.max(...vals), risk, off };
   })();
+  // กติกาของเรา: ไพ่ในมือ — ค่าแรงตามยาง และผลถ้าเล่นใบนั้น (ไปได้กี่ช่อง แซงได้กี่คัน)
+  const forecast = (value: number) => (d ? travel(state, d, value + moveBonus(d)) : null);
+  const handCards =
+    ours && d && !p
+      ? (state.teams[d.team]?.hand ?? []).map((id) => {
+          const c = MOVE_DECK[id];
+          const value = Math.max(0, moveFor(state, c, d) - offlinePenalty(state, d));
+          const f = forecast(value);
+          const tags = [c.tires ? "สึก" : "", c.ers ? "⚡" : "", c.action ? "ACT" : "", c.pitwall ? "PIT" : ""].filter(Boolean).join(" ");
+          return { id, value, tags, cells: f ? f.progress - d.progress : 0, passed: f?.passed.length ?? 0, spot: f };
+        })
+      : [];
+  const baseSpot = ours && d && !p && options(state, d).base ? forecast(BASE_MOVE) : null;
+  const reach =
+    ours && d && !p
+      ? [
+          ...(baseSpot ? [{ label: "B", progress: baseSpot.progress, lane: baseSpot.lane, tone: "base" as const }] : []),
+          ...handCards.filter((h) => h.spot).map((h) => ({ label: String(h.value), progress: h.spot!.progress, lane: h.spot!.lane, tone: "card" as const })),
+        ]
+      : [];
   const toPit = d ? (state.track.pitEntry.start - (((d.progress % CELLS_PER_LAP) + CELLS_PER_LAP) % CELLS_PER_LAP) + CELLS_PER_LAP) % CELLS_PER_LAP : 99;
 
   const slowWhy = state.neutral
@@ -702,7 +794,31 @@ export default function BoardGame({ board }: { board: Board }) {
         <StatusStrip s={state} onHelp={ask} />
 
         <div className="relative min-h-0 flex-1">
-          <TrackView board={board} state={state} focus={focusCar} ghost={landing} zoomed={zoomed && !!focusCar} onToggle={() => setZoomed((z) => !z)} onHelp={ask} />
+          <TrackView
+            board={board}
+            state={shownState}
+            focus={replay !== null ? replayFocus : focusCar}
+            ghost={replay !== null ? null : landing}
+            reach={replay !== null ? [] : reach}
+            instant={replay === 0}
+            zoomed={zoomed && !!focusCar}
+            onToggle={() => setZoomed((z) => !z)}
+            onHelp={ask}
+          />
+          {toast && (
+            <div key={toast.key} className="bg-pop pointer-events-none absolute inset-x-0 top-3 z-20 mx-auto w-fit rounded-xl border-2 border-[#22c55e] bg-[#08080A]/90 px-4 py-2 text-center">
+              <p className="poster text-xl text-[#22c55e]">{toast.title}</p>
+              <p className="text-xs font-bold text-white">{toast.sub}</p>
+            </div>
+          )}
+          {replay !== null && (
+            <div className="absolute inset-x-0 top-2 z-20 mx-auto flex w-fit items-center gap-2 rounded-full bg-[#08080A]/90 px-3 py-1 text-xs text-white">
+              ⟲ ดูซ้ำ {replay + 1}/{history.length}
+              <button type="button" onClick={() => setReplay(null)} className="rounded-full bg-white/15 px-2 py-0.5 font-bold">
+                หยุด
+              </button>
+            </div>
+          )}
           {state.feed.length > 0 && (
             <button
               type="button"
@@ -757,6 +873,13 @@ export default function BoardGame({ board }: { board: Board }) {
                   {x.num}
                 </span>
                 {x.out ? "ชนออก" : x.finished !== null ? "จบ" : x.pit ? "พิท" : x.off ? "ข้างสนาม" : rank === 0 ? "นำ" : `+${leader.progress - x.progress}`}
+                {(() => {
+                  // ขึ้น/ลงกี่อันดับเทียบกับตอนเริ่มเทิร์นนี้ (state.order = อันดับตอนเริ่มเทิร์น)
+                  const was = state.order.indexOf(x.id);
+                  const diff = was < 0 ? 0 : was - rank;
+                  return diff !== 0 ? <span className={diff > 0 ? "text-[#22c55e]" : "text-(--color-f1-text)"}>{diff > 0 ? `▲${diff}` : `▼${-diff}`}</span> : null;
+                })()}
+                {rank > 0 && duel(order[rank - 1], x) && <span className="rounded bg-(--color-f1) px-1 text-[8px] font-black text-white">DUEL</span>}
               </span>
             );
           })}
@@ -778,7 +901,11 @@ export default function BoardGame({ board }: { board: Board }) {
               <p className="poster text-sm text-white">รถคันอื่นกำลังเดิน…</p>
               <button
                 type="button"
-                onClick={() => setState((s) => (s ? runAI(s, Math.random) : s))}
+                onClick={() => {
+                  const next = runAI(state, Math.random);
+                  setState(next);
+                  setHistory((h) => [...h, next]);
+                }}
                 className="rounded-full border border-white/25 px-3 py-1.5 text-xs font-bold text-white hover:border-white/60"
               >
                 ข้าม ▸▸
@@ -818,6 +945,9 @@ export default function BoardGame({ board }: { board: Board }) {
                   {d.mode && <Chip k={d.mode.kind} ask={ask} tone="orange">{d.mode.kind === "push" ? "PUSH" : `PACE ${d.mode.value}`}</Chip>}
                   {d.bonus > 0 && <Chip k="bonus" ask={ask} tone="orange">+{d.bonus} ช่อง</Chip>}
                   {d.quick && <Chip k="quick" ask={ask} tone="orange">พิทเร็ว</Chip>}
+                  {d.tow > 0 && <Chip k="tow" ask={ask} tone="blue">สลิปสตรีม +{d.tow}</Chip>}
+                  {d.tow < 0 && <Chip k="tow" ask={ask} tone="red">อากาศปั่นป่วน {d.tow}</Chip>}
+                  {d.fresh > 0 && <Chip k="fresh" ask={ask} tone="yellow">ยางใหม่ +1 ({d.fresh} ตา)</Chip>}
                 </div>
               </div>
               <span className="poster text-2xl tabular-nums">P{pos}</span>
@@ -889,6 +1019,7 @@ export default function BoardGame({ board }: { board: Board }) {
               )}
             </div>
 
+            {!p && history.length > 1 && <Recap s={state} d={d} order={order} onReplay={() => setReplay(0)} />}
             {slowWhy && !p && <p className="rounded-lg bg-yellow-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-yellow-300">{slowWhy}</p>}
 
             {!p && (
@@ -923,7 +1054,20 @@ export default function BoardGame({ board }: { board: Board }) {
                       {o.pace && d.mode?.kind === "pace" && (
                         <HandCard i={1} tone="orange" kicker="PACE" big={d.mode.value} foot="คงที่ ไม่สึกยาง" onClick={() => pick({ kind: "pace" })} />
                       )}
-                      {!o.worn && moveRange && (
+                      {!o.worn && ours &&
+                        handCards.map((h, k) => (
+                          <HandCard
+                            key={h.id}
+                            i={2 + k}
+                            tone="red"
+                            kicker={`MOVE${h.tags ? ` · ${h.tags}` : ""}`}
+                            big={<span className="tabular-nums">{h.value}</span>}
+                            foot={!o.card ? "ติดข้อจำกัด" : h.passed ? `ไปช่อง +${h.cells} · แซง ${h.passed}` : `ไปได้ ${h.cells} ช่อง`}
+                            disabled={!o.card}
+                            onClick={() => pick({ kind: "card", card: h.id })}
+                          />
+                        ))}
+                      {!o.worn && !ours && moveRange && (
                         <HandCard
                           i={2}
                           tone="red"
@@ -974,6 +1118,9 @@ export default function BoardGame({ board }: { board: Board }) {
                       {[
                         `ไพ่ ${p.value}`,
                         p.kind !== "drs" && d.bonus > 0 ? `ทีมเวิร์ก +${d.bonus}` : "",
+                        p.kind !== "drs" && d.tow > 0 ? `สลิปสตรีม +${d.tow}` : "",
+                        p.kind !== "drs" && d.tow < 0 ? `อากาศปั่นป่วน ${d.tow}` : "",
+                        p.kind !== "drs" && d.fresh > 0 ? "ยางใหม่ +1" : "",
                         useErs ? `ERS +${ersAdd}` : "",
                         ours && p.kind === "base" && !useErs && d.ers < ERS_MAX ? `ชาร์จ ERS +${ERS_BASE_CHARGE}` : "",
                         atk ? "ATTACK" : "",
@@ -1000,7 +1147,16 @@ export default function BoardGame({ board }: { board: Board }) {
                   </div>
                 </div>
                 {ours ? (
-                  <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""} · เพิ่มแรงไว้แซง`} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
+                    <Extra
+                      on={defend && canDefend}
+                      disabled={!canDefend || playing}
+                      onClick={() => setDefend((v) => !v)}
+                      title="ปิดไลน์"
+                      foot={`ERS −${DEFEND_ERS} · คันหลังแซงยากขึ้น`}
+                    />
+                  </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
                     <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ERS_BONUS}`} foot={`เหลือ ${d.ers}/${ERS_MAX}`} />

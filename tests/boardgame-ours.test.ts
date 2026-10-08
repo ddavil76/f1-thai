@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_DECK, ACTION_OURS, BACK_CELLS, ERS_BASE_CHARGE, ERS_MAX, PASS_NEED, PASS_NEED_DRS, FAST_CORNER_COST, SLOW_CORNER_COST, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
+  ACTION_DECK, ACTION_OURS, BACK_CELLS, ERS_BASE_CHARGE, ERS_MAX, PASS_NEED, PASS_NEED_DRS, FAST_CORNER_COST, SLOW_CORNER_COST, HAND_SIZE, TOW, DEFEND_ERS, DEFEND_EXTRA, FRESH_TURNS, AI_LEVEL, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
   PITWALL_DECK, PITWALL_OURS, RAIN_ROUNDS, WEAR_MAX,
   activeDriver, applyLaunch, canPitwall, choose, launchKind, stepCost, commit, moveFor, newGame, options, playPitwall, travel,
   type ActionKind, type CarSpec, type GameState, type IncidentFace, type Lane, type Rng, type Track,
@@ -39,9 +39,12 @@ const at = (s: GameState, pos: [number, Lane][]): GameState => ({
 });
 const PLAIN = MOVE_DECK.findIndex((c) => !c.action && !c.pitwall && !c.tires && !c.ers && !c.spinDry && !c.spinWet);
 const ACTION_CARD = MOVE_DECK.findIndex((c) => c.action && !c.pitwall && !c.tires && !c.spinDry && !c.spinWet);
+/** กติกาของเรา: ใส่ไพ่ใบนี้ไว้ใบแรกในมือทีม 0 (เลือกเล่นโดยไม่ระบุใบ = ใบแรก) */
 const topMove = (s: GameState, id: number): GameState => ({
   ...s,
-  teams: s.teams.map((t, i) => (i === 0 ? { ...t, moveDeck: [id, ...t.moveDeck.filter((k) => k !== id)] } : t)),
+  teams: s.teams.map((t, i) =>
+    i === 0 ? { ...t, hand: [id, ...t.hand.filter((k) => k !== id)].slice(0, 3), moveDeck: t.moveDeck.filter((k) => k !== id) } : t,
+  ),
 });
 const topAction = (s: GameState, kind: ActionKind): GameState => ({ ...s, actionDeck: [ACTION_DECK.indexOf(kind), ...s.actionDeck] });
 const events = (s: GameState) => s.feed.flatMap((l) => l.events);
@@ -266,5 +269,60 @@ describe("ออกตัวตอนไฟดับ", () => {
     // หลังเริ่มเดินแล้วจัดใหม่ไม่ได้
     const moved = commit(choose(out, { kind: "base" }, never), {}, never);
     expect(applyLaunch(moved, { 5: "great" })).toBe(moved);
+  });
+});
+
+describe("กติกาของเรา: ไพ่ในมือ สลิปสตรีม ปิดไลน์ ยางใหม่", () => {
+  it("ถือไพ่ MOVE 3 ใบ เลือกใบไหนก็ได้ แล้วจั่วเติมให้ครบ", () => {
+    const s = at(game(), [[0, 0], [30, 0]]);
+    expect(s.teams[0].hand).toHaveLength(HAND_SIZE);
+    const pick = s.teams[0].hand[2];
+    const p = choose(s, { kind: "card", card: pick }, never);
+    expect(p.pending?.card).toBe(pick);
+    expect(p.teams[0].hand).toHaveLength(HAND_SIZE);
+    expect(p.teams[0].hand).not.toContain(pick);
+    expect(p.teams[0].moveDiscard).toContain(pick);
+  });
+
+  it("จบตาติดท้ายคันหน้า: ทางตรงตาหน้า +1 · ในโค้งตาหน้า −1", () => {
+    let s = at(game(2), [[0, 0], [5, 0]]);
+    s = commit(choose(s, { kind: "base" }, never), {}, never); // A ไปช่อง 4 ติดท้าย B
+    expect(s.drivers[0].tow).toBe(TOW);
+    const t = track({ corners: [{ start: 4, end: 5 }] });
+    let c = at(game(2, t), [[0, 0], [5, 0]]);
+    c = commit(choose(c, { kind: "base" }, never), {}, never); // ช่อง 1–3 ใช้ 3 · ช่อง 4 เป็นโค้ง ใช้ 2 เกินแรง → จอดช่อง 3
+    expect(c.drivers[0].progress).toBe(3);
+    const d = commit(choose(at(game(2, t), [[2, 0], [5, 0]]), { kind: "base" }, never), {}, never); // ช่อง 3 (1) + ช่อง 4 โค้ง (2) = 3 → ช่อง 4 ติดท้าย B ในโค้ง
+    expect(d.drivers[0]).toMatchObject({ progress: 4, tow: -TOW });
+    // ตาถัดไปได้/เสียแรงตามนั้น แล้วล้างค่า
+    const next = commit(choose({ ...s, turn: 0, order: [0, 1], drivers: s.drivers.map((x, i) => (i === 1 ? { ...x, progress: 30 } : x)) }, { kind: "base" }, never), {}, never);
+    expect(next.drivers[0]).toMatchObject({ progress: 4 + BASE_MOVE + TOW, tow: 0 });
+  });
+
+  it("ปิดไลน์: ใช้ ERS ครึ่งขั้น คันที่จะแซงต้องเหลือแรงมากขึ้น", () => {
+    let s = at(game(2), [[10, 0], [0, 0]]);
+    s = commit(choose(s, { kind: "base" }, never), { defend: true }, never);
+    expect(s.drivers[0]).toMatchObject({ progress: 14, defending: true, ers: 3 - DEFEND_ERS });
+    // B อยู่ช่อง 10 ถึงหลัง A (ช่อง 13) เหลือ 3 — ปกติแซงได้ แต่โดนปิดไลน์ต้องมากกว่า 3
+    const b = { ...s, drivers: s.drivers.map((x, i) => (i === 1 ? { ...x, progress: 10 } : x)) };
+    expect(travel(b, b.drivers[1], 6)).toMatchObject({ progress: 13, stuck: { need: PASS_NEED + DEFEND_EXTRA } });
+    expect(travel(b, b.drivers[1], 7)).toMatchObject({ progress: 17 });
+  });
+
+  it("ยางใหม่จากพิท: 2 ตาแรกได้ +1", () => {
+    let s = at(game(2), [[34, 0], [2, 0]]);
+    s = choose(s, { kind: "pitIn" }, never);
+    s = choose({ ...s, turn: 0, order: [0, 1] }, { kind: "box", set: "red" }, never);
+    expect(s.drivers[0].fresh).toBe(FRESH_TURNS);
+    const out = s.drivers[0].progress;
+    s = commit(choose({ ...s, turn: 0, order: [0, 1] }, { kind: "base" }, never), {}, never);
+    expect(s.drivers[0]).toMatchObject({ progress: out + BASE_MOVE + 1, fresh: FRESH_TURNS - 1 });
+  });
+
+  it("ระดับ AI: ยากวิ่งไกลกว่าง่าย", () => {
+    const field: CarSpec[] = [{ name: "P", num: 1, team: 0, ai: false }, { name: "B", num: 9, team: -1, ai: true }];
+    const run = (aiLevel: "easy" | "hard") =>
+      newGame(field, ["ทีม"], track(), 4, () => 0.5, [1, 0], { rules: "ours", aiLevel }).drivers[1].progress;
+    expect(run("hard") - run("easy")).toBe(AI_LEVEL.hard.add - AI_LEVEL.easy.add);
   });
 });

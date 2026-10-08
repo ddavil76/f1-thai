@@ -670,6 +670,12 @@ html[data-intro="seen"] .launch-intro {
   50% { opacity: 1; }
 }
 .bg-ghost { animation: bg-ghost 1.2s ease-in-out infinite; }
+/* ตัวเลขแรงที่ใช้ลอยขึ้นจากช่องที่รถวิ่งผ่าน */
+@keyframes bg-float {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(-3px); opacity: 0; }
+}
+.bg-float { animation: bg-float 0.9s ease-out forwards; transform-box: fill-box; }
 /* วงรอบรถที่ถึงตาบนแผนที่ (SVG ใช้ box-shadow ไม่ได้) */
 @keyframes bg-blink {
   0%, 100% { opacity: 1; }
@@ -753,6 +759,7 @@ html[data-intro="seen"] .launch-intro {
   .bg-flip,
   .bg-play,
   .bg-ghost,
+  .bg-float,
   .bg-blink,
   .bg-rain,
   .bg-roll,

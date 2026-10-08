@@ -46,7 +46,7 @@ describe("prefers-reduced-motion", () => {
 
   it("class เคลื่อนไหวที่เขียนเองก็ต้องถูกปิดด้วย", () => {
     // keyframes ที่ประกาศเองใน globals.css แล้วผูกกับ class ที่ไม่ได้ขึ้นต้นด้วย animate-
-    for (const cls of ["champ-reveal", "stagger", "podium-rise", "grow-x", "track-draw", "racing-dot", "go-flash", "launch-intro", "tilt", "start-lights", "speed-streak", "bg-live", "bg-peek", "bg-deal", "bg-flip", "bg-play", "bg-ghost", "bg-blink", "bg-rain", "bg-roll", "bg-pop", "bg-light", "bg-go", "bg-lights"]) {
+    for (const cls of ["champ-reveal", "stagger", "podium-rise", "grow-x", "track-draw", "racing-dot", "go-flash", "launch-intro", "tilt", "start-lights", "speed-streak", "bg-live", "bg-peek", "bg-deal", "bg-flip", "bg-play", "bg-ghost", "bg-float", "bg-blink", "bg-rain", "bg-roll", "bg-pop", "bg-light", "bg-go", "bg-lights"]) {
       expect(reduceBlock, `.${cls} หายไปจากบล็อก reduced-motion`).toContain(`.${cls}`);
     }
   });

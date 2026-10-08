@@ -39,6 +39,22 @@ export const PASS_NEED_DRS = 1;
 /** กติกาของเรา: ช่องโค้งใช้แรงกี่ก้าว (ทางปกติ 1) */
 export const FAST_CORNER_COST = 2;
 export const SLOW_CORNER_COST = 3;
+/** กติกาของเรา: ไพ่ MOVE ในมือทีมกี่ใบ */
+export const HAND_SIZE = 3;
+/** กติกาของเรา: จบตาติดท้ายคันหน้าบนทางตรง ตาหน้า +1 (สลิปสตรีม) · ในโค้ง −1 (อากาศปั่นป่วน) */
+export const TOW = 1;
+/** กติกาของเรา: ปิดไลน์ใช้ ERS เท่านี้ และคันที่จะแซงต้องเหลือแรงเพิ่มอีกเท่านี้ */
+export const DEFEND_ERS = 0.5;
+export const DEFEND_EXTRA = 1;
+/** กติกาของเรา: ยางใหม่ออกจากพิทได้ +1 กี่ตา */
+export const FRESH_TURNS = 2;
+/** ความเก่งรถ AI: ระยะไพ่ AI บวก/ลบ */
+export type AiLevel = "easy" | "normal" | "hard";
+export const AI_LEVEL: Record<AiLevel, { add: number; title: string }> = {
+  easy: { add: -1, title: "ง่าย" },
+  normal: { add: 0, title: "ปกติ" },
+  hard: { add: 1, title: "ยาก" },
+};
 /** รางยางสึกมีกี่ขั้น — สุดรางแล้วเจอไพ่สึกอีก = ยางพัง */
 export const WEAR_MAX = 6;
 /** เหรียญ ATTACK / BLOCK / SLIPSTREAM ใช้ได้กี่ครั้งต่อคัน */
@@ -144,6 +160,12 @@ export type Driver = {
   mode: Mode | null;
   /** ระยะเพิ่มในตานี้จาก PITWALL */
   bonus: number;
+  /** กติกาของเรา: ตาหน้าได้ +1 (สลิปสตรีม) / −1 (อากาศปั่นป่วนในโค้ง) */
+  tow: number;
+  /** กติกาของเรา: ปิดไลน์อยู่ — คันที่จะแซงต้องเหลือแรงมากขึ้น จนกว่าคันนี้จะเดินอีกครั้ง */
+  defending: boolean;
+  /** กติกาของเรา: ยางใหม่จากพิท เหลือกี่ตาที่ได้ +1 */
+  fresh: number;
   /** เล่นพิทสต็อปเร็วไว้ — ยางที่จะใส่ ("keep" = ยางเดิม) */
   quick: Compound | "keep" | null;
   /** อันดับตอนข้ามเส้นชัย (null = ยังไม่จบ) */
@@ -151,7 +173,8 @@ export type Driver = {
   pits: number;
 };
 
-export type Team = { name: string; moveDeck: number[]; moveDiscard: number[]; pitwall: number[] };
+/** hand = ไพ่ MOVE ที่ถือไว้ (กติกาของเรา เห็นแล้วเลือกเองได้) */
+export type Team = { name: string; moveDeck: number[]; moveDiscard: number[]; pitwall: number[]; hand: number[] };
 
 export type MoveKind =
   | "base" | "card" | "drs" | "slip" | "worn" | "push" | "pace" | "rejoin" | "pitIn" | "pitLane" | "box";
@@ -189,6 +212,10 @@ export type TurnLog = {
   block: boolean;
   /** รถที่แซงผ่านได้ในตานี้ (กติกาของเรา) */
   passed: number[];
+  /** สลิปสตรีม (+) / อากาศปั่นป่วน (−) ที่ใช้ตานี้ · ยางใหม่ +1 · ปิดไลน์ */
+  tow: number;
+  fresh: boolean;
+  defend: boolean;
   /** ERS ที่ชาร์จคืนตานี้ (0 = ไม่ได้ชาร์จ) */
   charged: number;
   /** ยางสึกเพิ่มกี่ขั้น */
@@ -223,6 +250,7 @@ export type GameState = {
   neutral: { kind: "sc" | "vsc"; left: number } | null;
   /** รถ AI รอให้หน้าจอสั่งเดินทีละคัน (aiStep) */
   stepAI: boolean;
+  aiLevel: AiLevel;
   flags: Flag[];
   /** id ตามลำดับที่ข้ามเส้นชัย */
   finishOrder: number[];
@@ -340,7 +368,7 @@ export type CarSpec = {
 const SETS: Compound[] = ["yellow", "yellow", "red", "red"];
 
 /** stepAI = ไม่ให้รถ AI เดินรวดเดียว — หน้าจอเรียก aiStep ทีละคันเพื่อทำแอนิเมชัน */
-export type GameOptions = { weather?: number; rules?: Rules; stepAI?: boolean };
+export type GameOptions = { weather?: number; rules?: Rules; stepAI?: boolean; aiLevel?: AiLevel };
 
 export function newGame(
   cars: CarSpec[],
@@ -390,6 +418,9 @@ export function newGame(
       penalty: false,
       mode: null,
       bonus: 0,
+      tow: 0,
+      defending: false,
+      fresh: 0,
       quick: null,
       finished: null,
       pits: 0,
@@ -406,7 +437,9 @@ export function newGame(
   const teams: Team[] = teamNames.map((name) => {
     const pitwall = pwDeck.slice(0, PITWALL_START);
     pwDeck = pwDeck.slice(PITWALL_START);
-    return { name, moveDeck: shuffle(ids(MOVE_DECK.length), rng), moveDiscard: [], pitwall };
+    const deck = shuffle(ids(MOVE_DECK.length), rng);
+    const hand = rules === "ours" ? deck.slice(0, HAND_SIZE) : [];
+    return { name, moveDeck: deck.slice(hand.length), moveDiscard: [], pitwall, hand };
   });
   const state: GameState = {
     track,
@@ -428,6 +461,7 @@ export function newGame(
     rainLeft: rules === "ours" && wet ? RAIN_ROUNDS : 0,
     rules,
     stepAI: !!opts.stepAI,
+    aiLevel: opts.aiLevel ?? "normal",
     neutral: null,
     flags: [],
     finishOrder: [],
@@ -463,6 +497,9 @@ export function slipTargetOf(s: GameState, d: Driver): Driver | null {
   const t = s.drivers[d.slipTarget];
   return solid(t) && t.progress - 1 >= d.progress ? t : null;
 }
+
+/** แรงเสริมของการเดินแบบปกติ (BASE/ไพ่/โหมด): ทีมเวิร์ก + สลิปสตรีม/อากาศปั่นป่วน + ยางใหม่ */
+export const moveBonus = (d: Driver) => d.bonus + d.tow + (d.fresh > 0 ? 1 : 0);
 
 /** ERS ได้กี่ช่อง — กติกาของเรา ในโซน DRS ได้มากกว่า */
 export const ersBonus = (s: GameState, d: Driver) =>
@@ -661,7 +698,8 @@ function travelOurs(s: GameState, d: Driver, want: number, lanePref: Lane): Trav
   let stuck: TravelResult["stuck"] = null;
   for (const q of cells) {
     const left = want - (spent.get(q - 1) ?? 0);
-    const need = zoneAt(s.track, s.track.drs, q - 1) >= 0 ? PASS_NEED_DRS : PASS_NEED;
+    const defended = others.some((o) => o.progress === q && o.defending);
+    const need = (zoneAt(s.track, s.track.drs, q - 1) >= 0 ? PASS_NEED_DRS : PASS_NEED) + (defended ? DEFEND_EXTRA : 0);
     if (left > need) continue;
     limit = q - 1;
     stuck = { id: others.find((o) => o.progress === q)!.id, left, need };
@@ -716,14 +754,14 @@ function pitStep(s: GameState, d: Driver): Driver {
  * จอดเปลี่ยนยาง: เลือกชุดใหม่ (หรือ "keep" = ยางเดิม แค่สลับยางฝน/แห้งตามอากาศ)
  * ซ่อมรถและเบรกไปด้วย · ถ้าค้างโทษ ต้องจอดต่ออีกตา
  */
-function stopAt(d: Driver, set: Compound | "keep" | undefined, rain: boolean, events: GameEvent[]): Driver {
+function stopAt(d: Driver, set: Compound | "keep" | undefined, rain: boolean, events: GameEvent[], ours = false): Driver {
   let x: Driver = { ...d, pits: d.pits + 1, wet: rain, damage: false, brakes: false, quick: null };
   if (!d.ai) {
     const pick = set === "keep" && !d.worn ? null : set && set !== "keep" && d.sets.includes(set) ? set : d.sets[0];
     if (pick) {
       const sets = [...d.sets];
       sets.splice(sets.indexOf(pick), 1);
-      x = { ...x, compound: pick, sets, wear: 0, worn: false };
+      x = { ...x, compound: pick, sets, wear: 0, worn: false, fresh: ours ? FRESH_TURNS : 0 };
     } else if (d.worn) {
       // ยางหมดพิทแล้วยังพัง: ใส่ชุดเก่าที่ยังพอวิ่งได้
       x = { ...x, worn: false, wear: WEAR_MAX };
@@ -742,7 +780,7 @@ const replace = (s: GameState, d: Driver): GameState => ({
 });
 
 const emptyLog = (kind: MoveKind): Omit<TurnLog, "finished" | "driver" | "ai"> => ({
-  kind, card: null, moved: 0, corner: false, blocked: false, ers: false, recharge: false, charged: 0, passed: [],
+  kind, card: null, moved: 0, corner: false, blocked: false, ers: false, recharge: false, charged: 0, passed: [], tow: 0, fresh: false, defend: false,
   attacked: null, block: false, wear: 0, nowWorn: false, events: [],
 });
 
@@ -953,7 +991,7 @@ function deploySafetyCar(s: GameState, crashes: number, damaged: number, events:
     if (o.pit) {
       if (!o.pit.served) {
         const other = o.sets.find((c) => c !== o.compound) ?? o.sets[0];
-        x = stopAt(x, o.quick ?? other ?? "keep", rain, events);
+        x = stopAt(x, o.quick ?? other ?? "keep", rain, events, s.rules === "ours");
       }
       x = { ...x, pit: null, penalty: false };
     }
@@ -1067,7 +1105,7 @@ export function attackTarget(s: GameState, d: Driver, at: { progress: number; la
   return occupied(s.drivers, d.id, at.progress + 1, 1) ? null : t;
 }
 
-type Extras = { ers?: boolean; attack?: boolean; block?: boolean; lane?: Lane };
+type Extras = { ers?: boolean; attack?: boolean; block?: boolean; defend?: boolean; lane?: Lane };
 
 /** ป้ายบนไพ่ที่เกี่ยวกับผลหลังเดิน */
 type CardFx = { tires: boolean; ers: boolean; action: boolean; pitwall: boolean; spin: boolean };
@@ -1103,13 +1141,18 @@ function resolve(
     d = { ...d, ers: d.ers - 1 };
     log.ers = true;
   }
-  const extra = ["base", "card", "push", "pace"].includes(kind) ? d.bonus : 0;
-  const goal = want + extra + (ers ? ersBonus(s, d0) : 0);
-  const go = travel(s, d, goal, extras.lane ?? 0);
+  const normal = ["base", "card", "push", "pace"].includes(kind);
+  const extra = normal ? moveBonus(d) : 0;
+  log.tow = normal ? d.tow : 0;
+  log.fresh = normal && d.fresh > 0;
+  const goal = Math.max(0, want + extra + (ers ? ersBonus(s, d0) : 0));
+  // ปิดไลน์ของตาก่อนหมดเมื่อรถคันนี้เดินอีกครั้ง
+  d = { ...d, defending: false };
+  const go = travel({ ...s, drivers: s.drivers.map((o) => (o.id === d.id ? d : o)) }, d, goal, extras.lane ?? 0);
   log.corner = go.corner;
   log.blocked = go.blocked;
   log.passed = go.passed;
-  d = { ...d, progress: go.progress, lane: go.lane, bonus: 0 };
+  d = { ...d, progress: go.progress, lane: go.lane, bonus: 0, tow: normal ? 0 : d.tow, fresh: normal ? Math.max(0, d.fresh - 1) : d.fresh };
   if (throughVbox(s.track, d0.progress, go.progress)) d = vboxVisit(d, lim.rain, events);
   let drivers = s.drivers.map((o) => (o.id === d.id ? d : o));
 
@@ -1141,6 +1184,16 @@ function resolve(
     log.charged = Math.min(ERS_BASE_CHARGE, ERS_MAX - d.ers);
     d = { ...d, ers: d.ers + log.charged };
     log.recharge = true;
+  }
+  // กติกาของเรา: ปิดไลน์ (แลก ERS ครึ่งขั้น)
+  if (s.rules === "ours" && extras.defend && free && d.ers >= DEFEND_ERS) {
+    d = { ...d, ers: d.ers - DEFEND_ERS, defending: true };
+    log.defend = true;
+  }
+  // กติกาของเรา: จบตาติดท้ายคันหน้า — ทางตรงได้สลิปสตรีม โค้งเจออากาศปั่นป่วน
+  if (s.rules === "ours" && d.pit === null) {
+    const ahead = drivers.find((o) => o.id !== d.id && solid(o) && o.progress === d.progress + 1 && o.lane === d.lane);
+    d = { ...d, tow: ahead ? (zoneAt(s.track, s.track.corners, d.progress) >= 0 ? -TOW : TOW) : 0 };
   }
   if (extras.block && free && d.tokens.block > 0) {
     const victim = s.order[s.turn + 1];
@@ -1194,7 +1247,7 @@ function enterPit(s: GameState, d: Driver, rng: Rng): GameState {
 function pitMove(s: GameState, d: Driver, kind: MoveKind, from: number, rng: Rng): GameState {
   const events: GameEvent[] = [];
   let moved = pitStep(s, d);
-  if (moved.pit?.inBox && moved.quick) moved = stopAt(moved, moved.quick, isRain(s), events);
+  if (moved.pit?.inBox && moved.quick) moved = stopAt(moved, moved.quick, isRain(s), events, s.rules === "ours");
   return finishMove(replace(s, moved), moved, { ...emptyLog(kind), moved: moved.progress - from, events }, rng);
 }
 
@@ -1205,7 +1258,7 @@ function serveBox(s: GameState, d: Driver, set: Compound | "keep" | undefined, r
   if (d.pit!.served) {
     x = { ...d, pit: { ...d.pit!, inBox: false } };
   } else {
-    x = stopAt(d, set, isRain(s), events);
+    x = stopAt(d, set, isRain(s), events, s.rules === "ours");
     if (x.pit!.inBox) {
       return finishMove(replace(s, x), x, { ...emptyLog("box"), events }, rng);
     }
@@ -1228,7 +1281,8 @@ function drawMove(s: GameState, team: number, rng: Rng): { id: number; s: GameSt
   return { id: r.id, s: { ...s, teams } };
 }
 
-export type Choice = { kind: MoveKind; box?: boolean; set?: Compound | "keep" };
+/** card = ไพ่ MOVE ใบไหนในมือ (กติกาของเรา ไม่ส่ง = ใบแรก) */
+export type Choice = { kind: MoveKind; box?: boolean; set?: Compound | "keep"; card?: number };
 
 /**
  * ขั้นที่ 1 ของผู้เล่น: เลือกวิธีเดิน — พื้นฐาน/เปิดไพ่/DRS/โหมด จะได้ pending รอขั้นที่ 2
@@ -1262,6 +1316,18 @@ export function choose(s: GameState, c: Choice, rng: Rng): GameState {
   }
   if (c.kind === "pace" && o.pace && d.mode?.kind === "pace") {
     return { ...st, pending: { driver: d.id, kind: "pace", card: null, value: d.mode.value } };
+  }
+  if (c.kind === "card" && o.card && s.rules === "ours") {
+    // เล่นใบที่เลือกจากมือ แล้วจั่วใบใหม่มาเติม
+    const team = st.teams[d.team];
+    const id = c.card !== undefined && team.hand.includes(c.card) ? c.card : team.hand[0];
+    if (id === undefined) return s;
+    const r = drawFrom(team.moveDeck, team.moveDiscard, rng);
+    const teams = st.teams.map((t, i) =>
+      i === d.team ? { ...t, hand: [...t.hand.filter((x) => x !== id), r.id], moveDeck: r.deck, moveDiscard: [...r.discard.slice(0, -1), id] } : t,
+    );
+    const value = Math.max(0, moveFor(s, MOVE_DECK[id], d) - offlinePenalty(s, d));
+    return { ...st, teams, pending: { driver: d.id, kind: "card", card: id, value } };
   }
   if (c.kind === "card" && o.card) {
     const { id, s: s2 } = drawMove(st, d.team, rng);
@@ -1476,7 +1542,9 @@ function aiTurn(s: GameState, rng: Rng): GameState {
   const x = { ...d, boxing };
   const raw = d.wet ? card.w : card.v;
   const cut = s.rules === "ours" && !d.wet ? (l.rain ? 2 : s.weather === DAMP ? 1 : 0) : 0;
-  const value = s.rules === "full" ? (l.rain && d.wet ? card.w : card.v) - offlinePenalty(s, d) : Math.max(1, raw - cut) - offlinePenalty(s, d);
+  const value =
+    (s.rules === "full" ? (l.rain && d.wet ? card.w : card.v) - offlinePenalty(s, d) : Math.max(1, raw - cut) - offlinePenalty(s, d)) +
+    AI_LEVEL[s.aiLevel].add;
   const extras = s.rules === "ours" ? {} : { attack: card.attack, block: card.block };
   return resolve(replace(st, x), x, "card", value, aiFx(card, d, l.rain), r.id, extras, rng);
 }

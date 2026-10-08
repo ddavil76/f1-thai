@@ -5,7 +5,7 @@ import OsmCredit from "@/components/OsmCredit";
 import { CarBody } from "@/components/boardgame/Car";
 import type { Board, Pt } from "@/lib/boardgame/board";
 import {
-  BOX_AT, PIT_LEN, isRain,
+  BOX_AT, PIT_LEN, isRain, stepCost,
   type Driver, type GameState, type Lane,
 } from "@/lib/boardgame/engine";
 import { look, tyreOf } from "@/components/boardgame/look";
@@ -170,11 +170,17 @@ const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2
 
 export type Spot = { progress: number; lane: Lane };
 
-type Anim = { from: Pose; to: Pose; t0: number; dur: number; c0: number; c1: number };
+type Anim = { from: Pose; to: Pose; t0: number; dur: number; c0: number; c1: number; cell: number };
+
+/** จุดที่ไปถึงได้ของแต่ละตัวเลือก (โชว์ก่อนเลือกไพ่) */
+export type Reach = { label: string; progress: number; lane: Lane; tone: "base" | "card" };
 
 export default function TrackView({
-  board, state, focus, ghost, zoomed, onToggle, onHelp,
+  board, state, focus, ghost, zoomed, onToggle, onHelp, reach = [], instant = false,
 }: {
+  reach?: Reach[];
+  /** วาดตำแหน่งรถทันทีไม่ทำแอนิเมชัน (เช่นเริ่มดูซ้ำ) */
+  instant?: boolean;
   onHelp?: (k: HelpKey) => void;
   board: Board;
   state: GameState;
@@ -209,7 +215,7 @@ export default function TrackView({
   const anims = useRef(new Map<number, Anim>());
   const cam = useRef<{ x: number; y: number; z: number } | null>(null);
   const raf = useRef(0);
-  const view = useRef({ focusId: null as number | null, ghost: null as Spot | null, zoomed, W, H, drivers: state.drivers, sp });
+  const view = useRef({ focusId: null as number | null, ghost: null as Spot | null, zoomed, W, H, drivers: state.drivers, sp, track: state.track, ours: state.rules === "ours" });
 
   /** เป้ากล้อง: ซูมที่รถที่โฟกัส (ตำแหน่งที่กำลังวิ่งอยู่จริง) มองไปข้างหน้า หรือดูทั้งสนาม */
   const camTarget = () => {
@@ -232,6 +238,23 @@ export default function TrackView({
     if (c && camEl.current) {
       camEl.current.setAttribute("transform", `translate(${v.W / 2} ${v.H / 2}) scale(${c.z.toFixed(4)}) translate(${(-c.x).toFixed(3)} ${(-c.y).toFixed(3)})`);
     }
+  };
+
+  /** ตัวเลข "−แรง" ลอยขึ้นแล้วจางหาย (อยู่ในกลุ่มกล้อง จึงเลื่อนไปกับสนาม) */
+  const spawnCost = (p: Frame, cost: number) => {
+    const g = camEl.current;
+    if (!g) return;
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    el.setAttribute("x", p.x.toFixed(2));
+    el.setAttribute("y", p.y.toFixed(2));
+    el.setAttribute("font-size", "1.6");
+    el.setAttribute("font-weight", "900");
+    el.setAttribute("text-anchor", "middle");
+    el.setAttribute("fill", cost >= 3 ? "#ff3b2f" : cost === 2 ? "#fdba74" : "#ffffff");
+    el.setAttribute("class", "bg-float");
+    el.textContent = `−${cost}`;
+    g.appendChild(el);
+    window.setTimeout(() => el.remove(), 900);
   };
 
   const kick = () => {
@@ -260,6 +283,14 @@ export default function TrackView({
         const speed = dt > 0 ? (Math.abs(q.pos - before) * 1000) / dt : 0;
         trail?.setAttribute("x2", (-2.2 - Math.min(7, speed * 0.32)).toFixed(2));
         trail?.setAttribute("opacity", u < 1 ? Math.min(0.75, speed * 0.04).toFixed(2) : "0");
+        // รถผู้เล่น (กติกาของเรา): ตัวเลขแรงที่ใช้ลอยขึ้นทุกช่องที่วิ่งเข้า
+        const v = view.current;
+        if (v.ours && !v.drivers[id]?.ai && a.to.pos > a.from.pos) {
+          while (a.cell < Math.floor(q.pos) && a.cell < a.to.pos) {
+            a.cell++;
+            spawnCost(v.sp.frame(a.cell, q.k > 0 ? q.k + 2 : q.k - 2), stepCost(v.track, a.cell));
+          }
+        }
         if (u < 1) busy = true;
         else anims.current.delete(id);
       }
@@ -277,8 +308,8 @@ export default function TrackView({
 
   // ทุกครั้งที่สถานะเปลี่ยน: ตั้งแอนิเมชันให้รถที่ย้ายที่ แล้วปลุกลูปให้ทำงาน
   useLayoutEffect(() => {
-    view.current = { focusId: focus?.id ?? null, ghost, zoomed, W, H, drivers: state.drivers, sp };
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    view.current = { focusId: focus?.id ?? null, ghost, zoomed, W, H, drivers: state.drivers, sp, track: state.track, ours: state.rules === "ours" };
+    const reduce = instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const now = performance.now();
     for (const d of state.drivers) {
       if (d.finished !== null || d.out) {
@@ -300,7 +331,7 @@ export default function TrackView({
       const c0 = sp.costAt(from.pos);
       const c1 = sp.costAt(to.pos);
       const dur = Math.min(DRIVE_MAX_MS, DRIVE_BASE_MS + (Math.abs(c1 - c0) + Math.abs(to.k - from.k) / 3) * DRIVE_PER_CELL_MS);
-      anims.current.set(d.id, { from, to, t0: now, dur, c0, c1 });
+      anims.current.set(d.id, { from, to, t0: now, dur, c0, c1, cell: Math.floor(from.pos) });
       el.setAttribute("transform", poseTransform(placePose(sp, from)));
     }
     if (!cam.current) {
@@ -441,6 +472,41 @@ export default function TrackView({
               );
             })}
           <Label p={fr(t.pitEntry.start + BOX_AT, PIT - 5.6)}>PIT</Label>
+
+          {/* กติกาของเรา: แรงที่ช่องโค้งข้างหน้ากิน */}
+          {state.rules === "ours" &&
+            focus &&
+            Array.from({ length: 12 }, (_, i) => focus.progress + 1 + i).map((c) => {
+              const cost = stepCost(t, c);
+              if (cost === 1) return null;
+              const p = fr(c, 0);
+              return (
+                <text key={c} x={p.x} y={p.y} fontSize={1.05} fontWeight={900} fill={cost >= 3 ? "#ff3b2f" : "#fdba74"} fillOpacity={0.9} textAnchor="middle" dominantBaseline="central">
+                  {cost}
+                </text>
+              );
+            })}
+          {/* จุดที่ไปถึงได้ของแต่ละตัวเลือก (รวมป้ายถ้าไปถึงที่เดียวกัน) */}
+          {Object.values(
+            reach.reduce<Record<string, Reach & { labels: string[] }>>((acc, r) => {
+              const key = `${r.progress}:${r.lane}`;
+              (acc[key] ??= { ...r, labels: [] }).labels.push(r.label);
+              if (r.tone === "card") acc[key].tone = "card";
+              return acc;
+            }, {}),
+          ).map((r) => {
+            const p = fr(r.progress, laneOffset(r.lane));
+            const text = r.labels.join("·");
+            const w = 1.2 + text.length * 0.75;
+            return (
+              <g key={`${r.progress}:${r.lane}`} transform={`translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`} opacity={0.95}>
+                <rect x={-w / 2} y={-1} width={w} height={2} rx={1} fill={r.tone === "base" ? "#1F1F24" : "#E10600"} stroke="#fff" strokeWidth={0.15} />
+                <text fontSize={1.2} fontWeight={900} fill="#fff" textAnchor="middle" dominantBaseline="central">
+                  {text}
+                </text>
+              </g>
+            );
+          })}
 
           {/* รถ */}
           {[...racers]

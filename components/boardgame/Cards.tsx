@@ -62,7 +62,7 @@ export function HandCard({
     orange: "bg-[#fb923c] text-[#08080A] border-white",
   } as const;
   return (
-    <div className="bg-deal w-[6.4rem] flex-none" style={{ animationDelay: `${i * 0.07}s` }}>
+    <div className="bg-deal w-[5.3rem] flex-none" style={{ animationDelay: `${i * 0.07}s` }}>
       <button
         type="button"
         onClick={onClick}
