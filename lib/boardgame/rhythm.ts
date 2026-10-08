@@ -1,11 +1,11 @@
 /**
  * ควอลิฟายแบบจับจังหวะ (กติกาของเรา) — ฟังก์ชันล้วน ความสุ่มผ่าน `rng`
  *
- * แปลงผังสนามเป็นโน้ต 1 จังหวะต่อ 1 ช่อง:
- * - เบรก: แตะก่อนเข้าโค้ง 1 ช่อง · โค้งความเร็วต่ำแตะถี่ 2 ครั้ง (ก่อนโค้ง + ช่องแรกของโค้ง)
- * - คันเร่ง: ทางตรงยาวตั้งแต่ 3 ช่องเป็นโน้ตกดค้าง สั้นกว่านั้นเป็นแตะ
+ * แปลงผังสนามเป็นโน้ต 1 จังหวะต่อ 1 ช่อง — คันเร่งกับเบรกเป็นโน้ต "กดค้าง" เหมือนเหยียบจริง:
+ * - เบรก: เริ่มก่อนเข้าโค้ง 1 ช่อง · โค้งความเร็วสูงค้าง 1 จังหวะ · โค้งความเร็วต่ำค้างจนออกโค้ง
+ * - คันเร่ง: ค้างตลอดทางตรง ปล่อยตอนถึงจุดเบรก (ในโค้งความเร็วสูงปล่อยไหลได้)
  * - DRS: แตะตอนเข้าโซน DRS (ไม่บังคับ กดทันได้เวลาลดเพิ่ม)
- * กดตรงจังหวะได้ PERFECT / GOOD / EARLY / LATE / MISS แล้วแปลงเป็นเวลาต่อรอบ
+ * ตัดสินทั้งตอนกดและตอนปล่อย: PERFECT / GOOD / EARLY / LATE / MISS แล้วแปลงเป็นเวลาต่อรอบ
  */
 
 import type { AiLevel, Compound, Rng, Track } from "./engine";
@@ -16,7 +16,7 @@ export type Note = {
   lane: Lane;
   /** จังหวะที่ต้องกด (นับจากเริ่มรอบ) */
   beat: number;
-  /** โน้ตกดค้าง: ค้างไว้กี่จังหวะ (0 = แตะ) */
+  /** ค้างไว้กี่จังหวะ ปล่อยที่ beat + hold (0 = แตะ ใช้กับ DRS) */
   hold: number;
   /** เบรกก่อนโค้งความเร็วต่ำ — พลาดแล้วออกนอกโค้ง */
   slow: boolean;
@@ -30,7 +30,7 @@ export const BASE_LAP = 105;
 export const FULL_GAIN = 2.6;
 export const POINTS: Record<Grade, number> = { perfect: 1, good: 0.6, early: 0.2, late: 0.2, miss: 0 };
 /** โทษเพิ่มเวลา (วินาที) */
-export const PENALTY = { early: 0.05, late: 0.05, miss: 0.15, offTrack: 0.5, lift: 0.15, wrong: 0.04 };
+export const PENALTY = { early: 0.05, late: 0.05, miss: 0.15, offTrack: 0.5, wrong: 0.04 };
 export const DRS_GAIN: Partial<Record<Grade, number>> = { perfect: 0.25, good: 0.12 };
 /** ทุกคอมโบครบ 10 ลดเวลาเท่านี้ */
 export const COMBO_STEP = 10;
@@ -56,28 +56,29 @@ const inZone = (c: number, start: number, end: number, n: number) => {
 /** สร้างโน้ตของหนึ่งรอบจากผังสนาม */
 export function buildChart(t: Track): Note[] {
   const n = t.lapCells;
-  const sector = (c: number) => Math.min(2, Math.floor((c * 3) / n)) as 0 | 1 | 2;
-  const brake = new Map<number, boolean>();
+  const sector = (c: number) => Math.min(2, Math.floor((((c % n) + n) % n) * 3 / n)) as 0 | 1 | 2;
+  const notes: Omit<Note, "id">[] = [];
+  const busy = new Set<number>();
   for (const z of t.corners) {
-    brake.set((z.start - 1 + n) % n, !!z.slow);
-    if (z.slow) brake.set(z.start % n, true);
+    const from = z.start - 1;
+    const len = z.end >= z.start ? z.end - z.start + 1 : z.end + n - z.start + 1;
+    const hold = z.slow ? len + 1 : 1;
+    notes.push({ lane: "brake", beat: (from + n) % n, hold, slow: !!z.slow, sector: sector(from) });
+    for (let k = 0; k <= len; k++) busy.add((from + k + n) % n);
   }
   const corner = (c: number) => t.corners.some((z) => inZone(c, z.start, z.end, n));
-  const notes: Omit<Note, "id">[] = [];
-  for (const [c, slow] of brake) notes.push({ lane: "brake", beat: c, hold: 0, slow, sector: sector(c) });
-  // ทางตรง = ช่องที่ไม่ใช่โค้งและไม่มีโน้ตเบรก ต่อกันเป็นช่วง
+  // คันเร่ง = ช่องที่ไม่ได้เบรกและไม่อยู่ในโค้ง ต่อกันเป็นช่วง ค้างจนถึงช่องถัดไป
   let run: number[] = [];
   const flush = () => {
-    if (run.length >= 3) notes.push({ lane: "throttle", beat: run[0], hold: run.length - 1, slow: false, sector: sector(run[0]) });
-    else for (const c of run) notes.push({ lane: "throttle", beat: c, hold: 0, slow: false, sector: sector(c) });
+    if (run.length) notes.push({ lane: "throttle", beat: run[0], hold: run.length, slow: false, sector: sector(run[0]) });
     run = [];
   };
   for (let c = 0; c < n; c++) {
-    if (corner(c) || brake.has(c)) flush();
+    if (corner(c) || busy.has(c)) flush();
     else run.push(c);
   }
   flush();
-  for (const z of t.drs) notes.push({ lane: "drs", beat: z.start % n, hold: 0, slow: false, sector: sector(z.start % n) });
+  for (const z of t.drs) notes.push({ lane: "drs", beat: z.start % n, hold: 0, slow: false, sector: sector(z.start) });
   return notes
     .sort((a, b) => a.beat - b.beat || a.lane.localeCompare(b.lane))
     .map((x, id) => ({ ...x, id, beat: x.beat + LEAD_BEATS }));
@@ -92,12 +93,18 @@ export function judge(dt: number, win = 1): Grade | null {
   return null;
 }
 
-/** เวลาที่ได้/เสียจากโน้ตหนึ่งตัว (ลบ = เร็วขึ้น) */
-export function noteDelta(note: Note, g: Grade, notesCount: number): number {
+/** จำนวนครั้งที่ตัดสินทั้งรอบ (คันเร่ง/เบรกตัดสินตอนกด 1 + ตอนปล่อย 1) */
+export const judgeCount = (chart: Note[]) => chart.filter((x) => x.lane !== "drs").length * 2;
+
+/**
+ * เวลาที่ได้/เสียจากการตัดสินหนึ่งครั้ง (ลบ = เร็วขึ้น)
+ * part: กด (press) หรือ ปล่อย (release) · พลาดเบรกโค้งความเร็วต่ำตอนกด = ออกนอกโค้ง
+ */
+export function noteDelta(note: Note, g: Grade, judgments: number, part: "press" | "release" = "press"): number {
   if (note.lane === "drs") return -(DRS_GAIN[g] ?? 0);
-  const gain = (FULL_GAIN * POINTS[g]) / Math.max(1, notesCount);
+  const gain = (FULL_GAIN * POINTS[g]) / Math.max(1, judgments);
   const pen = g === "early" || g === "late" || g === "miss" ? PENALTY[g] : 0;
-  const off = g === "miss" && note.slow ? PENALTY.offTrack : 0;
+  const off = g === "miss" && note.slow && part === "press" ? PENALTY.offTrack : 0;
   return -gain + pen + off;
 }
 

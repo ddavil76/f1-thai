@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Track } from "@/lib/boardgame/engine";
 import {
-  BASE_LAP, FULL_GAIN, LEAD_BEATS, PENALTY, aiLap, buildChart, fmtLap, judge, noteDelta, sectorColor, WINDOW,
+  BASE_LAP, FULL_GAIN, LEAD_BEATS, PENALTY, aiLap, buildChart, fmtLap, judge, judgeCount, noteDelta, sectorColor, WINDOW,
 } from "@/lib/boardgame/rhythm";
 
 const track = (patch: Partial<Track> = {}): Track => ({
@@ -20,20 +20,20 @@ describe("ควอลิฟายจับจังหวะ: สร้าง�
   const chart = buildChart(track());
   const at = (lane: string, cell: number) => chart.find((n) => n.lane === lane && n.beat === cell + LEAD_BEATS);
 
-  it("เบรกก่อนเข้าโค้ง 1 ช่อง · โค้งความเร็วต่ำแตะถี่ 2 ครั้ง", () => {
-    expect(at("brake", 7)).toMatchObject({ slow: true });
-    expect(at("brake", 8)).toMatchObject({ slow: true });
-    expect(at("brake", 19)).toMatchObject({ slow: false });
-    expect(at("brake", 20)).toBeUndefined();
-    expect(chart.filter((n) => n.lane === "brake")).toHaveLength(3);
+  it("เบรกกดค้าง: เริ่มก่อนโค้ง 1 ช่อง · โค้งเร็วค้าง 1 จังหวะ · โค้งช้าค้างจนออกโค้ง", () => {
+    expect(at("brake", 7)).toMatchObject({ slow: true, hold: 3 });
+    expect(at("brake", 19)).toMatchObject({ slow: false, hold: 1 });
+    expect(chart.filter((n) => n.lane === "brake")).toHaveLength(2);
   });
 
-  it("ทางตรงยาวเป็นคันเร่งกดค้าง ไม่มีโน้ตในโค้ง", () => {
-    // ช่อง 0–6 เป็นทางตรง 7 ช่อง
-    expect(at("throttle", 0)).toMatchObject({ hold: 6 });
-    // ช่อง 10–18 หลังโค้งช้า
-    expect(at("throttle", 10)).toMatchObject({ hold: 8 });
-    expect(chart.some((n) => n.lane === "throttle" && n.beat - LEAD_BEATS >= 21 && n.beat - LEAD_BEATS <= 23)).toBe(false);
+  it("คันเร่งกดค้างตลอดทางตรง ปล่อยตอนถึงจุดเบรก · ในโค้งไม่มีคันเร่ง", () => {
+    // ช่อง 0–6 ทางตรง ปล่อยที่ช่อง 7 (จุดเบรก)
+    expect(at("throttle", 0)).toMatchObject({ hold: 7 });
+    // ออกโค้งช้าที่ช่อง 10 ค้างถึงจุดเบรกช่อง 19
+    expect(at("throttle", 10)).toMatchObject({ hold: 9 });
+    // โค้งเร็ว 20–23 ไหลผ่าน แล้วเร่งต่อช่อง 24
+    expect(at("throttle", 24)).toMatchObject({ hold: 12 });
+    expect(chart.every((n) => n.lane === "drs" || n.hold >= 1)).toBe(true);
   });
 
   it("DRS ตอนเข้าโซน และแบ่ง 3 เซกเตอร์", () => {
@@ -58,13 +58,18 @@ describe("ควอลิฟายจับจังหวะ: ตัดสิ�
   it("กดเป๊ะทุกโน้ตลดเวลาเต็ม · พลาดเบรกโค้งช้า = ออกนอกโค้ง", () => {
     const chart = buildChart(track());
     const scored = chart.filter((n) => n.lane !== "drs");
-    const all = scored.reduce((a, n) => a + noteDelta(n, "perfect", scored.length), 0);
+    const j = judgeCount(chart);
+    expect(j).toBe(scored.length * 2);
+    // กดเป๊ะ + ปล่อยเป๊ะทุกโน้ต
+    const all = scored.reduce((a, n) => a + noteDelta(n, "perfect", j, "press") + noteDelta(n, "perfect", j, "release"), 0);
     expect(all).toBeCloseTo(-FULL_GAIN, 5);
     const slow = scored.find((n) => n.slow)!;
-    expect(noteDelta(slow, "miss", scored.length)).toBeCloseTo(PENALTY.miss + PENALTY.offTrack, 5);
+    expect(noteDelta(slow, "miss", j, "press")).toBeCloseTo(PENALTY.miss + PENALTY.offTrack, 5);
+    // ปล่อยพลาดไม่นับออกนอกโค้ง
+    expect(noteDelta(slow, "miss", j, "release")).toBeCloseTo(PENALTY.miss, 5);
     const drs = chart.find((n) => n.lane === "drs")!;
-    expect(noteDelta(drs, "miss", scored.length)).toBeCloseTo(0, 5);
-    expect(noteDelta(drs, "perfect", scored.length)).toBeLessThan(0);
+    expect(noteDelta(drs, "miss", j)).toBeCloseTo(0, 5);
+    expect(noteDelta(drs, "perfect", j)).toBeLessThan(0);
   });
 
   it("เวลารถ AI แบ่ง 3 เซกเตอร์รวมเท่ารอบ · ระดับยากเร็วกว่า", () => {
