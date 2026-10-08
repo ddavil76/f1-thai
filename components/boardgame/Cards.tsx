@@ -4,7 +4,7 @@ import {
   type ActionKind, type Compound, type IncidentFace,
 } from "@/lib/boardgame/engine";
 import { ACTION_ART, DIE_ART, PITWALL_ART, Scene } from "@/components/boardgame/art";
-import { CARD_SIZE, CardFace, FlipCard, type CardCat } from "@/components/boardgame/CardFace";
+import { CARD_BOX, CARD_SIZE, CardFace, FlipCard, type CardCat, type CardSize } from "@/components/boardgame/CardFace";
 import { ActionIcon, IconAlert, IconBolt, IconWear, IconWrench, PitwallIcon, TyreBadge } from "@/components/boardgame/icons";
 
 export function Meter({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
@@ -90,7 +90,9 @@ export function HandCard({
 }
 
 /** ไพ่ FLAT OUT ที่เปิดแล้ว: คว่ำก่อนแล้วพลิกมาหน้าไพ่ */
-export function MoveCard3D({ id, compound, playing, pit = true }: { id: number; compound: Compound; playing: boolean; pit?: boolean }) {
+export function MoveCard3D({
+  id, compound, playing, pit = true, size = "play",
+}: { id: number; compound: Compound; playing: boolean; pit?: boolean; size?: CardSize }) {
   const c = MOVE_DECK[id];
   const rows: { k: Compound; label: string; v: number }[] = [
     { k: "red", label: COMPOUNDS.red.label, v: moveValue(c, "red") },
@@ -100,7 +102,7 @@ export function MoveCard3D({ id, compound, playing, pit = true }: { id: number; 
     <div className={`flex-none ${playing ? "bg-play" : ""}`}>
       <FlipCard
         back="back-flat-out"
-        size="play"
+        size={size}
         label={`ไพ่ FLAT OUT ยาง M ${c.y} ยาง S ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall && pit ? " จั่ว PITWALL" : ""}`}
       >
         <CardFace title="FLAT OUT" cat="drive" art="flat-out" corner={<MoveBadges c={c} pit={pit} />}>
@@ -154,10 +156,11 @@ export function MoveBadges({ c, pit = true }: { c: (typeof MOVE_DECK)[number]; p
 }
 
 /** ไพ่ที่เลือกเล่น (SAVE / DRS / PUSH / PACE) — หน้าไพ่เดียวกับในมือ ขนาดใหญ่ขึ้น */
-export function SimpleCard({ kicker, value, playing, icon, art }: { kicker: string; value: number; playing: boolean; icon?: ReactNode; art?: string }) {
-  const s = CARD_SIZE.play;
+export function SimpleCard({
+  kicker, value, playing, icon, art, size = "play",
+}: { kicker: string; value: number; playing: boolean; icon?: ReactNode; art?: string; size?: CardSize }) {
   return (
-    <div className={`flex-none ${playing ? "bg-play" : ""}`} style={{ width: s.w, height: s.h, fontSize: s.fontSize }}>
+    <div className={`flex-none ${CARD_BOX} ${CARD_SIZE[size]} ${playing ? "bg-play" : ""}`}>
       <CardFace title={kicker} cat="drive" art={art} icon={icon}>
         <span className="flex items-baseline gap-[0.3em]">
           <span className="poster text-[3em] leading-none text-[#E10600] tabular-nums">{value}</span>
@@ -169,10 +172,10 @@ export function SimpleCard({ kicker, value, playing, icon, art }: { kicker: stri
 }
 
 /** ไพ่ ACTION คว่ำแล้วพลิกหน้า */
-export function ActionCard3D({ kind, ok, text }: { kind: ActionKind; ok: boolean; text?: string }) {
+export function ActionCard3D({ kind, ok, text, size = "play" }: { kind: ActionKind; ok: boolean; text?: string; size?: CardSize }) {
   const info = { ...ACTION_INFO[kind], ...(text ? { text } : {}) };
   return (
-    <FlipCard back="back-action" size="play" label={`ไพ่ ACTION ${info.title}: ${info.text}`}>
+    <FlipCard back="back-action" size={size} label={`ไพ่ ACTION ${info.title}: ${info.text}`}>
       <CardFace title={info.title} cat="action" art={ACTION_ART[kind]} icon={<ActionIcon kind={kind} />} accent="#CA8A04">
         <span className="block text-[0.95em] leading-snug">{info.text}</span>
         {!ok && <span className="mt-[0.2em] block text-[0.95em] font-bold text-black/55">ไม่มีผล</span>}

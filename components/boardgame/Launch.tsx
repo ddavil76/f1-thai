@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Car from "@/components/boardgame/Car";
 import { look } from "@/components/boardgame/look";
+import { sfx } from "@/components/boardgame/sound";
 import { LAUNCH, launchKind, type Driver, type LaunchKind } from "@/lib/boardgame/engine";
 
 /** ไฟติดดวงละกี่ ms และไฟค้างครบ 5 ดวงก่อนดับนานแค่ไหน (สุ่ม) */
@@ -40,9 +41,14 @@ export default function LaunchScreen({
 
   const start = () => {
     go("lights");
-    for (let i = 1; i <= 5; i++) later(() => setLit(i), LIGHT_MS * i);
+    for (let i = 1; i <= 5; i++)
+      later(() => {
+        setLit(i);
+        sfx.light();
+      }, LIGHT_MS * i);
     later(() => {
       setLit(0);
+      sfx.lightsOut();
       outAt.current = performance.now();
       go("out");
     }, LIGHT_MS * 5 + HOLD_MIN + Math.random() * (HOLD_MAX - HOLD_MIN));
@@ -55,6 +61,8 @@ export default function LaunchScreen({
     timers.current = [];
     const ms = p === "lights" ? ("jump" as const) : Math.round(performance.now() - outAt.current);
     const kind = launchKind(ms);
+    if (LAUNCH[kind].gain > 0) sfx.good();
+    else if (LAUNCH[kind].gain < 0) sfx.bad();
     setResult({ kind, ms });
     go("result");
     later(() => onDone(kind, ms), RESULT_MS);

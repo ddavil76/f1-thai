@@ -13,11 +13,13 @@ const CAT_ICON: Record<CardCat, (p: { className?: string }) => ReactNode> = {
   status: IconWear,
 };
 
-/** ขนาดไพ่: ทุกอย่างข้างในเป็นหน่วย em ปรับขนาดทั้งใบด้วย font-size */
+/** ขนาดไพ่: ทุกอย่างข้างในเป็นหน่วย em ปรับขนาดทั้งใบด้วย font-size (จอคอมใหญ่ขึ้น) · ไพ่กว้าง 11em สูง 16.5em */
 export const CARD_SIZE = {
-  hand: { fontSize: 8, w: 88, h: 132 },
-  play: { fontSize: 9.5, w: 104, h: 156 },
+  hand: "text-[8px] md:text-[10px]",
+  play: "text-[9.5px] md:text-[14px]",
+  zoom: "text-[20px] md:text-[26px]",
 } as const;
+export const CARD_BOX = "h-[16.5em] w-[11em]";
 export type CardSize = keyof typeof CARD_SIZE;
 
 const CHECKER: CSSProperties = {
@@ -94,9 +96,8 @@ export function FlipCard({
   label?: string;
   children: ReactNode;
 }) {
-  const s = CARD_SIZE[size];
   return (
-    <span className="bg-stage block flex-none" style={{ width: s.w, height: s.h, fontSize: s.fontSize }}>
+    <span className={`bg-stage block flex-none ${CARD_BOX} ${CARD_SIZE[size]}`}>
       <span
         className="bg-card3d bg-flip block h-full w-full"
         style={{ animationDelay: `${delay}s` }}

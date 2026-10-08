@@ -2,12 +2,13 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, CircleHelp, CloudRain, Flag, Info, List, RotateCcw, X, Zap } from "lucide-react";
+import { ChevronDown, CircleHelp, CloudRain, Flag, Info, List, RotateCcw, Undo2, Volume2, VolumeX, X, Zap, ZoomIn } from "lucide-react";
 import Car from "@/components/boardgame/Car";
 import Qualifying from "@/components/boardgame/Qualifying";
 import TrackView from "@/components/boardgame/TrackView";
 import LaunchScreen from "@/components/boardgame/Launch";
 import { PITWALL_ART, Scene } from "@/components/boardgame/art";
+import { setSoundOn, sfx, soundOn } from "@/components/boardgame/sound";
 import {
   ActionCard3D, Coin, DieFace, HandCard, Meter, MoveBadges, MoveCard3D, PitwallChip, SimpleCard,
 } from "@/components/boardgame/Cards";
@@ -517,6 +518,11 @@ export default function BoardGame({ board }: { board: Board }) {
   const [history, setHistory] = useState<GameState[]>([]);
   const [replay, setReplay] = useState<number | null>(null);
   const [toast, setToast] = useState<{ title: string; sub: string; key: number } | null>(null);
+  /** สถานะก่อนเลือกไพ่ — กด "เปลี่ยนไพ่" ย้อนกลับไปเลือกใหม่ได้ก่อนยืนยันเดิน */
+  const [undo, setUndo] = useState<GameState | null>(null);
+  const [zoom, setZoom] = useState(false);
+  // หน้าแข่งวาดฝั่งเบราว์เซอร์เท่านั้น (เริ่มหลังกดเล่น) อ่านค่าที่จำไว้ได้เลย
+  const [sound, setSound] = useState(soundOn);
 
   const racing = phase.at === "race" && state !== null;
   // ระหว่างแข่งหน้าเกมเต็มจอ — กันหน้าเว็บข้างหลังเลื่อน
@@ -535,11 +541,34 @@ export default function BoardGame({ board }: { board: Board }) {
     if (!aiBusy || lights || !state) return;
     const t = setTimeout(() => {
       const next = calm() ? runAI(state, Math.random) : aiStep(state, Math.random);
+      if (!calm()) sfx.whoosh();
       setState(next);
       setHistory((h) => [...h, next]);
     }, calm() ? 0 : AI_STEP_MS);
     return () => clearTimeout(t);
   }, [state, aiBusy, lights]);
+
+  // เสียงแจกไพ่เข้ามือเมื่อถึงตาผู้เล่น
+  const dealKey =
+    phase.at === "race" && state && !state.over && !lights && !aiTurnPending(state) && !state.pending
+      ? `${state.round}-${state.turn}`
+      : null;
+  useEffect(() => {
+    if (dealKey) sfx.deal(state?.rules === "ours" ? 4 : 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dealKey]);
+  // เสียงเหตุการณ์: ชน / เซฟตี้คาร์ / ไพ่ ACTION ของผู้เล่น
+  const feed = state?.feed;
+  useEffect(() => {
+    if (!feed || !state) return;
+    const evs = feed.at(-1)?.events ?? [];
+    const human = (id: number) => !state.drivers[id]?.ai;
+    if (evs.some((e) => e.t === "sc" || e.t === "vsc")) sfx.alert();
+    else if (evs.some((e) => e.t === "incident" || e.t === "spin")) sfx.crash();
+    else if (evs.some((e) => e.t === "action" && human(e.driver) && e.ok)) sfx.bad();
+    else if (evs.some((e) => e.t === "green")) sfx.good();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed]);
 
   // ดูซ้ำ: เล่นสถานะที่เก็บไว้ทีละขั้น
   useEffect(() => {
@@ -605,14 +634,31 @@ export default function BoardGame({ board }: { board: Board }) {
     setDefend(false);
     setLane(0);
     setPw(null);
+    setUndo(null);
+    setZoom(false);
   };
   const pick = (c: Choice) => {
+    sfx.select();
+    if (c.kind === "card") setTimeout(sfx.flip, 60);
+    setUndo(state);
     setState((s) => (s ? choose(s, { ...c, box }, Math.random) : s));
     setPw(null);
     setHelp(null);
   };
+  /** ยกเลิกไพ่ที่เลือก กลับไปเลือกใหม่ */
+  const unpick = () => {
+    if (!undo || playing) return;
+    sfx.cancel();
+    setState(undo);
+    setUndo(null);
+    setZoom(false);
+    resetExtras();
+  };
   const go = () => {
     if (playing) return;
+    sfx.go();
+    setUndo(null);
+    setZoom(false);
     const extras = { ers, attack, block, defend, lane };
     const before = state;
     const me = activeDriver(state);
@@ -627,6 +673,7 @@ export default function BoardGame({ board }: { board: Board }) {
       if (mine && !mine.ai && mine.passed.length > 0) {
         const rankAfter = standings(next).findIndex((x) => x.id === me.id) + 1;
         const key = Date.now();
+        setTimeout(sfx.overtake, 0);
         setToast({ title: "OVERTAKE!", sub: `แซง ${mine.passed.map((id) => `#${next.drivers[id].num}`).join(" ")} · P${rankBefore} → P${rankAfter}`, key });
         setTimeout(() => setToast((t) => (t?.key === key ? null : t)), 2200);
       }
@@ -688,6 +735,21 @@ export default function BoardGame({ board }: { board: Board }) {
     canAttack = !ours && free && attackTarget(state, d, preview) !== null;
   }
   const atk = attack && canAttack;
+  // เปลี่ยนไพ่ได้ก่อนกดเดิน (กติกาเต็มเปิดไพ่จากกองแบบสุ่มแล้ว ย้อนไม่ได้ จะได้ไม่เห็นไพ่ล่วงหน้า)
+  const canUndo = !!undo && !!p && (ours || p.card === null);
+  const pendingCard = (size: "play" | "zoom") =>
+    !p || !d ? null : p.card !== null ? (
+      <MoveCard3D key={`${p.card}-${state.round}-${size}`} id={p.card} compound={d.compound} playing={playing && size === "play"} pit={!ours || PITWALL_IN_OURS} size={size} />
+    ) : (
+      <SimpleCard
+        kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "SAVE"}
+        icon={p.kind === "drs" ? <IconDrs /> : p.kind === "push" ? <IconPush /> : p.kind === "pace" ? <IconPace /> : <IconBase />}
+        art={p.kind === "drs" ? "drs" : p.kind === "push" ? "push" : p.kind === "pace" ? undefined : "save"}
+        value={p.value}
+        playing={playing && size === "play"}
+        size={size}
+      />
+    );
   const landing = preview && atk ? { progress: preview.progress + 1, lane: 0 as Lane } : preview;
   // ปิดไลน์ต้องมี ERS พอทั้งค่าปิดไลน์และค่า ERS ที่เลือกใช้เดิน
   const canDefend = ours && free && !!d && d.ers - (useErs ? 1 : 0) >= DEFEND_ERS;
@@ -783,7 +845,7 @@ export default function BoardGame({ board }: { board: Board }) {
   return createPortal(
     <div className="fixed inset-0 z-[60] flex flex-col bg-[#08080A] text-white md:flex-row">
       {/* ฝั่งสนาม */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-12 flex-none items-center gap-1.5 border-b border-white/10 px-2">
           <button type="button" onClick={exit} aria-label="ออกจากเกม" className="rounded-full p-2 text-white/70 hover:bg-white/10">
             <X className="h-5 w-5" />
@@ -793,6 +855,19 @@ export default function BoardGame({ board }: { board: Board }) {
             LAP {lap(leader)}/{state.laps}
           </span>
           {d && <span className="poster rounded-full bg-(--color-f1) px-2.5 py-1 text-[12px] tabular-nums">P{pos}</span>}
+          <button
+            type="button"
+            onClick={() => {
+              setSoundOn(!sound);
+              setSound(!sound);
+              if (!sound) sfx.select();
+            }}
+            aria-label={sound ? "ปิดเสียง" : "เปิดเสียง"}
+            aria-pressed={sound}
+            className="rounded-full p-2 text-white/70 hover:bg-white/10"
+          >
+            {sound ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+          </button>
           <button type="button" onClick={() => setModal("rules")} aria-label="วิธีเล่น" className="rounded-full p-2 text-white/70 hover:bg-white/10">
             <CircleHelp className="h-5 w-5" />
           </button>
@@ -895,7 +970,7 @@ export default function BoardGame({ board }: { board: Board }) {
       {/* แผงนักขับ */}
       <section
         aria-label="ตานักขับ"
-        className="max-h-[54dvh] min-h-[16rem] flex-none space-y-2.5 overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-[#121216] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[420px] md:rounded-none md:border-l md:border-t-0"
+        className="max-h-[54dvh] min-h-[16rem] flex-none space-y-2.5 overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-[#121216] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[500px] md:rounded-none md:border-l md:border-t-0"
       >
         {state.over ? (
           <Results state={state} order={order} onRestart={exit} />
@@ -1118,17 +1193,19 @@ export default function BoardGame({ board }: { board: Board }) {
             {p && preview && landing && (
               <div className="space-y-2.5">
                 <div className="flex items-center gap-3">
-                  {p.card !== null ? (
-                    <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} playing={playing} pit={!ours || PITWALL_IN_OURS} />
-                  ) : (
-                    <SimpleCard
-                      kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "SAVE"}
-                      icon={p.kind === "drs" ? <IconDrs /> : p.kind === "push" ? <IconPush /> : p.kind === "pace" ? <IconPace /> : <IconBase />}
-                      art={p.kind === "drs" ? "drs" : p.kind === "push" ? "push" : p.kind === "pace" ? undefined : "save"}
-                      value={p.value}
-                      playing={playing}
-                    />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => !playing && setZoom(true)}
+                    aria-label="ขยายไพ่ดูรายละเอียด"
+                    className="group relative flex-none rounded-[14px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  >
+                    {pendingCard("play")}
+                    {!playing && (
+                      <span className="absolute right-1 bottom-1 rounded-full bg-[#08080A]/80 p-1 text-white/85 group-hover:text-white">
+                        <ZoomIn className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                  </button>
                   <div className="min-w-0 flex-1 space-y-1">
                     <p className="poster text-xs text-white/70">เดินได้</p>
                     <p className="poster text-5xl leading-none tabular-nums">
@@ -1169,18 +1246,27 @@ export default function BoardGame({ board }: { board: Board }) {
                 </div>
                 {ours ? (
                   <div className="grid grid-cols-2 gap-2">
-                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
+                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => {
+                      sfx.toggle(!ers);
+                      setErs((v) => !v);
+                    }} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
                     <Extra
                       on={defend && canDefend}
                       disabled={!canDefend || playing}
-                      onClick={() => setDefend((v) => !v)}
+                      onClick={() => {
+                        sfx.toggle(!defend);
+                        setDefend((v) => !v);
+                      }}
                       title="ปิดไลน์"
                       foot={`ERS −${DEFEND_ERS} · คันหลังแซงยากขึ้น`}
                     />
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ERS_BONUS}`} foot={`เหลือ ${d.ers}/${ERS_MAX}`} />
+                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => {
+                      sfx.toggle(!ers);
+                      setErs((v) => !v);
+                    }} title={`ERS +${ERS_BONUS}`} foot={`เหลือ ${d.ers}/${ERS_MAX}`} />
                     <Extra on={atk} disabled={!canAttack || playing} onClick={() => setAttack((v) => !v)} title={`ATTACK ${d.tokens.attack}`} foot={canAttack ? "ดันคันหน้าออก" : "ต้องจบติดท้าย"} />
                     <Extra on={block && canBlock} disabled={!canBlock || playing} onClick={() => setBlock((v) => !v)} title={`BLOCK ${d.tokens.block}`} foot="คันถัดไปแซงไม่ได้" />
                   </div>
@@ -1192,6 +1278,17 @@ export default function BoardGame({ board }: { board: Board }) {
                       จบนอกเส้น
                     </label>
                   )}
+                  {canUndo && (
+                    <button
+                      type="button"
+                      onClick={unpick}
+                      disabled={playing}
+                      className="flex min-h-12 flex-none items-center gap-1.5 rounded-full border border-white/25 px-4 text-sm font-bold text-white/85 hover:bg-white/10 disabled:opacity-50"
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      เปลี่ยนไพ่
+                    </button>
+                  )}
                   <button type="button" onClick={go} disabled={playing} className="min-h-12 flex-1 rounded-full bg-(--color-f1) px-4 text-base font-bold disabled:opacity-70">
                     เดิน {moved} ช่อง{block && canBlock ? " + BLOCK" : ""}
                   </button>
@@ -1202,6 +1299,33 @@ export default function BoardGame({ board }: { board: Board }) {
         ) : null}
       </section>
 
+      {zoom && p && d && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-4 bg-black/80 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="ไพ่ที่เลือก"
+          onClick={() => setZoom(false)}
+        >
+          <div className="bg-pop" onClick={(e) => e.stopPropagation()}>
+            {pendingCard("zoom")}
+          </div>
+          <p className="max-w-sm text-center text-sm text-white/85" onClick={(e) => e.stopPropagation()}>
+            {helpText(p.kind === "card" ? "move" : p.kind === "base" ? "base" : p.kind, state.rules).text}
+          </p>
+          <div className="flex w-full max-w-sm gap-2" onClick={(e) => e.stopPropagation()}>
+            {canUndo && (
+              <button type="button" onClick={unpick} className="flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-full border border-white/25 text-sm font-bold text-white/85 hover:bg-white/10">
+                <Undo2 className="h-4 w-4" />
+                เปลี่ยนไพ่
+              </button>
+            )}
+            <button type="button" onClick={() => setZoom(false)} className="min-h-12 flex-1 rounded-full bg-white/10 text-sm font-bold text-white hover:bg-white/20">
+              ปิด
+            </button>
+          </div>
+        </div>
+      )}
       {modal === "rules" && (
         <Modal title="วิธีเล่น" onClose={() => setModal(null)}>
           <RulesList rules={state.rules} />
