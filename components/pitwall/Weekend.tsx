@@ -337,7 +337,11 @@ export function Results({ snap, me, send }: Props) {
                 <span className="poster w-7 flex-none tabular-nums">{r.out ? "DNF" : `P${r.pos}`}</span>
                 <Car color={t.color} ink={t.ink} num={c.num} width={26} />
                 <span className="min-w-0 flex-1 truncate font-bold text-white">{c.name}</span>
-                <span className="text-[11px] text-white/60 tabular-nums">{r.stops} สต็อป</span>
+                <span className="flex flex-none items-center gap-0.5" aria-label={`${r.stops} สต็อป`} title={`${r.stops} สต็อป`}>
+                  {r.stints.map((k, i) => (
+                    <TyreDot key={i} c={k} size={12} />
+                  ))}
+                </span>
                 <span className="w-16 text-right text-xs tabular-nums text-white/80">
                   {r.gap}
                   {r.penalty ? " *" : ""}
@@ -347,7 +351,7 @@ export function Results({ snap, me, send }: Props) {
             );
           })}
         </ol>
-        {snap.results?.some((r) => r.penalty) && <p className="text-[11px] text-white/60">* โดนบวก 20 วิ เพราะใช้ยางชนิดเดียว</p>}
+        {snap.results?.some((r) => r.penalty) && <p className="text-[11px] text-white/60">* โดนบวก 20 วิ เพราะทั้งเรซใช้ยางชนิดเดียว (เข้าพิทแล้วใส่ชนิดเดิมไม่นับ) · วงกลมคือยางแต่ละช่วงตามลำดับ</p>}
       </Card>
       <Standings snap={snap} me={me} />
       {p?.host ? (

@@ -82,6 +82,22 @@ describe("Pit Wall: เรซ", () => {
     expect(st.cars[0].penalty).toBe(COMPOUND_PENALTY);
   });
 
+  it("เข้าพิทแล้วใส่ยางชนิดเดิม = ยังโดนบวก และผลบอกยางแต่ละช่วง", () => {
+    const ctx = ctxOf(8);
+    const solo = { ...ctx, cars: [ctx.cars[0]] };
+    const same = newRace(solo, [0], 3, { 0: "medium" });
+    const diff = newRace(solo, [0], 3, { 0: "medium" });
+    same.cars[0].auto = diff.cars[0].auto = false;
+    same.cars[0].pitReq = "medium";
+    diff.cars[0].pitReq = "hard";
+    runRace(solo, same);
+    runRace(solo, diff);
+    expect(same.cars[0].penalty).toBe(COMPOUND_PENALTY);
+    expect(diff.cars[0].penalty).toBe(0);
+    expect(classify(same, track.lapCells)[0].stints).toEqual(["medium", "medium"]);
+    expect(classify(diff, track.lapCells)[0].stints).toEqual(["medium", "hard"]);
+  });
+
   it("ช่วงเซฟตี้คาร์ไม่มีการแซง", () => {
     const ctx = ctxOf(2);
     const st = newRace(ctx, ctx.cars.map((c) => c.id), 8, {});

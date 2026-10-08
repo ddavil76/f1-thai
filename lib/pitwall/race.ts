@@ -42,6 +42,8 @@ export type RaceCar = {
   pit: PitState | null;
   stops: number;
   used: Compound[];
+  /** ยางแต่ละช่วงตามลำดับ (รวมยางออกตัว) */
+  stints: Compound[];
   lapStart: number;
   lastLap: number | null;
   bestLap: number | null;
@@ -129,6 +131,7 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
       pit: null,
       stops: 0,
       used: [c],
+      stints: [c],
       lapStart: 0,
       lastLap: null,
       bestLap: null,
@@ -259,7 +262,10 @@ function changeTyres(ctx: RaceCtx, c: RaceCar) {
   c.compound = comp;
   c.age = 0;
   c.stops++;
+  c.stints.push(comp);
   if (!c.used.includes(comp)) c.used.push(comp);
+  else if (c.used.length < 2 && ctx.human(c.id))
+    ctx.say(ctx.cars[c.id].team, c.id, `${label(ctx, c.id)} ใส่ยางชนิดเดิม — ยังต้องเปลี่ยนเป็นชนิดอื่น ไม่งั้นโดนบวก ${COMPOUND_PENALTY} วิ`, "warn");
   c.pit!.changed = true;
 }
 
@@ -536,6 +542,7 @@ export function classify(st: RaceState, lapCells: number) {
         : c.out ?? "",
     points: c.out === null && i < POINTS.length ? POINTS[i] : 0,
     stops: c.stops,
+    stints: c.stints,
     best: c.bestLap,
     penalty: c.penalty,
     out: c.out,
