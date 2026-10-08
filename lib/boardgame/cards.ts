@@ -155,7 +155,7 @@ export const ACTION_INFO: Record<ActionKind, { title: string; text: string }> = 
   focusSlip: { title: "เสียสมาธิ", text: "ทิ้งเหรียญ SLIP ทั้งหมด" },
   focusAll: { title: "เสียสมาธิหนัก", text: "เหรียญทุกชนิดลดลง 1 ครั้ง" },
   trackLimits: { title: "ออกนอกขอบสนาม", text: "ไหลไปข้างหน้า 1 ช่อง (ถ้าว่าง) แล้วโดนใบเตือน" },
-  brakes: { title: "เบรกร้อน", text: "เดินได้แค่ BASE จนกว่าจะผ่าน V-BOX หรือเข้าพิท" },
+  brakes: { title: "เบรกร้อน", text: "เดินได้แค่ SAVE จนกว่าจะผ่าน V-BOX หรือเข้าพิท" },
   incident: { title: "เฉี่ยวชน", text: "รถคันนี้และคันที่อยู่ติดกัน (หน้า หลัง ข้าง) ทอยเต๋าอุบัติเหตุ" },
 };
 

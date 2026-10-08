@@ -277,7 +277,7 @@ function eventText(s: GameState, e: GameEvent): string {
     case "back":
       return `${carName(s, e.driver)} ${BACK_TEXT}`;
     case "vsc":
-      return "VSC! มีรถเสียหาย ทุกคันได้แค่ BASE";
+      return "VSC! มีรถเสียหาย ทุกคันได้แค่ SAVE";
     case "green":
       return `จบ ${e.kind === "sc" ? "SAFETY CAR" : "VSC"} — ธงเขียว กลับมาแข่งเต็มที่`;
   }
@@ -286,7 +286,7 @@ function eventText(s: GameState, e: GameEvent): string {
 function logText(s: GameState, l: TurnLog) {
   const how: Record<TurnLog["kind"], string> = {
     base: "เดินพื้นฐาน",
-    card: l.ai ? "เดิน" : "เปิดไพ่ MOVE",
+    card: l.ai ? "เดิน" : "เปิดไพ่ FLAT OUT",
     drs: "ใช้ DRS",
     slip: "สลิปสตรีม",
     worn: "เดินเอง",
@@ -344,7 +344,7 @@ function StatusStrip({ s, onHelp }: { s: GameState; onHelp: (k: HelpKey) => void
         aria-live="polite"
       >
         {n.kind === "sc" ? "SAFETY CAR" : "VSC"}
-        {n.left > 1 ? <span className="font-sans text-[10px] font-bold normal-case">ได้แค่ BASE</span> : <span className="font-sans text-[10px] font-bold">ENDING · จบเทิร์นนี้</span>}
+        {n.left > 1 ? <span className="font-sans text-[10px] font-bold normal-case">ได้แค่ SAVE</span> : <span className="font-sans text-[10px] font-bold">ENDING · จบเทิร์นนี้</span>}
       </button>
     </div>
   );
@@ -383,7 +383,7 @@ function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[];
             ) : e.t === "vsc" ? (
               <div className="rounded-xl border-2 border-[#facc15] px-3 py-2 text-center text-white">
                 <p className="poster text-2xl text-[#facc15]">VSC</p>
-                <p className="text-xs font-bold">มีรถเสียหาย — ทุกคันได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ จนจบ VSC</p>
+                <p className="text-xs font-bold">มีรถเสียหาย — ทุกคันได้แค่ SAVE ห้ามไพ่ FLAT OUT/ERS/เหรียญ จนจบ VSC</p>
               </div>
             ) : e.t === "sc" ? (
               <div className="rounded-xl bg-[#facc15] px-3 py-2 text-center text-[#08080A]">
@@ -748,18 +748,18 @@ export default function BoardGame({ board }: { board: Board }) {
 
   const slowWhy = state.neutral
     ? state.neutral.kind === "sc"
-      ? "SAFETY CAR: ได้แค่ BASE ห้ามแซง — เข้าพิทตอนนี้เสียเวลาน้อย"
-      : "VSC: ได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ"
+      ? "SAFETY CAR: ได้แค่ SAVE ห้ามแซง — เข้าพิทตอนนี้เสียเวลาน้อย"
+      : "VSC: ได้แค่ SAVE ห้ามไพ่ FLAT OUT/ERS/เหรียญ"
     : lim?.limp
     ? d?.damage
       ? "รถเสียหาย เดินเองช่องละ 3 — ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม"
       : "ยางพัง เดินเองช่องละ 3 — ต้องเข้าพิท"
     : lim?.flag
-      ? "ธงเหลือง: ได้แค่ BASE ห้ามไพ่/เหรียญ/ERS"
+      ? "ธงเหลือง: ได้แค่ SAVE ห้ามไพ่/เหรียญ/ERS"
       : d?.brakes
-        ? "เบรกร้อน: ได้แค่ BASE จนกว่าจะผ่าน V-BOX หรือเข้าพิท"
+        ? "เบรกร้อน: ได้แค่ SAVE จนกว่าจะผ่าน V-BOX หรือเข้าพิท"
         : !ours && d?.wet && !rain
-          ? "แดดออกแล้วแต่ใส่ยางฝน: ได้แค่ BASE — ผ่าน V-BOX เพื่อเปลี่ยนยาง"
+          ? "แดดออกแล้วแต่ใส่ยางฝน: ได้แค่ SAVE — ผ่าน V-BOX เพื่อเปลี่ยนยาง"
           : null;
 
   // ทำไมระยะจริงน้อยกว่าที่ไพ่บอก
@@ -1000,7 +1000,7 @@ export default function BoardGame({ board }: { board: Board }) {
                 <Term k="pitwall" ask={ask} className="poster flex-none pr-1 text-[10px] text-[#fb923c]">
                   PITWALL
                 </Term>
-                {hand.length === 0 && <span className="text-[11px] text-white/55">ยังไม่มีไพ่ — ได้จากไพ่ MOVE ป้าย PIT</span>}
+                {hand.length === 0 && <span className="text-[11px] text-white/55">ยังไม่มีไพ่ — ได้จากไพ่ FLAT OUT ป้าย PIT</span>}
                 {hand.map((id, i) => (
                   <PitwallChip
                     key={`${id}-${i}`}
@@ -1053,7 +1053,7 @@ export default function BoardGame({ board }: { board: Board }) {
                       {o.worn ? (
                         <HandCard i={0} tone="yellow" kicker={d.damage ? "เสียหาย" : "ยางพัง"} icon={<IconWorn />} big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
                       ) : (
-                        <HandCard i={0} tone="dark" kicker="BASE" icon={<IconBase />} big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : ours && d.ers < ERS_MAX ? `${BASE_MOVE} ช่องชัวร์ · ERS +${ERS_BASE_CHARGE}` : `${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง`} onClick={() => pick({ kind: "base" })} />
+                        <HandCard i={0} tone="dark" kicker="SAVE" icon={<IconBase />} big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : ours && d.ers < ERS_MAX ? `${BASE_MOVE} ช่องชัวร์ · ERS +${ERS_BASE_CHARGE}` : `${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง`} onClick={() => pick({ kind: "base" })} />
                       )}
                       {o.push && <HandCard i={1} tone="orange" kicker="PUSH" icon={<IconPush />} big="" foot="วิ่งสุด ยางสึก" onClick={() => pick({ kind: "push" })} />}
                       {o.pace && d.mode?.kind === "pace" && (
@@ -1065,7 +1065,7 @@ export default function BoardGame({ board }: { board: Board }) {
                             key={h.id}
                             i={2 + k}
                             tone="red"
-                            kicker="MOVE"
+                            kicker="FLAT OUT"
                             icon={<IconMove />}
                             badges={<MoveBadges c={MOVE_DECK[h.id]} />}
                             big={<span className="tabular-nums">{h.value}</span>}
@@ -1078,7 +1078,7 @@ export default function BoardGame({ board }: { board: Board }) {
                         <HandCard
                           i={2}
                           tone="red"
-                          kicker="MOVE"
+                          kicker="FLAT OUT"
                           icon={<IconMove />}
                           big={<span className="text-lg tabular-nums">{`${moveRange.min}–${moveRange.max}`}</span>}
                           foot={
@@ -1115,7 +1115,7 @@ export default function BoardGame({ board }: { board: Board }) {
                     <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} playing={playing} />
                   ) : (
                     <SimpleCard
-                      kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "BASE"}
+                      kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "SAVE"}
                       icon={p.kind === "drs" ? <IconDrs /> : p.kind === "push" ? <IconPush /> : p.kind === "pace" ? <IconPace /> : <IconBase />}
                       value={p.value}
                       playing={playing}
@@ -1350,10 +1350,10 @@ function RulesList({ rules }: { rules: Rules }) {
           คุมทีม 2 คันแข่งกับรถ AI ข้ามเส้นชัยก่อนชนะ — แต่ละเทิร์นรถเดินตามอันดับ คันนำก่อน
         </RuleBlock>
         <RuleBlock title="ทุกตาเลือก 1 อย่าง">
-          <b>BASE {BASE_MOVE} ช่อง</b> ชัวร์ ไม่สึกยาง · หรือ <b>เปิดไพ่ MOVE</b> ได้ระยะสุ่ม (ดูช่วงบนไพ่) เร็วกว่าแต่บางใบทำยางสึก — อยู่นอกเส้นแข่งระยะ −{OFFLINE_PENALTY}
+          <b>SAVE {BASE_MOVE} ช่อง</b> ชัวร์ ไม่สึกยาง · หรือ <b>เปิดไพ่ FLAT OUT</b> ได้ระยะสุ่ม (ดูช่วงบนไพ่) เร็วกว่าแต่บางใบทำยางสึก — อยู่นอกเส้นแข่งระยะ −{OFFLINE_PENALTY}
         </RuleBlock>
         <RuleBlock title="เห็นระยะแล้วเสริมได้">
-          <b>ERS</b> +{ERS_BONUS} ช่อง (ทางตรง DRS +{ERS_DRS_BONUS}) มี {ERS_MAX} ขั้น — เดิน BASE โดยไม่ใช้ ERS ชาร์จคืน +{ERS_BASE_CHARGE} ขั้น
+          <b>ERS</b> +{ERS_BONUS} ช่อง (ทางตรง DRS +{ERS_DRS_BONUS}) มี {ERS_MAX} ขั้น — เดิน SAVE โดยไม่ใช้ ERS ชาร์จคืน +{ERS_BASE_CHARGE} ขั้น
         </RuleBlock>
         <RuleBlock title="โค้งและการแซง">
           ระยะบนไพ่คือ<b>แรง</b> ทางปกติช่องละ 1 · <b>โค้งความเร็วสูง ช่องละ {FAST_CORNER_COST}</b> · <b>โค้งความเร็วต่ำ ช่องละ {SLOW_CORNER_COST}</b> (ไม่ต้องหยุดในโค้ง) · แซง: ถึงช่องหลังคันหน้าแล้วต้องเหลือแรงมากกว่า {PASS_NEED} (ทางตรง DRS มากกว่า {PASS_NEED_DRS})
@@ -1365,7 +1365,7 @@ function RulesList({ rules }: { rules: Rules }) {
           ยางสึกจาก {WEAR_MAX} ขั้น (M 1 · S 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
         </RuleBlock>
         <RuleBlock title="เหตุการณ์">
-          ไพ่ป้าย ACT เปิดเหตุการณ์ (ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · รถเสียหาย = VSC (ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม) · ชนออก = SAFETY CAR (ทุกคันได้แค่ BASE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
+          ไพ่ป้าย ACT เปิดเหตุการณ์ (ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · รถเสียหาย = VSC (ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม) · ชนออก = SAFETY CAR (ทุกคันได้แค่ SAVE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
         </RuleBlock>
       </div>
     );
@@ -1374,7 +1374,7 @@ function RulesList({ rules }: { rules: Rules }) {
     <ol className="list-decimal space-y-1.5 pl-5 text-sm text-white/75">
       <li>ทีมละ 2 คัน แข่งกับรถ AI จนครบ {GRID_SIZE} คัน เดินตามอันดับ คันนำก่อน · ควอลิฟาย: ไพ่ 2 ใบ เลือกใบ Q1 อีกใบใช้ Q2 (เลขน้อยเร็ว) รอบพิเศษได้คันละครั้งแต่ยางสึกครึ่งราง</li>
       <li>
-        ทุกตาเลือก <b>BASE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> (เร็วกว่า ค่าตามยาง M/S) — เปิดได้เฉพาะรถบนเส้นแข่ง ยกเว้นตาแรก
+        ทุกตาเลือก <b>SAVE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ FLAT OUT</b> (เร็วกว่า ค่าตามยาง M/S) — เปิดได้เฉพาะรถบนเส้นแข่ง ยกเว้นตาแรก
       </li>
       <li>ไพ่ป้าย “สึก” ทำยางเสื่อม (M 1 · S 2 จาก {WEAR_MAX} ขั้น) สุดรางแล้วเจออีก = ยางพัง เดินเองช่องละ {WORN_MOVE} ต้องเข้าพิท</li>
       <li>เปิดไพ่แล้วเลือกเสริม: ERS +{ERS_BONUS} · ATTACK (ดันคันหน้าออก) · BLOCK (คันถัดไปแซงไม่ได้) · SLIP ตามติดคันหน้าฟรี · DRS ในโซนแซงขึ้นหน้า</li>
@@ -1382,7 +1382,7 @@ function RulesList({ rules }: { rules: Rules }) {
       <li>
         ไพ่ป้าย <b>ACT</b> เปิดไพ่เหตุการณ์: พลาดเอง ยางช้ำ ERS ดับ เสียสมาธิ ออกนอกขอบสนาม (ใบเตือน 2 ใบ = โทษจอดพิทเพิ่ม 1 ตา ไม่ชดใช้ถอย {PENALTY_PLACES} อันดับ) เบรกร้อน และเฉี่ยวชน (ทอยเต๋าทุกคันที่อยู่ติดกัน)
       </li>
-      <li>หลุดนอกสนาม/รถเสียหาย = ธงเหลือง {FLAG_LEN} ช่อง 1 รอบ (ในเขตได้แค่ BASE) · ชนออก = SAFETY CAR จัดแถวใหม่ทุกคัน</li>
+      <li>หลุดนอกสนาม/รถเสียหาย = ธงเหลือง {FLAG_LEN} ช่อง 1 รอบ (ในเขตได้แค่ SAVE) · ชนออก = SAFETY CAR จัดแถวใหม่ทุกคัน</li>
       <li>ผ่าน V-BOX หรือเข้าพิท ซ่อมรถเสียหายและเบรกร้อน</li>
       <li>ไพ่ป้าย <b>PIT</b> จั่ว PITWALL ของทีม (เริ่ม 3 ใบ): เติมเหรียญ ชาร์จแบต ถนอมยาง ร้องเรียน ทีมเวิร์ก พิทสต็อปเร็ว โหมด PUSH/PACE</li>
       <li>พิท: ติ๊ก “จะเข้าพิท” หยุดในโซนเข้าพิท ตาถัดไปเข้าเลน (ช่องละ {PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก</li>

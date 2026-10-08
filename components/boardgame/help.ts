@@ -13,12 +13,12 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
   const ours = rules === "ours";
   switch (k) {
     case "base":
-      return { title: "BASE", text: `เดิน ${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง — ปลอดภัย เหมาะตอนจะเข้าโค้งหรือยางใกล้หมด` };
+      return { title: "SAVE", text: `เดิน ${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง — ปลอดภัย เหมาะตอนจะเข้าโค้งหรือยางใกล้หมด` };
     case "move":
       return {
-        title: "ไพ่ MOVE",
+        title: "ไพ่ FLAT OUT",
         text: ours
-          ? `เปิดไพ่ใบบนสุดของทีม ได้ระยะสุ่มตามยาง (เร็วกว่า BASE) บางใบทำยางสึก บางใบเปิดเหตุการณ์ (ACT) หรือแจกไพ่ PITWALL (PIT) — อยู่นอกเส้นแข่งระยะ −${OFFLINE_PENALTY}`
+          ? `เปิดไพ่ใบบนสุดของทีม ได้ระยะสุ่มตามยาง (เร็วกว่า SAVE) บางใบทำยางสึก บางใบเปิดเหตุการณ์ (ACT) หรือแจกไพ่ PITWALL (PIT) — อยู่นอกเส้นแข่งระยะ −${OFFLINE_PENALTY}`
           : "เปิดไพ่ใบบนสุดของทีม ได้ระยะสุ่มตามยาง บางใบทำยางสึก บางใบเปิดเหตุการณ์ — ใช้ได้เฉพาะรถบนเส้นแข่ง (ยกเว้นตาแรก)",
       };
     case "tyre":
@@ -29,7 +29,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "ers":
       return {
         title: "ERS",
-        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ MOVE รูปสายฟ้า +1${ours ? ` · เดิน BASE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS) · ไพ่ PITWALL ชาร์จแบต +1`,
+        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ FLAT OUT รูปสายฟ้า +1${ours ? ` · เดิน SAVE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS) · ไพ่ PITWALL ชาร์จแบต +1`,
       };
     case "pass":
       return {
@@ -53,8 +53,8 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
       return {
         title: "เส้นแข่ง / นอกเส้น",
         text: ours
-          ? `แต่ละช่องมี 2 เลน เลนในคือเส้นแข่ง อยู่นอกเส้นเปิดไพ่ MOVE ได้แต่ระยะ −${OFFLINE_PENALTY} ช่องเต็มสองเลนผ่านไม่ได้`
-          : "แต่ละช่องมี 2 เลน เลนในคือเส้นแข่ง อยู่นอกเส้นเปิดไพ่ MOVE ไม่ได้ ได้แค่ BASE · ช่องเต็มสองเลนผ่านไม่ได้",
+          ? `แต่ละช่องมี 2 เลน เลนในคือเส้นแข่ง อยู่นอกเส้นเปิดไพ่ FLAT OUT ได้แต่ระยะ −${OFFLINE_PENALTY} ช่องเต็มสองเลนผ่านไม่ได้`
+          : "แต่ละช่องมี 2 เลน เลนในคือเส้นแข่ง อยู่นอกเส้นเปิดไพ่ FLAT OUT ไม่ได้ ได้แค่ SAVE · ช่องเต็มสองเลนผ่านไม่ได้",
       };
     case "corner":
       return ours
@@ -64,15 +64,15 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
           }
         : { title: "โค้ง", text: "ช่องสีแดงขอบแดงขาว — วิ่งเข้าโค้งแล้วต้องหยุดในโค้งก่อน ตาถัดไปค่อยออก เข้าโค้งก่อนคู่แข่งคือหัวใจของเกม" };
     case "pitwall":
-      return { title: "ไพ่ PITWALL", text: "ไพ่กลยุทธ์ของทีม ใช้กับคันไหนก็ได้ตอนถึงตา ใช้แล้วทิ้ง ได้เพิ่มจากไพ่ MOVE ที่มีป้าย PIT — แตะไพ่เพื่อดูว่าทำอะไร" };
+      return { title: "ไพ่ PITWALL", text: "ไพ่กลยุทธ์ของทีม ใช้กับคันไหนก็ได้ตอนถึงตา ใช้แล้วทิ้ง ได้เพิ่มจากไพ่ FLAT OUT ที่มีป้าย PIT — แตะไพ่เพื่อดูว่าทำอะไร" };
     case "vbox":
       return { title: "V-BOX", text: "ช่องกลางสนาม วิ่งผ่านแล้วซ่อมเบรกร้อนและรถเสียหายให้ฟรี ไม่ต้องเข้าพิท" };
     case "flag":
-      return { title: "ธงเหลือง", text: `มีรถหลุดหรือเสียหาย — ${FLAG_LEN} ช่องนั้นได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ หายเองเมื่อจบเทิร์นถัดไป` };
+      return { title: "ธงเหลือง", text: `มีรถหลุดหรือเสียหาย — ${FLAG_LEN} ช่องนั้นได้แค่ SAVE ห้ามไพ่ FLAT OUT/ERS/เหรียญ หายเองเมื่อจบเทิร์นถัดไป` };
     case "wet":
-      return { title: "ยางฝน", text: "ฝนตกใส่ยางฝนปลอดภัยกว่า (ไพ่แถวฝน) · แดดออกแล้วยังใส่ยางฝนได้แค่ BASE ต้องผ่าน V-BOX เพื่อเปลี่ยนกลับ" };
+      return { title: "ยางฝน", text: "ฝนตกใส่ยางฝนปลอดภัยกว่า (ไพ่แถวฝน) · แดดออกแล้วยังใส่ยางฝนได้แค่ SAVE ต้องผ่าน V-BOX เพื่อเปลี่ยนกลับ" };
     case "brakes":
-      return { title: "เบรกร้อน", text: "ได้แค่ BASE จนกว่าจะผ่าน V-BOX หรือเข้าพิท" };
+      return { title: "เบรกร้อน", text: "ได้แค่ SAVE จนกว่าจะผ่าน V-BOX หรือเข้าพิท" };
     case "damage":
       return { title: "รถเสียหาย", text: `เดินเองช่องละ ${WORN_MOVE} ใช้ไพ่/เหรียญไม่ได้ จนกว่าจะผ่าน V-BOX หรือเข้าพิท` };
     case "off":
@@ -82,7 +82,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "penalty":
       return { title: "โทษ", text: `เข้าพิทครั้งหน้าต้องจอดเพิ่ม 1 ตา ถ้าไม่ชดใช้จนจบเรซ ถอย ${PENALTY_PLACES} อันดับ` };
     case "push":
-      return { title: "โหมด PUSH", text: "วิ่งเท่าไพ่เร็วสุดทุกตา แต่ยางสึกทุกตา เลือก BASE เมื่อไรก็เลิกโหมด" };
+      return { title: "โหมด PUSH", text: "วิ่งเท่าไพ่เร็วสุดทุกตา แต่ยางสึกทุกตา เลือก SAVE เมื่อไรก็เลิกโหมด" };
     case "pace":
       return { title: "โหมด PACE", text: "วิ่งระยะคงที่ไม่สึกยาง ถ้าวิ่งไม่ครบระยะ (ติดโค้ง/ติดรถ) โหมดจบทันที" };
     case "quick":
@@ -106,12 +106,12 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "sc":
       return {
         title: "SAFETY CAR",
-        text: `มีรถชนออก — รถทุกคันเรียงแถวตามรถนำร่อง ได้แค่ BASE และห้ามแซง ${NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING แล้วกลับมาแข่งเทิร์นถัดไป · เข้าพิทช่วงนี้เสียเวลาน้อย`,
+        text: `มีรถชนออก — รถทุกคันเรียงแถวตามรถนำร่อง ได้แค่ SAVE และห้ามแซง ${NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING แล้วกลับมาแข่งเทิร์นถัดไป · เข้าพิทช่วงนี้เสียเวลาน้อย`,
       };
     case "vsc":
       return {
         title: "VSC (เซฟตี้คาร์เสมือน)",
-        text: `มีรถเสียหาย — ทุกคันได้แค่ BASE ห้ามไพ่ MOVE/ERS/เหรียญ ${NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING`,
+        text: `มีรถเสียหาย — ทุกคันได้แค่ SAVE ห้ามไพ่ FLAT OUT/ERS/เหรียญ ${NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING`,
       };
     case "weather":
       return {

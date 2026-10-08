@@ -73,8 +73,8 @@ export function HandCard({
         className={`flex h-[8rem] w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 motion-reduce:transition-none ${tones[tone]} ${peek && !disabled ? "bg-peek" : ""}`}
       >
         <span className="flex items-start justify-between gap-1">
-          <span className="poster text-[11px] opacity-80">{kicker}</span>
-          {badges && <span className="flex flex-wrap justify-end gap-0.5">{badges}</span>}
+          <span className="poster whitespace-nowrap text-[10px] tracking-tight opacity-80">{kicker}</span>
+          {badges && <span className="flex min-w-0 flex-wrap justify-end gap-0.5">{badges}</span>}
         </span>
         {icon ? (
           <span className="flex items-center justify-center gap-1">
@@ -102,10 +102,10 @@ export function MoveCard3D({ id, compound, playing }: { id: number; compound: Co
       <div
         className="bg-card3d bg-flip h-full w-full"
         role="img"
-        aria-label={`ไพ่ MOVE ยาง M ${c.y} ยาง S ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall ? " จั่ว PITWALL" : ""}`}
+        aria-label={`ไพ่ FLAT OUT ยาง M ${c.y} ยาง S ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall ? " จั่ว PITWALL" : ""}`}
       >
         <div className="bg-face flex items-center justify-center border-[3px] border-white bg-(--color-f1)">
-          <span className="poster text-xl text-white">MOVE</span>
+          <span className="poster text-lg text-white">FLAT OUT</span>
         </div>
         <div className="bg-face bg-front flex flex-col gap-1.5 border-[3px] border-white bg-[#f4f4f2] p-1.5 text-[#08080A]">
           <div className="flex items-center justify-between">
