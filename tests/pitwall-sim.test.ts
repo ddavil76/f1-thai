@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { newQuali, sendOut, stepQuali, segments, type QualiCtx } from "@/lib/pitwall/quali";
-import { classify, newRace, stepRace, type RaceCtx, type RaceState } from "@/lib/pitwall/race";
+import { NO_STOP_PENALTY, classify, newRace, stepRace, type RaceCtx, type RaceState } from "@/lib/pitwall/race";
 import { Room } from "@/lib/pitwall/room";
 import { TEAMS } from "@/lib/pitwall/teams";
 import { buildTrack, lapOf, type TrackModel } from "@/lib/pitwall/track";
@@ -87,6 +87,36 @@ describe("Pit Wall: เรซ", () => {
     expect(classify(same, track.lapCells)[0].time).toBe(same.cars[0].finished);
     expect(classify(same, track.lapCells)[0].stints).toEqual(["medium", "medium"]);
     expect(classify(diff, track.lapCells)[0].stints).toEqual(["medium", "hard"]);
+  });
+
+  it("ไม่เข้าพิทเลย = บวกเวลา · เข้าพิทใส่ชนิดเดิมไม่โดน", () => {
+    const ctx = ctxOf(8);
+    const solo = { ...ctx, cars: [ctx.cars[0]] };
+    const none = newRace(solo, [0], 3, { 0: "hard" });
+    const same = newRace(solo, [0], 3, { 0: "hard" });
+    none.cars[0].auto = same.cars[0].auto = false;
+    same.cars[0].pitReq = "hard";
+    runRace(solo, none);
+    runRace(solo, same);
+    expect(none.cars[0].penalty).toBe(NO_STOP_PENALTY);
+    expect(same.cars[0].penalty).toBe(0);
+  });
+
+  it("เรซสั้นยางสึกเร็วกว่า และ AI เข้าพิทอย่างน้อย 1 ครั้ง", () => {
+    const wearAt = (laps: number) => {
+      const ctx = ctxOf(6);
+      const solo = { ...ctx, cars: [ctx.cars[0]] };
+      const st = newRace(solo, [0], laps, { 0: "medium" });
+      st.cars[0].auto = false;
+      st.started = true;
+      while (lapOf(track, st.cars[0].pos) < 2) stepRace(solo, st);
+      return st.cars[0].wear;
+    };
+    expect(wearAt(6)).toBeGreaterThan(wearAt(14) * 1.7);
+    const ctx = ctxOf(12);
+    const st = newRace(ctx, ctx.cars.map((c) => c.id), 6, {});
+    runRace(ctx, st);
+    for (const c of st.cars) if (!c.out) expect(c.stops).toBeGreaterThanOrEqual(1);
   });
 
   it("ช่วงเซฟตี้คาร์ไม่มีการแซง", () => {

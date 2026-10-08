@@ -36,5 +36,8 @@ export const setupPenalty = (d: number, ideal: number) => 3 * (d - ideal) ** 2;
 /** น้ำมันเบาลงทุกรอบ */
 export const FUEL_PER_LAP = 0.035;
 
-/** โอกาสยางรอดกี่รอบ (ใช้วางแผน) */
-export const tyreLife = (c: Compound, mode: DriveMode = "normal") => 0.78 / (TYRE[c].wear * MODE[mode].wear);
+/** เรซสั้นยางสึกเร็วขึ้น ให้ยังต้องคิดเรื่องเข้าพิท (12 รอบขึ้นไป = ปกติ) */
+export const raceWear = (laps: number) => Math.max(1, 12 / Math.max(1, laps));
+
+/** โอกาสยางรอดกี่รอบ (ใช้วางแผน) · scale = ตัวคูณการสึกของเรซ */
+export const tyreLife = (c: Compound, mode: DriveMode = "normal", scale = 1) => 0.78 / (TYRE[c].wear * MODE[mode].wear * scale);

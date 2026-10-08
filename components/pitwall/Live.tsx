@@ -481,7 +481,7 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
           </div>
           <div className="space-y-1">
             <p className="text-[11px] font-bold text-white/60">
-              {car.pitReq ? `เข้าพิทรอบนี้ → ${COMPOUND_INFO[car.pitReq].label}` : car.pit ? "กำลังเปลี่ยนยาง…" : `สั่งเข้าพิท (เหลือ ${lapsLeft} รอบ · เข้าแล้ว ${car.stops} ครั้ง)`}
+              {car.pitReq ? `เข้าพิทรอบนี้ → ${COMPOUND_INFO[car.pitReq].label}` : car.pit ? "กำลังเปลี่ยนยาง…" : `สั่งเข้าพิท (เหลือ ${lapsLeft} รอบ · ${car.stops ? `เข้าแล้ว ${car.stops} ครั้ง` : "ยังไม่เข้า · บังคับ 1 ครั้ง"})`}
             </p>
             <div className="grid grid-cols-4 gap-1.5">
               {COMPOUNDS.map((k) => {
@@ -541,7 +541,7 @@ function RaceTower({ snap, mine, onPick }: { snap: Snapshot; mine: CarSpec[]; on
                 : c.finished !== null && lead.finished !== null
                   ? lapsDown > 0
                     ? `+${lapsDown} รอบ`
-                    : `+${(c.finished - lead.finished).toFixed(1)}`
+                    : `+${(c.finished + c.penalty - (lead.finished + lead.penalty)).toFixed(1)}`
                   : lapsDown > 0 && lead.pos - c.pos >= track.lapCells
                     ? `+${lapsDown} รอบ`
                     : `+${((lead.pos - c.pos) * lapSec).toFixed(1)}`;

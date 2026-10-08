@@ -3,7 +3,7 @@
  * ตำแหน่งรถ pos = ระยะสะสมเป็นช่อง (มีทศนิยม) · รอบ = floor(pos / lapCells)
  * รถที่ช้ากว่าหนึ่งรอบไม่ขวางรถที่กำลังจะน็อครอบ (ธงฟ้า)
  */
-import { AI_PACE, ERS, FUEL_PER_LAP, MODE, TYRE, setupPenalty, tyreLife, wearPenalty } from "./model";
+import { AI_PACE, ERS, FUEL_PER_LAP, MODE, TYRE, raceWear, setupPenalty, tyreLife, wearPenalty } from "./model";
 import { gauss, rand, type Seed } from "./rng";
 import { cellOf, inZone, lapOf, type TrackModel } from "./track";
 import type { AiLevel, Car, Compound, DriveMode, ErsMode, Fight, LaunchKind, Neutral, TeamOrder } from "./types";
@@ -18,6 +18,8 @@ export const PIT_LOSS = 18;
 const STOP_BASE = 2.3;
 /** แต้มตามอันดับ */
 export const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+/** ไม่เข้าพิทเลยทั้งเรซ = บวกเวลา (ยางชนิดไหนก็ได้) */
+export const NO_STOP_PENALTY = 20;
 
 export type PitState = { start: number; t: number; drive: number; stop: number; compound: Compound; changed: boolean };
 
@@ -55,6 +57,8 @@ export type RaceCar = {
   delay: number;
   /** ให้ AI ช่วยคุมกลยุทธ์ (รถ AI = true เสมอ) */
   auto: boolean;
+  /** บวกเวลา (วินาที) */
+  penalty: number;
   grid: number;
   /** ระยะถึงคันหน้า / คันหลัง (วินาที) */
   gapAhead: number | null;
@@ -68,6 +72,8 @@ export type RaceCar = {
 export type RaceState = {
   t: number;
   laps: number;
+  /** ตัวคูณการสึกของยางในเรซนี้ */
+  wear: number;
   started: boolean;
   cars: RaceCar[];
   neutral: Neutral | null;
@@ -139,6 +145,7 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
       drs: false,
       delay: 0,
       auto: !ctx.human(id),
+      penalty: 0,
       grid: slot + 1,
       gapAhead: null,
       gapBehind: null,
@@ -151,6 +158,7 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
   return {
     t: 0,
     laps,
+    wear: raceWear(laps),
     started: false,
     cars,
     neutral: null,
@@ -176,7 +184,7 @@ const onTrack = (c: RaceCar) => active(c) && c.pit === null;
 export function standings(st: RaceState, lapCells: number): RaceCar[] {
   const laps = (c: RaceCar) => Math.floor(c.pos / lapCells + 1e-6);
   const fin = st.cars.filter((c) => c.finished !== null);
-  fin.sort((a, b) => laps(b) - laps(a) || a.finished! - b.finished!);
+  fin.sort((a, b) => laps(b) - laps(a) || a.finished! + a.penalty - (b.finished! + b.penalty));
   const run = st.cars.filter((c) => c.finished === null && c.out === null).sort((a, b) => b.pos - a.pos);
   const out = st.cars.filter((c) => c.out !== null).sort((a, b) => b.pos - a.pos);
   return [...fin, ...run, ...out];
@@ -265,7 +273,7 @@ export function planCompound(ctx: RaceCtx, st: RaceState, c: RaceCar): Compound 
   const lapsLeft = st.laps - lapOf(ctx.track, c.pos);
   const spec = ctx.cars[c.id];
   const options = (["soft", "medium", "hard"] as Compound[]).filter((k) => bestSet(spec, k) >= 0);
-  const fits = options.filter((k) => tyreLife(k) >= lapsLeft * 1.05);
+  const fits = options.filter((k) => tyreLife(k, "normal", st.wear) >= lapsLeft * 1.05);
   if (fits.length) return fits[0];
   return options.slice(-1)[0] ?? "hard";
 }
@@ -278,8 +286,9 @@ function aiThink(ctx: RaceCtx, st: RaceState, c: RaceCar) {
   if (!c.pitReq && !c.pit && lapsLeft >= 1) {
     const limit = ctx.ai === "hard" ? 0.68 : ctx.ai === "easy" ? 0.82 : 0.72;
     const scCheap = smart && st.neutral && c.wear > 0.38 && lapsLeft > 3;
+    const mustStop = c.stops === 0 && lapsLeft <= 3;
     const dying = c.wear > limit && (lapsLeft > 2 || c.wear > 0.95);
-    if (scCheap || dying) c.pitReq = planCompound(ctx, st, c);
+    if (scCheap || mustStop || dying) c.pitReq = planCompound(ctx, st, c);
   }
   // โหมดขับ
   if (lapsLeft <= 2 && c.wear < 0.85) c.mode = "push";
@@ -403,7 +412,7 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
       const deploy = kind === "straight" && c.ersMode !== "harvest" && (c.ersMode === "boost" || c.fight === "attack" || c.ers > 0.25);
       c.ers = Math.min(1, Math.max(0, c.ers + moved * (deploy ? -e.drain : kind === "straight" ? (c.ersMode === "harvest" ? e.charge : 0) : e.charge)));
       const neutralWear = st.neutral ? 0.3 : 1;
-      c.wear = Math.min(1.2, c.wear + (moved / L) * TYRE[c.compound].wear * MODE[c.mode].wear * (c.fight === "attack" ? 1.15 : 1) * neutralWear);
+      c.wear = Math.min(1.2, c.wear + (moved / L) * TYRE[c.compound].wear * MODE[c.mode].wear * (c.fight === "attack" ? 1.15 : 1) * neutralWear * st.wear);
       // DRS: เปิดได้ถ้าเข้าโซนแล้วห่างคันหน้าไม่ถึง 1 วิ (ตั้งแต่รอบ 2)
       for (const z of t.drs) {
         const zs = z.start;
@@ -445,11 +454,12 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
       if (st.flag && c.finished === null) {
         c.finished = st.t;
         st.finishOrder.push(c.id);
+        if (noStop(c)) c.penalty += NO_STOP_PENALTY;
         continue;
       }
       if (lapNo >= 1) lapIncidents(ctx, st, c);
       if (c.auto) aiThink(ctx, st, c);
-      warnHuman(ctx, c);
+      warnHuman(ctx, st, c);
     }
   }
 
@@ -461,6 +471,7 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
     if (lead && lead.finished === null) {
       lead.finished = st.t;
       st.finishOrder.push(lead.id);
+      if (noStop(lead)) lead.penalty += NO_STOP_PENALTY;
     }
     ctx.say(null, null, `ธงตาหมากรุก! ${lead ? `${label(ctx, lead.id)} ข้ามเส้นชัยเป็นคันแรก` : ""}`, "good");
   }
@@ -492,7 +503,10 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
   if (st.flag && st.cars.every((c) => !active(c))) st.done = true;
 }
 
-function warnHuman(ctx: RaceCtx, c: RaceCar) {
+/** ยังไม่ได้เข้าพิท (กำลังอยู่ในเลนพิทถือว่าเข้าแล้ว) */
+const noStop = (c: RaceCar) => c.stops === 0 && !c.pit;
+
+function warnHuman(ctx: RaceCtx, st: RaceState, c: RaceCar) {
   if (!ctx.human(c.id)) return;
   const team = ctx.cars[c.id].team;
   const left = Math.max(0, Math.round((1 - c.wear) * 100));
@@ -503,6 +517,8 @@ function warnHuman(ctx: RaceCtx, c: RaceCar) {
     c.warned = 1;
     ctx.say(team, c.id, `${label(ctx, c.id)} ยางเหลือ ${left}%`, "warn");
   }
+  if (noStop(c) && !c.pitReq && st.laps - lapOf(ctx.track, c.pos) === 3)
+    ctx.say(team, c.id, `${label(ctx, c.id)} ยังไม่ได้เข้าพิท — ต้องเข้าอย่างน้อย 1 ครั้ง ไม่งั้นบวก ${NO_STOP_PENALTY} วิ`, "warn");
 }
 
 /** ผลการแข่ง (เรียงแล้ว) พร้อมแต้ม */
@@ -514,19 +530,20 @@ export function classify(st: RaceState, lapCells: number) {
     id: c.id,
     pos: i + 1,
     laps: laps(c),
-    time: c.finished,
+    time: c.finished !== null ? c.finished + c.penalty : null,
     gap:
       c.finished !== null && winner
         ? laps(c) < laps(winner)
           ? `+${laps(winner) - laps(c)} รอบ`
           : i === 0
             ? "ชนะ"
-            : `+${(c.finished - winner.finished!).toFixed(1)}`
+            : `+${(c.finished + c.penalty - (winner.finished! + winner.penalty)).toFixed(1)}`
         : c.out ?? "",
     points: c.out === null && i < POINTS.length ? POINTS[i] : 0,
     stops: c.stops,
     stints: c.stints,
     best: c.bestLap,
+    penalty: c.penalty,
     out: c.out,
   }));
 }
