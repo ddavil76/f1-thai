@@ -699,6 +699,15 @@ html[data-intro="seen"] .launch-intro {
   100% { transform: rotate(720deg) scale(1); }
 }
 .bg-roll { animation: bg-roll 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* เต๋ากำลังกลิ้ง (สั่นหมุนวน) */
+@keyframes bg-shake {
+  0% { transform: rotate(0deg) translateY(0); }
+  25% { transform: rotate(-18deg) translateY(-4px); }
+  50% { transform: rotate(14deg) translateY(1px); }
+  75% { transform: rotate(-10deg) translateY(-3px); }
+  100% { transform: rotate(0deg) translateY(0); }
+}
+.bg-shake { display: inline-block; animation: bg-shake 0.25s linear infinite; }
 /* กล่องเหตุการณ์เด้งขึ้น */
 @keyframes bg-pop {
   from { transform: translateY(16px) scale(0.96); opacity: 0; }
@@ -763,6 +772,7 @@ html[data-intro="seen"] .launch-intro {
   .bg-blink,
   .bg-rain,
   .bg-roll,
+  .bg-shake,
   .bg-pop,
   .bg-light,
   .bg-go,

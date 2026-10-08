@@ -397,6 +397,17 @@ export default function TrackView({
           {/* ผิวแทร็ก + เส้นขอบขาว */}
           <polygon points={sp.loop(0)} fill="none" stroke="#e6e6e6" strokeOpacity={0.8} strokeWidth={HALF * 2} strokeLinejoin="round" />
           <polygon points={sp.loop(0)} fill="none" stroke="#2a2a30" strokeWidth={HALF * 2 - 0.45} strokeLinejoin="round" />
+          {/* เซฟตี้คาร์ / VSC: ถนนเหลืองทุกเซกเตอร์ (ช่วง ENDING จางลง) */}
+          {state.neutral && (
+            <polygon
+              points={sp.loop(0)}
+              fill="none"
+              stroke="#facc15"
+              strokeOpacity={state.neutral.left > 1 ? 0.32 : 0.16}
+              strokeWidth={HALF * 2 - 0.45}
+              strokeLinejoin="round"
+            />
+          )}
           {/* เส้นแข่ง (เลนใน) จาง ๆ */}
           <polygon points={sp.loop(-LANE)} fill="none" stroke="#ffffff" strokeOpacity={0.05} strokeWidth={LANE * 2 - 0.4} strokeLinejoin="round" />
           {/* โซน DRS */}

@@ -1,6 +1,6 @@
 import {
   BACK_CELLS, BASE_MOVE, DEFEND_ERS, DEFEND_EXTRA, FAST_CORNER_COST, FRESH_TURNS, TOW, PASS_NEED, PASS_NEED_DRS, SLOW_CORNER_COST, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
-  DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, WEAR_MAX, WORN_MOVE, type Rules,
+  CARD_WEAR, DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, WEAR_MAX, WORN_MOVE, type Rules,
 } from "@/lib/boardgame/engine";
 
 export type HelpKey =
@@ -29,12 +29,12 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "tyre":
       return {
         title: "ยาง",
-        text: `ไพ่ป้าย “สึก” ทำยางเสื่อม Medium (M) 1 ขั้น Soft (S) 2 ขั้น จาก ${WEAR_MAX} ขั้น หมดรางแล้วโดนอีกใบ = ยางพัง เดินเองช่องละ ${WORN_MOVE} ต้องเข้าพิท · ยาง S เร็วกว่าแต่สึกไว ยาง M ช้ากว่าแต่ทน`,
+        text: `ไพ่ป้าย “สึก” ทำยางเสื่อม Medium (M) 1 ขั้น Soft (S) 2 ขั้น${ours ? ` และเล่น FLAT OUT ทุกใบสึกเพิ่ม ${CARD_WEAR} ขั้น` : ""} จาก ${WEAR_MAX} ขั้น หมดรางแล้วโดนอีกใบ = ยางพัง เดินเองช่องละ ${WORN_MOVE} ต้องเข้าพิท · ยาง S เร็วกว่าแต่สึกไว ยาง M ช้ากว่าแต่ทน`,
       };
     case "ers":
       return {
         title: "ERS",
-        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ FLAT OUT รูปสายฟ้า +1${ours ? ` · เดิน SAVE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS)${ours ? "" : " · ไพ่ PITWALL ชาร์จแบต +1"}`,
+        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS} · SAVE ใช้ไม่ได้)` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ FLAT OUT รูปสายฟ้า +1${ours ? ` · เดิน SAVE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS)${ours ? "" : " · ไพ่ PITWALL ชาร์จแบต +1"}`,
       };
     case "pass":
       return {
@@ -97,7 +97,9 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "pit":
       return {
         title: "พิท",
-        text: `ติ๊ก “จะเข้าพิท” ก่อนถึงโซนเข้าพิท รถจะหยุดในโซน ตาถัดไปเข้าเลนพิท (ช่องละ ${PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก`,
+        text: ours
+          ? `ติ๊ก “จะเข้าพิท” ก่อนถึงโซนเข้าพิท พอถึงโซนรถเลี้ยวเข้าเลนพิทเลย แล้ววิ่งในเลนพิท (ช่องละ ${PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก`
+          : `ติ๊ก “จะเข้าพิท” ก่อนถึงโซนเข้าพิท รถจะหยุดในโซน ตาถัดไปเข้าเลนพิท (ช่องละ ${PIT_SPEED}) ถึงช่องพิทจอด ตาหน้าเปลี่ยนยางแล้ววิ่งออก`,
       };
     case "tow":
       return {

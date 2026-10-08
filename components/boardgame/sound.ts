@@ -151,6 +151,10 @@ export const sfx = {
   offTrack() {
     noise(0.45, "lowpass", 1800, 200, 0.4);
   },
+  /** เต๋ากลิ้ง */
+  dice() {
+    for (let i = 0; i < 8; i++) noise(0.04, "bandpass", 2500 + Math.random() * 1500, 1800, 0.3, i * 0.11 + Math.random() * 0.03);
+  },
   /** ผลดี / ผลร้าย */
   good() {
     tone(523, 523, 0.1, "triangle", 0.22);

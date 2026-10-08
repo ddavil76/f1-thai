@@ -21,12 +21,12 @@ import {
 import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
-  ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
+  ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, CARD_WEAR, COMPOUNDS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
   DAMP, GRID_SIZE, INCIDENT_INFO, PITWALL_IN_OURS, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
   FAST_CORNER_COST, NEUTRAL_ROUNDS, SLOW_CORNER_COST, PASS_NEED, PASS_NEED_DRS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
   AI_LEVEL, DEFEND_ERS, LAUNCH, activeDriver, aiLaunch, aiStep, applyLaunch, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
   moveBonus, moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
-  type AiLevel, type CarSpec, type Choice, type LaunchKind, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
+  type AiLevel, type CarSpec, type Choice, type LaunchKind, type Compound, type Driver, type GameEvent, type GameState, type IncidentFace, type Lane, type Rules,
   type TurnLog,
 } from "@/lib/boardgame/engine";
 
@@ -355,7 +355,73 @@ function StatusStrip({ s, onHelp }: { s: GameState; onHelp: (k: HelpKey) => void
 
 /* ---------- ชั้นเหตุการณ์ (ทับแผนที่) ---------- */
 
+/** เต๋าอุบัติเหตุ: ผู้เล่นกดทอยเอง เต๋ากลิ้งให้ลุ้นแล้วค่อยเปิดผล (ผลถูกสุ่มไว้แล้วในเอนจิน) */
+function IncidentRoll({ s, rolls, onRolled }: { s: GameState; rolls: { driver: number; face: IncidentFace }[]; onRolled: () => void }) {
+  const [phase, setPhase] = useState<"wait" | "rolling" | "done">("wait");
+  const [spin, setSpin] = useState(0);
+  const faces = Object.keys(INCIDENT_INFO) as IncidentFace[];
+  useEffect(() => {
+    if (phase !== "rolling") return;
+    const iv = setInterval(() => setSpin((x) => x + 1), 90);
+    const t = setTimeout(() => {
+      clearInterval(iv);
+      setPhase("done");
+      const bad = rolls.some((r) => !s.drivers[r.driver].ai && r.face !== "escape");
+      if (bad) sfx.bad();
+      else sfx.good();
+      onRolled();
+    }, 1300);
+    return () => {
+      clearInterval(iv);
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+  const roll = () => {
+    sfx.dice();
+    if (calm()) {
+      setPhase("done");
+      onRolled();
+    } else setPhase("rolling");
+  };
+  return (
+    <div className="space-y-2">
+      <p className="poster text-sm text-(--color-f1-text)">เฉี่ยวชน! ทอยเต๋าอุบัติเหตุ</p>
+      {rolls.map((r, k) => {
+        const face = phase === "done" ? r.face : faces[(spin + k * 3) % faces.length];
+        return (
+          <div key={k} className="flex items-center gap-2 text-sm">
+            {phase === "wait" ? (
+              <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg border-2 border-white/30 bg-[#1F1F24] poster text-2xl text-white/70">?</span>
+            ) : (
+              <span className={phase === "rolling" ? "bg-shake" : ""}>
+                <DieFace key={phase === "done" ? "done" : "spin"} face={face} delay={phase === "done" ? k * 0.15 : 0} />
+              </span>
+            )}
+            <Car {...look(s.drivers[r.driver])} num={s.drivers[r.driver].num} width={30} />
+            {phase === "done" ? (
+              <span className="bg-pop font-bold" style={{ color: INCIDENT_INFO[r.face].color, animationDelay: `${k * 0.15}s` }}>
+                {INCIDENT_INFO[r.face].title}
+              </span>
+            ) : (
+              <span className="text-white/60">{carName(s, r.driver)}</span>
+            )}
+          </div>
+        );
+      })}
+      {phase === "wait" && (
+        <button type="button" onClick={roll} className="min-h-11 w-full rounded-full bg-(--color-f1) text-sm font-bold text-white">
+          🎲 ทอยเต๋า
+        </button>
+      )}
+    </div>
+  );
+}
+
 function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[]; onClose: () => void }) {
+  const rollsNeeded = events.filter((e) => e.t === "incident").length;
+  const [rolled, setRolled] = useState(0);
+  const ready = rolled >= rollsNeeded;
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/65 p-3 backdrop-blur-[2px]" role="dialog" aria-label="เหตุการณ์ในสนาม">
       <div className="bg-pop max-h-full w-full max-w-sm space-y-2.5 overflow-y-auto rounded-2xl border border-white/15 bg-[#121216] p-3">
@@ -371,18 +437,7 @@ function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[];
                 </p>
               </div>
             ) : e.t === "incident" ? (
-              <div className="space-y-1.5">
-                <p className="poster text-sm text-(--color-f1-text)">เฉี่ยวชน! ทอยเต๋าอุบัติเหตุ</p>
-                {e.rolls.map((r, k) => (
-                  <div key={k} className="flex items-center gap-2 text-sm">
-                    <DieFace face={r.face} delay={k * 0.25} />
-                    <Car {...look(s.drivers[r.driver])} num={s.drivers[r.driver].num} width={30} />
-                    <span className="font-bold" style={{ color: INCIDENT_INFO[r.face].color }}>
-                      {INCIDENT_INFO[r.face].title}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <IncidentRoll s={s} rolls={e.rolls} onRolled={() => setRolled((x) => x + 1)} />
             ) : e.t === "vsc" ? (
               <div className="rounded-xl border-2 border-[#facc15] px-3 py-2 text-center text-white">
                 <p className="poster text-2xl text-[#facc15]">VSC</p>
@@ -401,9 +456,11 @@ function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[];
             )}
           </div>
         ))}
-        <button type="button" onClick={onClose} className="min-h-11 w-full rounded-full bg-white px-4 text-sm font-bold text-[#08080A]">
-          ไปต่อ
-        </button>
+        {ready && (
+          <button type="button" onClick={onClose} className="min-h-11 w-full rounded-full bg-white px-4 text-sm font-bold text-[#08080A]">
+            ไปต่อ
+          </button>
+        )}
       </div>
     </div>
   );
@@ -540,12 +597,15 @@ export default function BoardGame({ board }: { board: Board }) {
   const aiBusy = phase.at === "race" && !!state && aiTurnPending(state);
   useEffect(() => {
     if (!aiBusy || lights || !state) return;
+    // ผู้เล่นเข้าเส้นชัย (หรือออกจากเรซ) ครบทุกคันแล้ว: จำลองที่เหลือรวดเดียวจนจบ ไม่ต้องรอ AI
+    const humansLeft = state.drivers.some((x) => !x.ai && x.finished === null && !x.out);
+    const fast = calm() || !humansLeft;
     const t = setTimeout(() => {
-      const next = calm() ? runAI(state, Math.random) : aiStep(state, Math.random);
-      if (!calm()) sfx.whoosh();
+      const next = fast ? runAI(state, Math.random) : aiStep(state, Math.random);
+      if (!fast) sfx.whoosh();
       setState(next);
       setHistory((h) => [...h, next]);
-    }, calm() ? 0 : AI_STEP_MS);
+    }, fast ? 0 : AI_STEP_MS);
     return () => clearTimeout(t);
   }, [state, aiBusy, lights]);
 
@@ -737,7 +797,9 @@ export default function BoardGame({ board }: { board: Board }) {
   // พรีวิวขั้นที่ 2: จะไปถึงไหน และ ATTACK ได้ไหม
   let preview: ReturnType<typeof travel> | null = null;
   let canAttack = false;
-  const useErs = ers && free && !!d && d.ers >= 1;
+  // กติกาของเรา: SAVE ใช้ ERS ไม่ได้
+  const saveNoErs = ours && p?.kind === "base";
+  const useErs = ers && free && !!d && d.ers >= 1 && !saveNoErs;
   let goal = 0;
   if (d && p) {
     const bonus = p.kind === "drs" ? 0 : moveBonus(d);
@@ -1195,7 +1257,7 @@ export default function BoardGame({ board }: { board: Board }) {
                 {!o.worn && !d.pit && !d.off && !o.pitIn && toPit > 0 && toPit <= PIT_HINT_CELLS && (
                   <label className="flex min-h-9 items-center gap-2 rounded-xl bg-[#1a1a20] px-3 text-xs text-white/75">
                     <input type="checkbox" checked={box} onChange={(e) => setBox(e.target.checked)} className="h-4 w-4 accent-[#E10600]" />
-                    จะเข้าพิท (อีก {toPit} ช่อง) — หยุดในโซนเข้าพิท
+                    จะเข้าพิท (อีก {toPit} ช่อง) — {ours ? "ถึงโซนแล้วเลี้ยวเข้าเลนพิทเลย" : "หยุดในโซนเข้าพิท"}
                   </label>
                 )}
               </>
@@ -1257,10 +1319,10 @@ export default function BoardGame({ board }: { board: Board }) {
                 </div>
                 {ours ? (
                   <div className="grid grid-cols-2 gap-2">
-                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => {
+                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing || saveNoErs} onClick={() => {
                       sfx.toggle(!ers);
                       setErs((v) => !v);
-                    }} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
+                    }} title={`ERS +${ersAdd}`} foot={saveNoErs ? `SAVE ใช้ไม่ได้ · ชาร์จ +${ERS_BASE_CHARGE}` : `เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
                     <Extra
                       on={defend && canDefend}
                       disabled={!canDefend || playing}
@@ -1512,7 +1574,7 @@ function RulesList({ rules }: { rules: Rules }) {
           ไฟแดงครบ 5 ดวงแล้วดับ แตะจอให้เร็ว: ต่ำกว่า 0.2 วิ แซง 2 อันดับ · 0.2–0.3 วิ แซง 1 · ช้ากว่า 0.45 วิ หล่น 1 · แตะก่อนไฟดับ หล่น 3
         </RuleBlock>
         <RuleBlock title="ยางและพิท">
-          ยางสึกจาก {WEAR_MAX} ขั้น (M 1 · S 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
+          ยางสึกจาก {WEAR_MAX} ขั้น (M 1 · S 2 ต่อใบ “สึก” และเล่น FLAT OUT ทุกใบอีก {CARD_WEAR}) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
         </RuleBlock>
         <RuleBlock title="เหตุการณ์">
           ไพ่ป้าย ACT เปิดเหตุการณ์ (ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · รถเสียหาย = VSC (ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม) · ชนออก = SAFETY CAR (ทุกคันได้แค่ SAVE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)

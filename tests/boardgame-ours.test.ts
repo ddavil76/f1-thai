@@ -62,26 +62,29 @@ describe("กติกาของเรา", () => {
     expect(choose(s, { kind: "card" }, never).pending?.value).toBe(MOVE_DECK[PLAIN].y - OFFLINE_PENALTY);
   });
 
-  it("เดิน BASE โดยไม่ใช้ ERS ชาร์จคืน +0.5 · ต้องมีอย่างน้อย 1 ขั้นถึงใช้ได้", () => {
+  it("เดิน SAVE ชาร์จ ERS คืน +0.5 และใช้ ERS ไม่ได้", () => {
     const low = (ers: number) => ({ ...at(game(), [[0, 0], [30, 0]]), drivers: at(game(), [[0, 0], [30, 0]]).drivers.map((d, i) => (i === 0 ? { ...d, ers } : d)) });
     let s = commit(choose(low(1), { kind: "base" }, never), {}, never);
     expect(s.drivers[0].ers).toBe(1 + ERS_BASE_CHARGE);
     expect(s.feed[0].charged).toBe(ERS_BASE_CHARGE);
-    // ใช้ ERS ตานั้น = ไม่ได้ชาร์จ
+    // ขอใช้ ERS กับ SAVE ก็ไม่ได้ใช้ เดิน 4 ช่องแล้วชาร์จตามปกติ
     s = commit(choose(low(1), { kind: "base" }, never), { ers: true }, never);
-    expect(s.drivers[0].ers).toBe(0);
-    // มีแค่ครึ่งขั้น ใช้ไม่ได้ เดินปกติแล้วชาร์จต่อ
-    s = commit(choose(low(0.5), { kind: "base" }, never), { ers: true }, never);
-    expect(s.drivers[0]).toMatchObject({ progress: BASE_MOVE, ers: 1 });
+    expect(s.drivers[0]).toMatchObject({ progress: BASE_MOVE, ers: 1 + ERS_BASE_CHARGE });
+    expect(s.feed[0].ers).toBe(false);
     // เต็มแล้วไม่ล้น
     s = commit(choose(low(ERS_MAX), { kind: "base" }, never), {}, never);
     expect(s.drivers[0].ers).toBe(ERS_MAX);
   });
 
-  it("ERS ในโซน DRS ได้ +3", () => {
-    const s = at(game(2, track({ drs: [{ start: 8, end: 20 }] })), [[9, 0], [30, 0]]);
-    const out = commit(choose(s, { kind: "base" }, never), { ers: true }, never);
-    expect(out.drivers[0].progress).toBe(9 + BASE_MOVE + ERS_DRS_BONUS);
+  it("ERS กับไพ่ FLAT OUT: ต้องมีอย่างน้อย 1 ขั้น · ในโซน DRS ได้ +3", () => {
+    const s = at(game(2, track({ corners: [], drs: [{ start: 8, end: 30 }] })), [[9, 0], [40, 0]]);
+    const card = s.teams[s.drivers[0].team].hand[0];
+    const plain = commit(choose(s, { kind: "card", card }, never), {}, never);
+    const boost = commit(choose(s, { kind: "card", card }, never), { ers: true }, never);
+    expect(boost.drivers[0].progress - plain.drivers[0].progress).toBe(ERS_DRS_BONUS);
+    const half = { ...s, drivers: s.drivers.map((d, i) => (i === 0 ? { ...d, ers: 0.5 } : d)) };
+    const none = commit(choose(half, { kind: "card", card }, never), { ers: true }, never);
+    expect(none.drivers[0].progress).toBe(plain.drivers[0].progress);
   });
 
   it("ไม่ต้องหยุดในโค้ง แต่ช่องโค้งกินแรง: ทางปกติ 1 · โค้งความเร็วสูง 2 · โค้งความเร็วต่ำ 3", () => {
@@ -339,5 +342,33 @@ describe("กติกาของเรา: SAVE ในโค้ง และ�
     const s = game(2);
     expect(s.teams.every((t) => t.pitwall.length === 0)).toBe(true);
     expect(s.pwDeck.length).toBe(0);
+  });
+});
+
+describe("กติกาของเรา: รถโดนน็อครอบ เข้าพิท ยางสึก", () => {
+  it("รถที่ช้ากว่าหนึ่งรอบอยู่ข้างหน้าบนสนาม ไม่ขวางและไม่ต้องใช้แรงแซง", () => {
+    // A รอบที่ 2 ช่อง 4 (40) · B รอบที่ 1 ช่อง 6 (6) อยู่หน้า A บนสนาม 2 ช่อง
+    const s = at(game(2), [[40, 0], [6, 0]]);
+    const out = commit(choose(s, { kind: "base" }, never), {}, never);
+    expect(out.drivers[0].progress).toBe(40 + BASE_MOVE);
+    expect(out.feed[0].passed).toEqual([]);
+    expect(travel(s, s.drivers[0], 2)).toMatchObject({ progress: 42, stuck: null });
+  });
+
+  it("ตั้งใจเข้าพิทแล้วถึงโซนเข้าพิท = ไปอยู่ในเลนพิททันที", () => {
+    const s0 = at(game(2), [[30, 0], [10, 0]]);
+    const s = choose(s0, { kind: "base", box: true }, never);
+    const out = commit(s, {}, never);
+    expect(out.drivers[0].pit).not.toBeNull();
+    expect(out.drivers[0].boxing).toBe(false);
+  });
+
+  it("เล่น FLAT OUT ทุกใบยางสึกครึ่งขั้น", () => {
+    const s = at(game(2, track({ corners: [] })), [[0, 0], [30, 0]]);
+    const team = s.teams[s.drivers[0].team];
+    const card = team.hand.find((id) => !MOVE_DECK[id].tires) ?? team.hand[0];
+    const out = commit(choose(s, { kind: "card", card }, never), {}, never);
+    const expected = 0.5 + (MOVE_DECK[card].tires ? (s.drivers[0].compound === "red" ? 2 : 1) : 0);
+    expect(out.drivers[0].wear).toBe(expected);
   });
 });

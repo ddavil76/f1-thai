@@ -45,6 +45,8 @@ export const PITWALL_IN_OURS = false;
 export const HAND_SIZE = 3;
 /** กติกาของเรา: จบตาติดท้ายคันหน้าบนทางตรง ตาหน้า +1 (สลิปสตรีม) · ในโค้ง −1 (อากาศปั่นป่วน) */
 export const TOW = 1;
+/** กติกาของเรา: เล่นไพ่ FLAT OUT ทุกใบยางสึกเพิ่มเท่านี้ (นอกจากไพ่ป้ายสึก) */
+export const CARD_WEAR = 0.5;
 /** กติกาของเรา: ปิดไลน์ใช้ ERS เท่านี้ และคันที่จะแซงต้องเหลือแรงเพิ่มอีกเท่านี้ */
 export const DEFEND_ERS = 0.5;
 export const DEFEND_EXTRA = 1;
@@ -1142,7 +1144,8 @@ function resolve(
   const events: GameEvent[] = [];
   const log = { ...emptyLog(kind), card: cardId, events };
   const free = !lim.slow && !lim.limp;
-  const ers = !!extras.ers && free && d.ers >= 1 && kind !== "slip";
+  // กติกาของเรา: SAVE ใช้ ERS ไม่ได้ (เป็นตาเก็บพลัง)
+  const ers = !!extras.ers && free && d.ers >= 1 && kind !== "slip" && !(s.rules === "ours" && kind === "base");
   if (ers) {
     d = { ...d, ers: d.ers - 1 };
     log.ers = true;
@@ -1170,12 +1173,16 @@ function resolve(
       log.attacked = t.id;
     }
   }
-  if (fx?.tires && !lim.rain) {
+  // ยางสึก: ไพ่ป้ายสึก M 1 · S 2 · กติกาของเรา เล่น FLAT OUT ทุกใบสึกเพิ่มอีกครึ่งขั้น
+  const wearAdd = lim.rain
+    ? 0
+    : (fx?.tires ? COMPOUNDS[d.compound].wear : 0) + (s.rules === "ours" && kind === "card" ? CARD_WEAR : 0);
+  if (wearAdd > 0) {
     if (d.wear >= WEAR_MAX) {
       d = { ...d, worn: true, mode: null };
       log.nowWorn = true;
     } else {
-      const add = Math.min(WEAR_MAX - d.wear, COMPOUNDS[d.compound].wear);
+      const add = Math.min(WEAR_MAX - d.wear, wearAdd);
       d = { ...d, wear: d.wear + add };
       log.wear = add;
     }
@@ -1213,6 +1220,12 @@ function resolve(
     events.push({ t: "paceEnd", driver: d.id });
   }
   log.moved = d.progress - d0.progress;
+  // กติกาของเรา: ตั้งใจเข้าพิทแล้วถึงโซนเข้าพิท = เลี้ยวเข้าเลนพิทเลย (ไปอยู่ในเลนพิท ไม่จอดบนสนาม)
+  if (s.rules === "ours" && d.boxing && d.pit === null && canPitIn(s, d)) {
+    const offset = lapCell(s.track, d.progress) - s.track.pitEntry.start;
+    d = { ...d, boxing: false, mode: null, pit: { base: d.progress - offset, pos: offset, inBox: false, served: false } };
+    drivers = drivers.map((o) => (o.id === d.id ? d : o));
+  }
   d = { ...d, boxing: d.boxing && d.pit === null };
 
   let st: GameState = { ...s, drivers: drivers.map((o) => (o.id === d.id ? d : o)) };
