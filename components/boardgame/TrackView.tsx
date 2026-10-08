@@ -5,7 +5,7 @@ import OsmCredit from "@/components/OsmCredit";
 import { CarBody } from "@/components/boardgame/Car";
 import type { Board, Pt } from "@/lib/boardgame/board";
 import {
-  BOX_AT, PIT_LEN, inZone, isRain, lapCell, zoneAt,
+  BOX_AT, PIT_LEN, isRain,
   type Driver, type GameState, type Lane,
 } from "@/lib/boardgame/engine";
 import { look, tyreOf } from "@/components/boardgame/look";
@@ -14,23 +14,31 @@ import type { HelpKey } from "@/components/boardgame/help";
 /** ระยะจากเส้นกลางสนาม (หน่วยของแผนที่) */
 const LANE = 1.3;
 const HALF = 3;
-const OFF = 4.4;
-const PIT = -5;
+const OFF = 4.6;
+const PIT = -5.2;
 /** ตัวรถยาว 60 หน่วย → ย่อให้ยาวราว 4.5 หน่วยบนแผนที่ */
 const CAR_SCALE = 0.075;
 /** พิกเซลต่อหน่วยแผนที่สูงสุดตอนซูม */
 const MAX_ZOOM = 11;
+/** จุดบนเส้นโค้งต่อหนึ่งช่อง — ยิ่งมากเส้นยิ่งเนียน */
+const SAMPLES = 12;
+/** ช่วงที่ใช้เกลี่ยทิศหัวรถ (ช่อง) */
+const HEADING_SPAN = 0.3;
+/** โค้งเลี้ยวกี่องศาต่อช่องถึงจะช้าลงเท่าตัว — ยิ่งน้อยยิ่งเบรกหนักในโค้ง */
+const CORNER_SLOW = 40;
 
 /** รถวิ่งจากช่องเดิมถึงช่องใหม่ใช้เวลาเท่าไร (ms) — ยิ่งไกลยิ่งนาน แต่ไม่เกินเพดาน */
-const DRIVE_BASE_MS = 220;
-const DRIVE_PER_CELL_MS = 70;
-const DRIVE_MAX_MS = 820;
-
-type Cell = { c: Pt; n: Pt; deg: number };
-type Geo = ReturnType<typeof geometry>;
+const DRIVE_BASE_MS = 260;
+const DRIVE_PER_CELL_MS = 75;
+const DRIVE_MAX_MS = 950;
+/** กล้องตามเป้าหมายเร็วแค่ไหน (ms ที่จะเข้าใกล้ราว 63%) */
+const CAM_LAG_MS = 170;
+/** พื้นที่ด้านล่างแผนที่ที่แถบข้อความบังอยู่ (px) */
+const OVERVIEW_BOTTOM = 64;
 
 /** ท่าทางรถบนแผนที่แบบต่อเนื่อง: pos = ระยะสะสม (มีทศนิยมได้ระหว่างวิ่ง) · k = ระยะห่างจากเส้นกลาง · spin = หมุนเพิ่ม */
 type Pose = { pos: number; k: number; spin: number };
+type Frame = { x: number; y: number; deg: number };
 
 const laneOffset = (l: Lane) => (l === 0 ? -LANE : LANE);
 
@@ -40,60 +48,129 @@ function poseOf(d: Driver): Pose {
   return { pos: d.progress, k: laneOffset(d.lane), spin: 0 };
 }
 
-/** แปลงท่าทางเป็นจุดบนแผนที่ — ระหว่างช่องเกลี่ยตำแหน่งและทิศหัวรถให้วิ่งตามโค้ง */
-function placePose(g: Geo, t: GameState["track"], q: Pose) {
-  const i = Math.floor(q.pos);
-  const f = q.pos - i;
-  const ca = g.cell[lapCell(t, i)];
-  const cb = g.cell[lapCell(t, i + 1)];
-  const a = add(ca.c, ca.n, q.k);
-  const b = add(cb.c, cb.n, q.k);
-  const ra = (ca.deg * Math.PI) / 180;
-  const rb = (cb.deg * Math.PI) / 180;
-  const deg = (Math.atan2(Math.sin(ra) * (1 - f) + Math.sin(rb) * f, Math.cos(ra) * (1 - f) + Math.cos(rb) * f) * 180) / Math.PI;
-  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, deg: deg + q.spin };
+/* ---------- เส้นสนามแบบโค้งเรียบ ---------- */
+
+const dist = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
+
+/**
+ * เส้นโค้ง Catmull-Rom (แบบ centripetal ไม่เกิดห่วง) ลากผ่านกลางทุกช่อง วนครบรอบ
+ * ทรงคล้ายสนามจริงพอจำได้ แต่เรียบ รถจึงวิ่งและหันหัวได้ลื่น
+ */
+function buildSpline(cells: Pt[]) {
+  const n = cells.length;
+  const pts: Pt[] = [];
+  const lerp = (a: Pt, b: Pt, ta: number, tb: number, t: number): Pt => {
+    const w = tb - ta || 1e-6;
+    return { x: (a.x * (tb - t) + b.x * (t - ta)) / w, y: (a.y * (tb - t) + b.y * (t - ta)) / w };
+  };
+  for (let i = 0; i < n; i++) {
+    const p0 = cells[(i - 1 + n) % n];
+    const p1 = cells[i];
+    const p2 = cells[(i + 1) % n];
+    const p3 = cells[(i + 2) % n];
+    const t0 = 0;
+    const t1 = t0 + Math.sqrt(dist(p0, p1)) + 1e-4;
+    const t2 = t1 + Math.sqrt(dist(p1, p2)) + 1e-4;
+    const t3 = t2 + Math.sqrt(dist(p2, p3)) + 1e-4;
+    for (let s = 0; s < SAMPLES; s++) {
+      const t = t1 + ((t2 - t1) * s) / SAMPLES;
+      const a1 = lerp(p0, p1, t0, t1, t);
+      const a2 = lerp(p1, p2, t1, t2, t);
+      const a3 = lerp(p2, p3, t2, t3, t);
+      const b1 = lerp(a1, a2, t0, t2, t);
+      const b2 = lerp(a2, a3, t1, t3, t);
+      pts.push(lerp(b1, b2, t1, t2, t));
+    }
+  }
+  const N = pts.length;
+  const tan = pts.map((_, j) => {
+    const a = pts[(j - 1 + N) % N];
+    const b = pts[(j + 1) % N];
+    const l = dist(a, b) || 1;
+    return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+  });
+  const center = (u: number): Pt => {
+    const v = (((u % n) + n) % n) * SAMPLES;
+    const j = Math.floor(v);
+    const f = v - j;
+    const a = pts[j % N];
+    const b = pts[(j + 1) % N];
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+  };
+  /** ตำแหน่งและทิศที่ช่อง u (มีทศนิยมได้) ห่างจากเส้นกลาง k — ทิศหัวรถเกลี่ยจากช่วงสั้น ๆ รอบจุด จะได้ไม่กระชากในโค้งหักศอก */
+  const frame = (u: number, k = 0): Frame => {
+    const c = center(u);
+    const a = center(u - HEADING_SPAN);
+    const b = center(u + HEADING_SPAN);
+    let tx = b.x - a.x;
+    let ty = b.y - a.y;
+    const l = Math.hypot(tx, ty) || 1;
+    tx /= l;
+    ty /= l;
+    return { x: c.x - ty * k, y: c.y + tx * k, deg: (Math.atan2(ty, tx) * 180) / Math.PI };
+  };
+
+  // "ต้นทุน" การวิ่งตามความโค้ง: โค้งแรงนับแพง → รถชะลอเข้าโค้งแล้วเร่งบนทางตรงเอง
+  const cost = new Float64Array(N + 1);
+  for (let j = 0; j < N; j++) {
+    const ta = tan[j];
+    const tb = tan[(j + 1) % N];
+    const turn = Math.abs(Math.atan2(ta.x * tb.y - ta.y * tb.x, ta.x * tb.x + ta.y * tb.y)) * (180 / Math.PI) * SAMPLES;
+    cost[j + 1] = cost[j] + (1 + turn / CORNER_SLOW) / SAMPLES;
+  }
+  const lapCost = cost[N];
+  /** ต้นทุนสะสมถึงช่อง u (นับข้ามรอบได้) */
+  const costAt = (u: number) => {
+    const lap = Math.floor(u / n);
+    const v = (u - lap * n) * SAMPLES;
+    const j = Math.floor(v);
+    return lap * lapCost + cost[j] + (cost[Math.min(N, j + 1)] - cost[j]) * (v - j);
+  };
+  /** หาช่อง u ที่ต้นทุนสะสมเท่ากับ c (ค้นแบบแบ่งครึ่งในช่วง lo..hi) */
+  const posAtCost = (c: number, lo: number, hi: number) => {
+    let a = Math.min(lo, hi);
+    let b = Math.max(lo, hi);
+    for (let i = 0; i < 24; i++) {
+      const m = (a + b) / 2;
+      if (costAt(m) < c) a = m;
+      else b = m;
+    }
+    return (a + b) / 2;
+  };
+  const pt = (u: number, k: number) => {
+    const f = frame(u, k);
+    return `${f.x.toFixed(2)},${f.y.toFixed(2)}`;
+  };
+  /** เส้นตามสนามจากช่อง u0 ถึง u1 ห่างจากกลาง k */
+  const line = (u0: number, u1: number, k: number) => {
+    const out: string[] = [];
+    const steps = Math.max(1, Math.round((u1 - u0) * SAMPLES));
+    for (let s = 0; s <= steps; s++) out.push(pt(u0 + ((u1 - u0) * s) / steps, k));
+    return out.join(" ");
+  };
+  /** แถบพื้นที่ตามสนามจากช่อง u0 ถึง u1 ระหว่างระยะ k0..k1 */
+  const strip = (u0: number, u1: number, k0: number, k1: number) =>
+    `${line(u0, u1, k0)} ${line(u0, u1, k1).split(" ").reverse().join(" ")}`;
+  /** เส้นรอบสนามทั้งวง (polygon) */
+  const loop = (k: number) => line(0, n - 1 / SAMPLES, k);
+  return { n, frame, line, strip, loop, costAt, posAtCost };
 }
 
-const poseTransform = (p: { x: number; y: number; deg: number }) =>
-  `translate(${p.x.toFixed(3)} ${p.y.toFixed(3)}) rotate(${p.deg.toFixed(2)})`;
+type Spline = ReturnType<typeof buildSpline>;
+
+const placePose = (sp: Spline, q: Pose): Frame => {
+  const f = sp.frame(q.pos, q.k);
+  return { ...f, deg: f.deg + q.spin };
+};
+
+const poseTransform = (p: Frame) => `translate(${p.x.toFixed(3)} ${p.y.toFixed(3)}) rotate(${p.deg.toFixed(2)})`;
 
 /** เร่งออกตัวแล้วเบรกเข้าจุดจอด */
 const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2);
 
-const add = (a: Pt, n: Pt, k: number): Pt => ({ x: a.x + n.x * k, y: a.y + n.y * k });
-const fmt = (p: Pt) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
-
-function geometry(cells: Pt[]) {
-  const n = cells.length;
-  const cell: Cell[] = cells.map((c, i) => {
-    const a = cells[(i - 1 + n) % n];
-    const b = cells[(i + 1) % n];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    return { c, n: { x: -dy / len, y: dx / len }, deg: (Math.atan2(dy, dx) * 180) / Math.PI };
-  });
-  // เส้นแบ่งช่อง: กึ่งกลางระหว่างช่อง i-1 กับ i
-  const edge = cells.map((c, i) => {
-    const p = cells[(i - 1 + n) % n];
-    const m = { x: (p.x + c.x) / 2, y: (p.y + c.y) / 2 };
-    const na = cell[(i - 1 + n) % n].n;
-    const nb = cell[i].n;
-    const nx = na.x + nb.x;
-    const ny = na.y + nb.y;
-    const l = Math.hypot(nx, ny) || 1;
-    return { m, n: { x: nx / l, y: ny / l } };
-  });
-  /** สี่เหลี่ยมของช่อง i ใช้ระบายโค้ง/DRS/ธง */
-  const quad = (i: number, w = HALF) => {
-    const a = edge[i];
-    const b = edge[(i + 1) % n];
-    return [add(a.m, a.n, -w), add(b.m, b.n, -w), add(b.m, b.n, w), add(a.m, a.n, w)].map(fmt).join(" ");
-  };
-  return { cell, edge, quad };
-}
-
 export type Spot = { progress: number; lane: Lane };
+
+type Anim = { from: Pose; to: Pose; t0: number; dur: number; c0: number; c1: number };
 
 export default function TrackView({
   board, state, focus, ghost, zoomed, onToggle, onHelp,
@@ -119,84 +196,140 @@ export default function TrackView({
     return () => ro.disconnect();
   }, []);
 
-  const g = useMemo(() => geometry(board.cells), [board.cells]);
+  const sp = useMemo(() => buildSpline(board.cells), [board.cells]);
   const t = state.track;
-  const n = board.cells.length;
-  const at = (p: number, k: number) => {
-    const x = g.cell[lapCell(t, p)];
-    return add(x.c, x.n, k);
-  };
-  const laneK = laneOffset;
+  const n = sp.n;
+  const { w: W, h: H } = size;
 
-  // แอนิเมชันรถวิ่งไปตามสนามทีละช่อง (ไม่ลากเส้นตรงตัดข้ามสนาม)
+  /* ---------- แอนิเมชัน: รถวิ่งตามเส้นโค้ง + กล้องตามนุ่ม ๆ ---------- */
   const carEls = useRef(new Map<number, SVGGElement>());
+  const trailEls = useRef(new Map<number, SVGLineElement>());
+  const camEl = useRef<SVGGElement>(null);
   const shown = useRef(new Map<number, Pose>());
-  const frames = useRef(new Map<number, number>());
-  useLayoutEffect(() => {
+  const anims = useRef(new Map<number, Anim>());
+  const cam = useRef<{ x: number; y: number; z: number } | null>(null);
+  const raf = useRef(0);
+  const view = useRef({ focusId: null as number | null, ghost: null as Spot | null, zoomed, W, H, drivers: state.drivers, sp });
+
+  /** เป้ากล้อง: ซูมที่รถที่โฟกัส (ตำแหน่งที่กำลังวิ่งอยู่จริง) มองไปข้างหน้า หรือดูทั้งสนาม */
+  const camTarget = () => {
+    const v = view.current;
+    // ดูทั้งสนาม: เผื่อที่ด้านล่างให้แถบข้อความการเดิน แล้วดันภาพขึ้นครึ่งหนึ่งของที่เผื่อ
+    const oz = Math.min(v.W / (board.w + 14), (v.H - OVERVIEW_BOTTOM) / (board.h + 14));
+    const overview = { x: board.w / 2, y: board.h / 2 + OVERVIEW_BOTTOM / 2 / oz, z: oz };
+    const d = v.focusId === null ? null : v.drivers[v.focusId];
+    if (!v.zoomed || !d) return overview;
+    const q = shown.current.get(d.id) ?? poseOf(d);
+    const me = placePose(v.sp, q);
+    const ahead = v.ghost ? v.sp.frame(v.ghost.progress, laneOffset(v.ghost.lane)) : v.sp.frame(q.pos + 2.5, 0);
+    const span = Math.hypot(ahead.x - me.x, ahead.y - me.y) + 18;
+    return { x: (me.x + ahead.x) / 2, y: (me.y + ahead.y) / 2, z: Math.min(Math.min(v.W, v.H) / Math.max(36, span), MAX_ZOOM) };
+  };
+
+  const writeCam = () => {
+    const c = cam.current;
+    const v = view.current;
+    if (c && camEl.current) {
+      camEl.current.setAttribute("transform", `translate(${v.W / 2} ${v.H / 2}) scale(${c.z.toFixed(4)}) translate(${(-c.x).toFixed(3)} ${(-c.y).toFixed(3)})`);
+    }
+  };
+
+  const kick = () => {
+    if (raf.current) return;
+    let last = performance.now();
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const tick = (now: number) => {
+      const dt = Math.min(64, now - last);
+      last = now;
+      let busy = false;
+      for (const [id, a] of anims.current) {
+        const el = carEls.current.get(id);
+        const trail = trailEls.current.get(id);
+        const u = Math.min(1, (now - a.t0) / a.dur);
+        const e = ease(u);
+        const q = {
+          // เดินตามต้นทุนความโค้ง: ช้าในโค้ง เร็วบนทางตรง
+          pos: view.current.sp.posAtCost(a.c0 + (a.c1 - a.c0) * e, a.from.pos, a.to.pos),
+          k: a.from.k + (a.to.k - a.from.k) * e,
+          spin: a.from.spin + (a.to.spin - a.from.spin) * e,
+        };
+        const before = shown.current.get(id)?.pos ?? q.pos;
+        shown.current.set(id, q);
+        el?.setAttribute("transform", poseTransform(placePose(view.current.sp, q)));
+        // เส้นความเร็วท้ายรถ ยาวตามความเร็วจริงในเฟรมนี้ (ช่องต่อวินาที)
+        const speed = dt > 0 ? (Math.abs(q.pos - before) * 1000) / dt : 0;
+        trail?.setAttribute("x2", (-2.2 - Math.min(7, speed * 0.32)).toFixed(2));
+        trail?.setAttribute("opacity", u < 1 ? Math.min(0.75, speed * 0.04).toFixed(2) : "0");
+        if (u < 1) busy = true;
+        else anims.current.delete(id);
+      }
+      const target = camTarget();
+      const c = cam.current ?? target;
+      const f = reduce ? 1 : 1 - Math.exp(-dt / CAM_LAG_MS);
+      const next = { x: c.x + (target.x - c.x) * f, y: c.y + (target.y - c.y) * f, z: c.z + (target.z - c.z) * f };
+      cam.current = next;
+      writeCam();
+      const settled = Math.abs(target.x - next.x) < 0.01 && Math.abs(target.y - next.y) < 0.01 && Math.abs(target.z - next.z) < 0.001;
+      raf.current = busy || !settled ? requestAnimationFrame(tick) : 0;
+    };
+    raf.current = requestAnimationFrame(tick);
+  };
+
+  // ทุกครั้งที่สถานะเปลี่ยน: ตั้งแอนิเมชันให้รถที่ย้ายที่ แล้วปลุกลูปให้ทำงาน
+  useLayoutEffect(() => {
+    view.current = { focusId: focus?.id ?? null, ghost, zoomed, W, H, drivers: state.drivers, sp };
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const now = performance.now();
     for (const d of state.drivers) {
       if (d.finished !== null || d.out) {
         shown.current.delete(d.id);
+        anims.current.delete(d.id);
         continue;
       }
       const to = poseOf(d);
       const from = shown.current.get(d.id);
       const el = carEls.current.get(d.id);
-      cancelAnimationFrame(frames.current.get(d.id) ?? 0);
-      if (!from || !el || reduce || (from.pos === to.pos && from.k === to.k && from.spin === to.spin)) {
+      const same = from && from.pos === to.pos && from.k === to.k && from.spin === to.spin;
+      if (!from || !el || reduce || same) {
+        anims.current.delete(d.id);
         shown.current.set(d.id, to);
         continue;
       }
-      const dur = Math.min(DRIVE_MAX_MS, DRIVE_BASE_MS + (Math.abs(to.pos - from.pos) + Math.abs(to.k - from.k) / 3) * DRIVE_PER_CELL_MS);
-      const t0 = performance.now();
-      const step = (now: number) => {
-        const u = Math.min(1, (now - t0) / dur);
-        const e = ease(u);
-        const q = { pos: from.pos + (to.pos - from.pos) * e, k: from.k + (to.k - from.k) * e, spin: from.spin + (to.spin - from.spin) * e };
-        shown.current.set(d.id, q);
-        el.setAttribute("transform", poseTransform(placePose(g, state.track, q)));
-        if (u < 1) frames.current.set(d.id, requestAnimationFrame(step));
-      };
-      el.setAttribute("transform", poseTransform(placePose(g, state.track, from)));
-      frames.current.set(d.id, requestAnimationFrame(step));
+      const prev = anims.current.get(d.id);
+      if (prev && prev.to.pos === to.pos && prev.to.k === to.k && prev.to.spin === to.spin) continue;
+      const c0 = sp.costAt(from.pos);
+      const c1 = sp.costAt(to.pos);
+      const dur = Math.min(DRIVE_MAX_MS, DRIVE_BASE_MS + (Math.abs(c1 - c0) + Math.abs(to.k - from.k) / 3) * DRIVE_PER_CELL_MS);
+      anims.current.set(d.id, { from, to, t0: now, dur, c0, c1 });
+      el.setAttribute("transform", poseTransform(placePose(sp, from)));
     }
-  }, [state, g]);
-  useEffect(() => {
-    const f = frames.current;
-    return () => f.forEach((id) => cancelAnimationFrame(id));
-  }, []);
-  const spotOf = (d: Driver): { p: Pt; deg: number } => {
-    if (d.pit) {
-      const q = d.pit.base + d.pit.pos;
-      return { p: at(q, PIT), deg: g.cell[lapCell(t, q)].deg };
+    if (!cam.current) {
+      cam.current = camTarget();
+      writeCam();
     }
-    const cell = g.cell[lapCell(t, d.progress)];
-    if (d.off) return { p: at(d.progress, OFF), deg: cell.deg + 35 };
-    return { p: at(d.progress, laneK(d.lane)), deg: cell.deg };
-  };
+    kick();
+  });
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
-  // กล้อง: ซูมตามรถที่ถึงตา (มองไปข้างหน้า) หรือดูทั้งสนาม
-  const { w: W, h: H } = size;
-  let cx = board.w / 2;
-  let cy = board.h / 2;
-  let z = Math.min(W / (board.w + 14), H / (board.h + 14));
-  if (zoomed && focus) {
-    const me = spotOf(focus).p;
-    const ahead = ghost ? at(ghost.progress, laneK(ghost.lane)) : at(focus.progress + 2, 0);
-    cx = (me.x + ahead.x) / 2;
-    cy = (me.y + ahead.y) / 2;
-    const span = Math.hypot(ahead.x - me.x, ahead.y - me.y) + 18;
-    // จอใหญ่ไม่ซูมเกินไป — ให้เห็นสนามข้างหน้าหลายช่อง
-    z = Math.min(Math.min(W, H) / Math.max(36, span), MAX_ZOOM);
-  }
+  /* ---------- ฉากสนาม (คำนวณครั้งเดียวต่อสนาม) ---------- */
+  const scene = useMemo(() => {
+    const cornerRanges = t.corners.map((z) => {
+      const end = z.end >= z.start ? z.end : z.end + n;
+      return [z.start - 0.5, end + 0.5] as const;
+    });
+    const drsRanges = t.drs.map((z) => [z.start - 0.5, (z.end >= z.start ? z.end : z.end + n) + 0.5] as const);
+    const pitFrom = t.pitEntry.start - 0.5;
+    const pitTo = t.pitEntry.start + PIT_LEN - 0.5;
+    return { cornerRanges, drsRanges, pitFrom, pitTo };
+  }, [t, n]);
 
-  const pitCells = Array.from({ length: PIT_LEN }, (_, k) => t.pitEntry.start + k);
   const racers = state.drivers.filter((d) => d.finished === null && !d.out);
   const rain = isRain(state);
-  const lane0 = g.cell.map((x) => fmt(add(x.c, x.n, -LANE))).join(" ");
+  const fr = (u: number, k: number) => sp.frame(u, k);
+  const spotOf = (d: Driver) => placePose(sp, poseOf(d));
 
   return (
-    <div ref={box} className="relative h-full w-full overflow-hidden bg-[#0d0d11]">
+    <div ref={box} className="relative h-full w-full overflow-hidden bg-[#0b130f]">
       <svg
         width={W}
         height={H}
@@ -205,80 +338,80 @@ export default function TrackView({
         role="img"
         aria-label={`แผนที่สนาม${board.name}${focus ? ` ซูมที่รถหมายเลข ${focus.num}` : ""} รถบนสนาม ${racers.length} คัน`}
       >
-        <g
-          className="transition-transform duration-700 ease-out motion-reduce:transition-none"
-          style={{ transform: `translate(${W / 2}px, ${H / 2}px) scale(${z}) translate(${-cx}px, ${-cy}px)` }}
-        >
-          {/* ผิวสนาม */}
-          <path d={board.d} fill="none" stroke="#3b3b45" strokeWidth={HALF * 2 + 0.8} strokeLinejoin="round" strokeLinecap="round" />
-          <path d={board.d} fill="none" stroke="#24242b" strokeWidth={HALF * 2} strokeLinejoin="round" strokeLinecap="round" />
-          <polyline points={pitCells.map((p) => fmt(at(p, PIT))).join(" ")} fill="none" stroke="#2c2c34" strokeWidth={2.4} strokeLinecap="round" />
-          <polyline points={pitCells.map((p) => fmt(at(p, PIT))).join(" ")} fill="none" stroke="#DEDEDE" strokeOpacity={0.45} strokeWidth={0.18} strokeDasharray="0.8 0.6" />
-          {/* เส้นแข่ง (เลนใน) */}
-          <polygon points={lane0} fill="none" stroke="#ffffff" strokeOpacity={0.07} strokeWidth={LANE * 2 - 0.3} strokeLinejoin="round" />
-          {/* โซนต่าง ๆ */}
-          {g.cell.map((_, i) => {
-            const corner = zoneAt(t, t.corners, i) >= 0;
-            const drs = zoneAt(t, t.drs, i) >= 0;
-            const entry = inZone(t.pitEntry, i);
-            return (
-              <g key={i}>
-                {corner && <polygon points={g.quad(i)} fill="#E10600" fillOpacity={0.2} />}
-                {drs && <polygon points={g.quad(i)} fill="#DEDEDE" fillOpacity={0.08} />}
-                {entry && (
-                  <polygon points={g.quad(i, HALF - 0.25)} fill="none" stroke="#DEDEDE" strokeOpacity={0.5} strokeWidth={0.18} strokeDasharray="0.6 0.5" />
-                )}
-                {i === t.vbox && <polygon points={g.quad(i, HALF - 0.25)} fill="#DEDEDE" fillOpacity={0.06} stroke="#DEDEDE" strokeWidth={0.25} />}
-              </g>
-            );
-          })}
-          {/* ขอบโค้ง แดง-ขาว */}
-          {t.corners.map((zn, k) => {
-            const cells: number[] = [];
-            for (let i = zn.start; ; i = (i + 1) % n) {
-              cells.push(i);
-              if (i === zn.end) break;
-            }
-            const side = (s: number) =>
-              [...cells.map((i) => g.edge[i]), g.edge[(zn.end + 1) % n]].map((e) => fmt(add(e.m, e.n, s * (HALF + 0.25)))).join(" ");
-            return (
-              <g key={k}>
-                {[-1, 1].map((s) => (
-                  <g key={s}>
-                    <polyline points={side(s)} fill="none" stroke="#fff" strokeWidth={0.5} />
-                    <polyline points={side(s)} fill="none" stroke="#E10600" strokeWidth={0.5} strokeDasharray="0.7 0.7" />
-                  </g>
-                ))}
-              </g>
-            );
-          })}
-          {/* ธงเหลือง */}
-          {state.flags.map((f, k) => (
-            <g key={k}>
-              {Array.from({ length: f.to - f.from + 1 }, (_, j) => (
-                <polygon key={j} points={g.quad(lapCell(t, f.from + j))} fill="#facc15" fillOpacity={0.28} />
-              ))}
-            </g>
+        <g ref={camEl}>
+          {/* หญ้าข้างทาง */}
+          <polygon points={sp.loop(0)} fill="none" stroke="#12261b" strokeWidth={HALF * 2 + 7} strokeLinejoin="round" />
+          {/* กรวดรอบโค้ง (วาดเป็นเส้นหนาตามแนวกลาง โค้งแคบก็ไม่เกิดหนามแหลม) */}
+          {scene.cornerRanges.map(([a, b], k) => (
+            <polyline key={k} points={sp.line(a - 0.4, b + 0.4, 0)} fill="none" stroke="#3d3526" strokeWidth={(HALF + 2.6) * 2} strokeLinecap="round" strokeLinejoin="round" />
           ))}
-          {/* เส้นแบ่งช่อง */}
-          {g.edge.map((e, i) => (
-            <line
+          {/* อาคารพิทและเลนพิท */}
+          <polygon points={sp.strip(scene.pitFrom + 0.6, scene.pitTo - 0.6, PIT - 4.4, PIT - 2.2)} fill="#1c1c22" stroke="#2c2c34" strokeWidth={0.2} />
+          {Array.from({ length: PIT_LEN - 1 }, (_, i) => (
+            <polygon
               key={i}
-              x1={add(e.m, e.n, -HALF).x}
-              y1={add(e.m, e.n, -HALF).y}
-              x2={add(e.m, e.n, HALF).x}
-              y2={add(e.m, e.n, HALF).y}
-              stroke="#ffffff"
-              strokeOpacity={i === 0 ? 0 : 0.16}
-              strokeWidth={0.12}
+              points={sp.strip(scene.pitFrom + 0.7 + i, scene.pitFrom + 1.5 + i, PIT - 4.1, PIT - 2.5)}
+              fill={i + 1 === BOX_AT ? "#3a2a10" : "#25252c"}
             />
           ))}
+          <polygon points={sp.strip(scene.pitFrom, scene.pitTo, PIT - 1.4, PIT + 1.4)} fill="#26262c" />
+          <polyline points={sp.line(scene.pitFrom, scene.pitTo, PIT + 1.6)} fill="none" stroke="#DEDEDE" strokeOpacity={0.5} strokeWidth={0.2} />
+          {/* ขอบแดง-ขาวในโค้ง (อยู่ใต้ผิวแทร็ก โผล่เป็นแนวขอบสองข้าง) */}
+          {scene.cornerRanges.map(([a, b], k) => (
+            <g key={k}>
+              <polyline points={sp.line(a, b, 0)} fill="none" stroke="#ffffff" strokeWidth={(HALF + 0.55) * 2} strokeLinejoin="round" />
+              <polyline points={sp.line(a, b, 0)} fill="none" stroke="#E10600" strokeWidth={(HALF + 0.55) * 2} strokeDasharray="0.7 0.7" strokeLinejoin="round" />
+            </g>
+          ))}
+          {/* ผิวแทร็ก + เส้นขอบขาว */}
+          <polygon points={sp.loop(0)} fill="none" stroke="#e6e6e6" strokeOpacity={0.8} strokeWidth={HALF * 2} strokeLinejoin="round" />
+          <polygon points={sp.loop(0)} fill="none" stroke="#2a2a30" strokeWidth={HALF * 2 - 0.45} strokeLinejoin="round" />
+          {/* เส้นแข่ง (เลนใน) จาง ๆ */}
+          <polygon points={sp.loop(-LANE)} fill="none" stroke="#ffffff" strokeOpacity={0.05} strokeWidth={LANE * 2 - 0.4} strokeLinejoin="round" />
+          {/* โซน DRS */}
+          {scene.drsRanges.map(([a, b], k) => (
+            <polyline key={k} points={sp.line(a, b, 0)} fill="none" stroke="#DEDEDE" strokeOpacity={0.06} strokeWidth={HALF * 2 - 0.6} />
+          ))}
+          {/* โค้ง: ระบายแดงจาง */}
+          {scene.cornerRanges.map(([a, b], k) => (
+            <polyline key={k} points={sp.line(a, b, 0)} fill="none" stroke="#E10600" strokeOpacity={0.13} strokeWidth={HALF * 2 - 0.45} strokeLinejoin="round" />
+          ))}
+          {/* โซนเข้าพิท / V-BOX */}
+          <polygon points={sp.strip(t.pitEntry.start - 0.5, t.pitEntry.end + 0.5, -HALF + 0.25, HALF - 0.25)} fill="none" stroke="#DEDEDE" strokeOpacity={0.45} strokeWidth={0.18} strokeDasharray="0.6 0.5" />
+          <polygon points={sp.strip(t.vbox - 0.5, t.vbox + 0.5, -HALF + 0.25, HALF - 0.25)} fill="#DEDEDE" fillOpacity={0.05} stroke="#DEDEDE" strokeWidth={0.25} />
+          {/* ธงเหลือง */}
+          {state.flags.map((f, k) => (
+            <polyline key={k} points={sp.line(f.from - 0.5, f.to + 0.5, 0)} fill="none" stroke="#facc15" strokeOpacity={0.24} strokeWidth={HALF * 2 - 0.45} strokeLinejoin="round" />
+          ))}
+          {/* เส้นแบ่งช่อง */}
+          {Array.from({ length: n }, (_, i) => {
+            if (i === 0) return null;
+            const a = fr(i - 0.5, -HALF + 0.3);
+            const b = fr(i - 0.5, HALF - 0.3);
+            return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#ffffff" strokeOpacity={0.1} strokeWidth={0.12} />;
+          })}
+          {/* ช่องจอดกริดสตาร์ท */}
+          {Array.from({ length: 12 }, (_, s) => {
+            const pos = -Math.floor(s / 2);
+            const k = laneOffset((s % 2) as Lane);
+            return (
+              <polyline
+                key={s}
+                points={[fr(pos - 0.3, k - 0.95), fr(pos + 0.32, k - 0.95), fr(pos + 0.32, k + 0.95), fr(pos - 0.3, k + 0.95)]
+                  .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+                  .join(" ")}
+                fill="none"
+                stroke="#ffffff"
+                strokeOpacity={0.45}
+                strokeWidth={0.15}
+              />
+            );
+          })}
           {/* เส้นสตาร์ท/เส้นชัย ลายตาหมากรุก */}
           {Array.from({ length: 8 }, (_, k) => {
-            const e = g.edge[0];
-            const p = add(e.m, e.n, -HALF + k * 0.75 + 0.375);
+            const p = fr(-0.5, -HALF + k * 0.75 + 0.375);
             return (
-              <g key={k} transform={`translate(${p.x} ${p.y}) rotate(${g.cell[0].deg})`}>
+              <g key={k} transform={`translate(${p.x} ${p.y}) rotate(${p.deg})`}>
                 <rect x={-0.75} y={-0.375} width={0.75} height={0.75} fill={k % 2 ? "#fff" : "#08080A"} />
                 <rect x={0} y={-0.375} width={0.75} height={0.75} fill={k % 2 ? "#08080A" : "#fff"} />
               </g>
@@ -286,20 +419,15 @@ export default function TrackView({
           })}
           {/* ป้าย */}
           {t.drs.map((zn, k) => {
-            const p = at(zn.start, HALF + 1.6);
+            const p = fr(zn.start, HALF + 1.8);
             return (
               <text key={k} x={p.x} y={p.y} fontSize={1.5} fontWeight={800} fill="#DEDEDE" textAnchor="middle" dominantBaseline="central">
                 DRS
               </text>
             );
           })}
-          <text {...xy(at(t.vbox, HALF + 1.8))} fontSize={1.3} fontWeight={800} fill="#DEDEDE" textAnchor="middle" dominantBaseline="central">
-            V-BOX
-          </text>
-          <rect {...rectAt(at(t.pitEntry.start + BOX_AT, PIT), 1.4)} fill="none" stroke="#DEDEDE" strokeWidth={0.2} />
-          <text {...xy(at(t.pitEntry.start + BOX_AT, PIT - 2))} fontSize={1.3} fontWeight={800} fill="#DEDEDE" fillOpacity={0.8} textAnchor="middle" dominantBaseline="central">
-            PIT
-          </text>
+          <Label p={fr(t.vbox, HALF + 2)}>V-BOX</Label>
+          <Label p={fr(t.pitEntry.start + BOX_AT, PIT - 5.6)}>PIT</Label>
 
           {/* รถ */}
           {[...racers]
@@ -314,12 +442,29 @@ export default function TrackView({
                     if (el) carEls.current.set(d.id, el);
                     else carEls.current.delete(d.id);
                   }}
-                  transform={poseTransform(placePose(g, t, poseOf(d)))}
-                  opacity={d.pit ? 0.75 : 1}
+                  transform={poseTransform(placePose(sp, poseOf(d)))}
+                  opacity={d.pit ? 0.8 : 1}
                 >
+                  {/* เส้นความเร็ว (ยืดตอนวิ่ง) */}
+                  <line
+                    ref={(el) => {
+                      if (el) trailEls.current.set(d.id, el);
+                      else trailEls.current.delete(d.id);
+                    }}
+                    x1={-2.2}
+                    y1={0}
+                    x2={-2.2}
+                    y2={0}
+                    stroke={c.color}
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    opacity={0}
+                  />
+                  {/* เงาใต้รถ */}
+                  <ellipse cx={0.35} cy={0.45} rx={2.5} ry={1.15} fill="#000" fillOpacity={0.45} />
                   {me && <circle r={3.3} fill="none" stroke="#E10600" strokeWidth={0.35} className="bg-blink" />}
                   {/* รถที่ผู้เล่นคุม: ฐานขาวจาง ๆ ให้แยกจากรถ AI ที่สีคล้ายกันได้ */}
-                  {!d.ai && <ellipse rx={2.9} ry={1.5} fill="#ffffff" fillOpacity={0.22} stroke="#ffffff" strokeOpacity={0.7} strokeWidth={0.18} />}
+                  {!d.ai && <ellipse rx={2.9} ry={1.5} fill="#ffffff" fillOpacity={0.18} stroke="#ffffff" strokeOpacity={0.7} strokeWidth={0.18} />}
                   <g transform={`scale(${CAR_SCALE}) translate(-30 -13)`}>
                     <CarBody color={c.color} ink={c.ink} num={d.num} tyre={tyreOf(d)} ghost={!!d.pit} />
                   </g>
@@ -330,7 +475,8 @@ export default function TrackView({
           {state.neutral?.kind === "sc" && racers.some((d) => !d.pit && !d.off) && (() => {
             const lead = Math.max(...racers.filter((d) => !d.pit && !d.off).map((d) => d.progress));
             return (
-              <g transform={poseTransform(placePose(g, t, { pos: lead + 1, k: -LANE, spin: 0 }))} aria-label="รถเซฟตี้คาร์">
+              <g transform={poseTransform(placePose(sp, { pos: lead + 1, k: -LANE, spin: 0 }))} aria-label="รถเซฟตี้คาร์">
+                <ellipse cx={0.35} cy={0.45} rx={2.5} ry={1.15} fill="#000" fillOpacity={0.45} />
                 <g transform={`scale(${CAR_SCALE}) translate(-30 -13)`}>
                   <rect x="4" y="5" width="52" height="16" rx="6" fill="#facc15" stroke="#08080A" strokeWidth="1.2" />
                   <rect x="22" y="8" width="14" height="10" rx="2" fill="#08080A" />
@@ -340,10 +486,7 @@ export default function TrackView({
             );
           })()}
           {ghost && focus && (
-            <g
-              transform={`translate(${at(ghost.progress, laneK(ghost.lane)).x} ${at(ghost.progress, laneK(ghost.lane)).y}) rotate(${g.cell[lapCell(t, ghost.progress)].deg})`}
-              className="bg-ghost"
-            >
+            <g transform={poseTransform(placePose(sp, { pos: ghost.progress, k: laneOffset(ghost.lane), spin: 0 }))} className="bg-ghost">
               <circle r={3.3} fill="#ffffff" fillOpacity={0.12} stroke="#ffffff" strokeWidth={0.3} strokeDasharray="0.8 0.6" />
               <g transform={`scale(${CAR_SCALE}) translate(-30 -13)`}>
                 <CarBody color="#fff" ink="#fff" num={focus.num} ghost />
@@ -364,9 +507,9 @@ export default function TrackView({
         className="absolute right-2 top-2 rounded-xl border border-white/15 bg-[#08080A]/80 p-1.5 backdrop-blur"
       >
         <svg viewBox={`-6 -6 ${board.w + 12} ${board.h + 12}`} className="block h-24 w-16" aria-hidden>
-          <path d={board.d} fill="none" stroke="#4a4a55" strokeWidth={3} strokeLinejoin="round" />
+          <polygon points={sp.loop(0)} fill="none" stroke="#4a4a55" strokeWidth={3} strokeLinejoin="round" />
           {racers.map((d) => {
-            const p = spotOf(d).p;
+            const p = spotOf(d);
             const me = d.id === focus?.id;
             return <circle key={d.id} cx={p.x} cy={p.y} r={me ? 3.4 : 2} fill={me ? "#E10600" : d.ai ? "#8a8a95" : "#DEDEDE"} />;
           })}
@@ -394,5 +537,11 @@ export default function TrackView({
   );
 }
 
-const xy = (p: Pt) => ({ x: p.x, y: p.y });
-const rectAt = (p: Pt, s: number) => ({ x: p.x - s / 2, y: p.y - s / 2, width: s, height: s });
+function Label({ p, children }: { p: Frame; children: string }) {
+  return (
+    <text x={p.x} y={p.y} fontSize={1.3} fontWeight={800} fill="#DEDEDE" fillOpacity={0.85} textAnchor="middle" dominantBaseline="central">
+      {children}
+    </text>
+  );
+}
+
