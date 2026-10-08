@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // เซิร์ฟเวอร์ห้องออนไลน์ (Cloudflare) มีชนิดข้อมูลของตัวเอง
+    "cloudflare/**",
   ]),
 ]);
 

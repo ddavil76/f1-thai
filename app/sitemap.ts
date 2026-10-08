@@ -23,7 +23,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: at("/compare"), lastModified: now, changeFrequency: "weekly", priority: 0.5 },
     { url: at("/pitstops"), lastModified: now, changeFrequency: "weekly", priority: 0.5 },
     { url: at("/widget"), lastModified: now, changeFrequency: "monthly", priority: 0.4 },
-    { url: at("/boardgame"), lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    { url: at("/pitwall"), lastModified: now, changeFrequency: "yearly", priority: 0.3 },
     { url: at("/reaction"), lastModified: now, changeFrequency: "yearly", priority: 0.3 },
   ];
 

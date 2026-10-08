@@ -8,6 +8,19 @@ import type { NextConfig } from "next";
  * nonce ผ่าน middleware ซึ่งจะทำให้ทุกหน้ากลายเป็น dynamic เสีย static/ISR ไปหมด
  * เลยใส่เฉพาะ directive ที่ไม่แตะ script/style แต่ปิดช่องโจมตีได้จริง
  */
+/** ที่อยู่เซิร์ฟเวอร์ห้องออนไลน์ของเกม Pit Wall (ตั้งใน Vercel: NEXT_PUBLIC_PITWALL_SERVER) */
+function pitwallOrigins(): string {
+  const raw = process.env.NEXT_PUBLIC_PITWALL_SERVER;
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    const ws = `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}`;
+    return ` ${u.origin} ${ws}`;
+  } catch {
+    return "";
+  }
+}
+
 const CSP = [
   // จงใจไม่ใส่ default-src — มันเป็น fallback ให้ script-src/style-src ด้วย
   // ใส่เมื่อไหร่ inline script ของ Next จะโดนบล็อกและ hydration พังทันที
@@ -19,7 +32,8 @@ const CSP = [
   // แต่เผื่อกรณีชี้ตรงไว้ด้วย
   "img-src 'self' data: blob: https://*.wikimedia.org https://media.formula1.com",
   // รีเพลย์ยิง openf1 จากเบราว์เซอร์ตรง ๆ (serverless โดนบล็อก)
-  "connect-src 'self' https://api.openf1.org",
+  // เกม Pit Wall ต่อเซิร์ฟเวอร์ห้องออนไลน์ (Cloudflare) ทั้ง https และ wss
+  `connect-src 'self' https://api.openf1.org${pitwallOrigins()}`,
 ].join("; ");
 
 const SECURITY_HEADERS = [
