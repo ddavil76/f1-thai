@@ -236,7 +236,7 @@ export function Prep({ snap, me, send }: Props) {
         );
       })}
       <Card>
-        <Head kicker="ยาง" title="ยางของสุดสัปดาห์" sub="ใช้ได้ทั้งควอลิฟายและเรซ ยางที่ใช้แล้วจะสึกติดไปด้วย · ในเรซต้องใช้อย่างน้อย 2 ชนิด" />
+        <Head kicker="ยาง" title="ยางของสุดสัปดาห์" sub="ใช้ได้ทั้งควอลิฟายและเรซ ยางที่ใช้แล้วจะสึกติดไปด้วย" />
         <div className="grid grid-cols-3 gap-2 text-xs">
           {COMPOUNDS.map((k) => (
             <div key={k} className="flex flex-col items-center gap-1 rounded-xl bg-[#08080A] p-2">
@@ -262,7 +262,7 @@ export function Grid({ snap, me, send }: Props) {
   return (
     <div className="space-y-4">
       <Card>
-        <Head kicker="กริดออกสตาร์ท" title={circuitName(snap.circuit)} sub={`${snap.laps} รอบ · ต้องใช้ยางอย่างน้อย 2 ชนิด ไม่งั้นบวก 20 วิ`} />
+        <Head kicker="กริดออกสตาร์ท" title={circuitName(snap.circuit)} sub={`${snap.laps} รอบ`} />
         <Timer s={snap.timer} />
         <ol className="grid grid-cols-2 gap-1 text-xs">
           {snap.grid.map((id, i) => {
@@ -344,14 +344,13 @@ export function Results({ snap, me, send }: Props) {
                 </span>
                 <span className="w-16 text-right text-xs tabular-nums text-white/80">
                   {r.gap}
-                  {r.penalty ? " *" : ""}
                 </span>
                 <span className="w-8 text-right font-bold tabular-nums text-white">{r.points || ""}</span>
               </li>
             );
           })}
         </ol>
-        {snap.results?.some((r) => r.penalty) && <p className="text-[11px] text-white/60">* โดนบวก 20 วิ เพราะทั้งเรซใช้ยางชนิดเดียว (เข้าพิทแล้วใส่ชนิดเดิมไม่นับ) · วงกลมคือยางแต่ละช่วงตามลำดับ</p>}
+        <p className="text-[11px] text-white/60">วงกลมคือยางแต่ละช่วงตามลำดับ</p>
       </Card>
       <Standings snap={snap} me={me} />
       {p?.host ? (

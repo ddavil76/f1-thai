@@ -481,24 +481,21 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
           </div>
           <div className="space-y-1">
             <p className="text-[11px] font-bold text-white/60">
-              {car.pitReq ? `เข้าพิทรอบนี้ → ${COMPOUND_INFO[car.pitReq].label}${car.used.length < 2 && car.used.includes(car.pitReq) ? " (ชนิดเดิม ยังโดนบวก 20 วิ)" : ""}` : car.pit ? "กำลังเปลี่ยนยาง…" : `สั่งเข้าพิท (เหลือ ${lapsLeft} รอบ · ใช้ยางแล้ว ${car.used.length} ชนิด)`}
+              {car.pitReq ? `เข้าพิทรอบนี้ → ${COMPOUND_INFO[car.pitReq].label}` : car.pit ? "กำลังเปลี่ยนยาง…" : `สั่งเข้าพิท (เหลือ ${lapsLeft} รอบ · เข้าแล้ว ${car.stops} ครั้ง)`}
             </p>
             <div className="grid grid-cols-4 gap-1.5">
               {COMPOUNDS.map((k) => {
                 const any = spec.sets.some((s) => s.compound === k);
-                const same = car.used.length < 2 && car.used.includes(k);
                 return (
                   <button
                     key={k}
                     type="button"
                     disabled={!any || !!car.pit}
                     aria-pressed={car.pitReq === k}
-                    title={same ? "ชนิดเดิม — ยังไม่ครบ 2 ชนิด" : undefined}
                     onClick={() => send({ t: "pit", car: car.id, compound: car.pitReq === k ? null : k })}
                     className={`flex items-center justify-center gap-1 rounded-lg border-2 py-1.5 text-[11px] font-bold disabled:opacity-40 ${car.pitReq === k ? "border-white bg-white/15" : "border-white/10"}`}
                   >
                     <TyreDot c={k} size={16} /> {freshSets(spec, k)}
-                    {same && <span className="text-[9px] text-amber-300">เดิม</span>}
                   </button>
                 );
               })}
@@ -544,7 +541,7 @@ function RaceTower({ snap, mine, onPick }: { snap: Snapshot; mine: CarSpec[]; on
                 : c.finished !== null && lead.finished !== null
                   ? lapsDown > 0
                     ? `+${lapsDown} รอบ`
-                    : `+${(c.finished + c.penalty - (lead.finished + lead.penalty)).toFixed(1)}`
+                    : `+${(c.finished - lead.finished).toFixed(1)}`
                   : lapsDown > 0 && lead.pos - c.pos >= track.lapCells
                     ? `+${lapsDown} รอบ`
                     : `+${((lead.pos - c.pos) * lapSec).toFixed(1)}`;

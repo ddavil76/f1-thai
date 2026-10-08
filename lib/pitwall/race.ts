@@ -18,8 +18,6 @@ export const PIT_LOSS = 18;
 const STOP_BASE = 2.3;
 /** แต้มตามอันดับ */
 export const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
-/** ไม่ได้ใช้ยางอย่างน้อย 2 ชนิดในเรซ = บวกเวลา */
-export const COMPOUND_PENALTY = 20;
 
 export type PitState = { start: number; t: number; drive: number; stop: number; compound: Compound; changed: boolean };
 
@@ -41,7 +39,6 @@ export type RaceCar = {
   pitReq: Compound | null;
   pit: PitState | null;
   stops: number;
-  used: Compound[];
   /** ยางแต่ละช่วงตามลำดับ (รวมยางออกตัว) */
   stints: Compound[];
   lapStart: number;
@@ -58,7 +55,6 @@ export type RaceCar = {
   delay: number;
   /** ให้ AI ช่วยคุมกลยุทธ์ (รถ AI = true เสมอ) */
   auto: boolean;
-  penalty: number;
   grid: number;
   /** ระยะถึงคันหน้า / คันหลัง (วินาที) */
   gapAhead: number | null;
@@ -130,7 +126,6 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
       pitReq: null,
       pit: null,
       stops: 0,
-      used: [c],
       stints: [c],
       lapStart: 0,
       lastLap: null,
@@ -144,7 +139,6 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
       drs: false,
       delay: 0,
       auto: !ctx.human(id),
-      penalty: 0,
       grid: slot + 1,
       gapAhead: null,
       gapBehind: null,
@@ -182,7 +176,7 @@ const onTrack = (c: RaceCar) => active(c) && c.pit === null;
 export function standings(st: RaceState, lapCells: number): RaceCar[] {
   const laps = (c: RaceCar) => Math.floor(c.pos / lapCells + 1e-6);
   const fin = st.cars.filter((c) => c.finished !== null);
-  fin.sort((a, b) => laps(b) - laps(a) || a.finished! + a.penalty - (b.finished! + b.penalty));
+  fin.sort((a, b) => laps(b) - laps(a) || a.finished! - b.finished!);
   const run = st.cars.filter((c) => c.finished === null && c.out === null).sort((a, b) => b.pos - a.pos);
   const out = st.cars.filter((c) => c.out !== null).sort((a, b) => b.pos - a.pos);
   return [...fin, ...run, ...out];
@@ -263,9 +257,6 @@ function changeTyres(ctx: RaceCtx, c: RaceCar) {
   c.age = 0;
   c.stops++;
   c.stints.push(comp);
-  if (!c.used.includes(comp)) c.used.push(comp);
-  else if (c.used.length < 2 && ctx.human(c.id))
-    ctx.say(ctx.cars[c.id].team, c.id, `${label(ctx, c.id)} ใส่ยางชนิดเดิม — ยังต้องเปลี่ยนเป็นชนิดอื่น ไม่งั้นโดนบวก ${COMPOUND_PENALTY} วิ`, "warn");
   c.pit!.changed = true;
 }
 
@@ -273,12 +264,10 @@ function changeTyres(ctx: RaceCtx, c: RaceCar) {
 export function planCompound(ctx: RaceCtx, st: RaceState, c: RaceCar): Compound {
   const lapsLeft = st.laps - lapOf(ctx.track, c.pos);
   const spec = ctx.cars[c.id];
-  const needOther = c.used.length < 2;
   const options = (["soft", "medium", "hard"] as Compound[]).filter((k) => bestSet(spec, k) >= 0);
-  const fits = options.filter((k) => tyreLife(k) >= lapsLeft * 1.05 && (!needOther || !c.used.includes(k) || c.used.length >= 2));
+  const fits = options.filter((k) => tyreLife(k) >= lapsLeft * 1.05);
   if (fits.length) return fits[0];
-  const other = options.filter((k) => !c.used.includes(k));
-  return (other.length ? other : options).slice(-1)[0] ?? "hard";
+  return options.slice(-1)[0] ?? "hard";
 }
 
 function aiThink(ctx: RaceCtx, st: RaceState, c: RaceCar) {
@@ -289,9 +278,8 @@ function aiThink(ctx: RaceCtx, st: RaceState, c: RaceCar) {
   if (!c.pitReq && !c.pit && lapsLeft >= 1) {
     const limit = ctx.ai === "hard" ? 0.68 : ctx.ai === "easy" ? 0.82 : 0.72;
     const scCheap = smart && st.neutral && c.wear > 0.38 && lapsLeft > 3;
-    const mustOther = c.used.length < 2 && lapsLeft <= 4;
     const dying = c.wear > limit && (lapsLeft > 2 || c.wear > 0.95);
-    if (scCheap || mustOther || dying) c.pitReq = planCompound(ctx, st, c);
+    if (scCheap || dying) c.pitReq = planCompound(ctx, st, c);
   }
   // โหมดขับ
   if (lapsLeft <= 2 && c.wear < 0.85) c.mode = "push";
@@ -457,12 +445,11 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
       if (st.flag && c.finished === null) {
         c.finished = st.t;
         st.finishOrder.push(c.id);
-        if (c.used.length < 2) c.penalty += COMPOUND_PENALTY;
         continue;
       }
       if (lapNo >= 1) lapIncidents(ctx, st, c);
       if (c.auto) aiThink(ctx, st, c);
-      warnHuman(ctx, st, c);
+      warnHuman(ctx, c);
     }
   }
 
@@ -474,7 +461,6 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
     if (lead && lead.finished === null) {
       lead.finished = st.t;
       st.finishOrder.push(lead.id);
-      if (lead.used.length < 2) lead.penalty += COMPOUND_PENALTY;
     }
     ctx.say(null, null, `ธงตาหมากรุก! ${lead ? `${label(ctx, lead.id)} ข้ามเส้นชัยเป็นคันแรก` : ""}`, "good");
   }
@@ -506,10 +492,9 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
   if (st.flag && st.cars.every((c) => !active(c))) st.done = true;
 }
 
-function warnHuman(ctx: RaceCtx, st: RaceState, c: RaceCar) {
+function warnHuman(ctx: RaceCtx, c: RaceCar) {
   if (!ctx.human(c.id)) return;
   const team = ctx.cars[c.id].team;
-  const lapsLeft = st.laps - lapOf(ctx.track, c.pos);
   const left = Math.max(0, Math.round((1 - c.wear) * 100));
   if (c.wear > 0.85 && c.warned < 2) {
     c.warned = 2;
@@ -518,8 +503,6 @@ function warnHuman(ctx: RaceCtx, st: RaceState, c: RaceCar) {
     c.warned = 1;
     ctx.say(team, c.id, `${label(ctx, c.id)} ยางเหลือ ${left}%`, "warn");
   }
-  if (c.used.length < 2 && lapsLeft === 4 && !c.pitReq && !c.pit)
-    ctx.say(team, c.id, `${label(ctx, c.id)} ยังใช้ยางชนิดเดียว — ไม่เปลี่ยนจะโดนบวก ${COMPOUND_PENALTY} วิ`, "warn");
 }
 
 /** ผลการแข่ง (เรียงแล้ว) พร้อมแต้ม */
@@ -531,20 +514,19 @@ export function classify(st: RaceState, lapCells: number) {
     id: c.id,
     pos: i + 1,
     laps: laps(c),
-    time: c.finished !== null ? c.finished + c.penalty : null,
+    time: c.finished,
     gap:
       c.finished !== null && winner
         ? laps(c) < laps(winner)
           ? `+${laps(winner) - laps(c)} รอบ`
           : i === 0
             ? "ชนะ"
-            : `+${(c.finished + c.penalty - (winner.finished! + winner.penalty)).toFixed(1)}`
+            : `+${(c.finished - winner.finished!).toFixed(1)}`
         : c.out ?? "",
     points: c.out === null && i < POINTS.length ? POINTS[i] : 0,
     stops: c.stops,
     stints: c.stints,
     best: c.bestLap,
-    penalty: c.penalty,
     out: c.out,
   }));
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { newQuali, sendOut, stepQuali, segments, type QualiCtx } from "@/lib/pitwall/quali";
-import { COMPOUND_PENALTY, classify, newRace, stepRace, type RaceCtx, type RaceState } from "@/lib/pitwall/race";
+import { classify, newRace, stepRace, type RaceCtx, type RaceState } from "@/lib/pitwall/race";
 import { Room } from "@/lib/pitwall/room";
 import { TEAMS } from "@/lib/pitwall/teams";
 import { buildTrack, lapOf, type TrackModel } from "@/lib/pitwall/track";
@@ -73,16 +73,7 @@ describe("Pit Wall: เรซ", () => {
     expect(lost).toBeLessThan(28);
   });
 
-  it("ใช้ยางชนิดเดียวทั้งเรซ = บวกเวลา", () => {
-    const ctx = ctxOf(8);
-    const solo = { ...ctx, cars: [ctx.cars[0]] };
-    const st = newRace(solo, [0], 3, { 0: "hard" });
-    st.cars[0].auto = false;
-    runRace(solo, st);
-    expect(st.cars[0].penalty).toBe(COMPOUND_PENALTY);
-  });
-
-  it("เข้าพิทแล้วใส่ยางชนิดเดิม = ยังโดนบวก และผลบอกยางแต่ละช่วง", () => {
+  it("เปลี่ยนเป็นยางชนิดเดิมได้ ไม่มีบวกเวลา และผลบอกยางแต่ละช่วง", () => {
     const ctx = ctxOf(8);
     const solo = { ...ctx, cars: [ctx.cars[0]] };
     const same = newRace(solo, [0], 3, { 0: "medium" });
@@ -92,8 +83,8 @@ describe("Pit Wall: เรซ", () => {
     diff.cars[0].pitReq = "hard";
     runRace(solo, same);
     runRace(solo, diff);
-    expect(same.cars[0].penalty).toBe(COMPOUND_PENALTY);
-    expect(diff.cars[0].penalty).toBe(0);
+    expect(same.cars[0].stops).toBe(1);
+    expect(classify(same, track.lapCells)[0].time).toBe(same.cars[0].finished);
     expect(classify(same, track.lapCells)[0].stints).toEqual(["medium", "medium"]);
     expect(classify(diff, track.lapCells)[0].stints).toEqual(["medium", "hard"]);
   });
