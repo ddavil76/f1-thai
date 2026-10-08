@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# เซิร์ฟเวอร์ห้องออนไลน์ Pit Wall (Cloudflare)
+/cloudflare/pitwall/node_modules
+/cloudflare/pitwall/.wrangler

@@ -623,6 +623,20 @@ html[data-intro="seen"] .launch-intro {
   animation: go-flash 0.45s ease-out;
 }
 
+/* ---- เกม Pit Wall ---- */
+/* วงรอบรถที่โฟกัสบนแผนที่ */
+@keyframes bg-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.bg-blink { animation: bg-blink 1.2s ease-in-out infinite; }
+/* กล่องข้อความ / ป้ายผลเด้งขึ้น */
+@keyframes bg-pop {
+  from { transform: translateY(16px) scale(0.96); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.bg-pop { animation: bg-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   /* intro เป็นการเคลื่อนไหวล้วน ไม่มีข้อมูล — ข้ามไปเลย */
   .launch-intro {
@@ -649,6 +663,8 @@ html[data-intro="seen"] .launch-intro {
      ping วางทับจุดทึบสีเดียวกันอยู่แล้ว หยุดนิ่งจึงยังเห็นเป็นจุดปกติ
      ส่วน spin/pulse มีข้อความกำกับอยู่ ไม่ได้สื่อความหมายด้วยการเคลื่อนไหวอย่างเดียว */
   .speed-streak > i,
+  .bg-blink,
+  .bg-pop,
   .animate-ping,
   .animate-spin,
   .animate-pulse {
