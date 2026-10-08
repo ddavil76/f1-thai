@@ -315,7 +315,7 @@ export default function TrackView({
   const scene = useMemo(() => {
     const cornerRanges = t.corners.map((z) => {
       const end = z.end >= z.start ? z.end : z.end + n;
-      return [z.start - 0.5, end + 0.5] as const;
+      return [z.start - 0.5, end + 0.5, !!z.slow] as const;
     });
     const drsRanges = t.drs.map((z) => [z.start - 0.5, (z.end >= z.start ? z.end : z.end + n) + 0.5] as const);
     const pitFrom = t.pitEntry.start - 0.5;
@@ -372,9 +372,9 @@ export default function TrackView({
           {scene.drsRanges.map(([a, b], k) => (
             <polyline key={k} points={sp.line(a, b, 0)} fill="none" stroke="#DEDEDE" strokeOpacity={0.06} strokeWidth={HALF * 2 - 0.6} />
           ))}
-          {/* โค้ง: ระบายแดงจาง */}
-          {scene.cornerRanges.map(([a, b], k) => (
-            <polyline key={k} points={sp.line(a, b, 0)} fill="none" stroke="#E10600" strokeOpacity={0.13} strokeWidth={HALF * 2 - 0.45} strokeLinejoin="round" />
+          {/* โค้ง: ระบายแดง — โค้งความเร็วต่ำเข้มกว่า */}
+          {scene.cornerRanges.map(([a, b, slow], k) => (
+            <polyline key={k} points={sp.line(a, b, 0)} fill="none" stroke="#E10600" strokeOpacity={slow ? 0.26 : 0.1} strokeWidth={HALF * 2 - 0.45} strokeLinejoin="round" />
           ))}
           {/* โซนเข้าพิท / V-BOX */}
           <polygon points={sp.strip(t.pitEntry.start - 0.5, t.pitEntry.end + 0.5, -HALF + 0.25, HALF - 0.25)} fill="none" stroke="#DEDEDE" strokeOpacity={0.45} strokeWidth={0.18} strokeDasharray="0.6 0.5" />
@@ -427,6 +427,19 @@ export default function TrackView({
             );
           })}
           <Label p={fr(t.vbox, HALF + 2)}>V-BOX</Label>
+          {/* กติกาของเรา: ป้ายบอกว่าช่องโค้งกินแรงกี่ก้าว */}
+          {state.rules === "ours" &&
+            scene.cornerRanges.map(([a, b, slow], k) => {
+              const p = fr((a + b) / 2, -HALF - 2.4);
+              return (
+                <g key={k}>
+                  <circle cx={p.x} cy={p.y} r={1.25} fill={slow ? "#E10600" : "#08080A"} stroke="#fff" strokeWidth={0.2} />
+                  <text x={p.x} y={p.y} fontSize={1.25} fontWeight={900} fill="#fff" textAnchor="middle" dominantBaseline="central">
+                    ×{slow ? 3 : 2}
+                  </text>
+                </g>
+              );
+            })}
           <Label p={fr(t.pitEntry.start + BOX_AT, PIT - 5.6)}>PIT</Label>
 
           {/* รถ */}
@@ -520,13 +533,18 @@ export default function TrackView({
       <div className="absolute left-2 top-2 flex flex-col items-start gap-0.5 rounded-lg bg-[#08080A]/60 px-1.5 py-1 text-[10px] text-white/75">
         {(
           [
-            ["corner", "โค้ง", "bg-(--color-f1)/60"],
+            ...(state.rules === "ours"
+              ? ([
+                  ["corner", "โค้งเร็ว ×2", "bg-(--color-f1)/30"],
+                  ["corner", "โค้งช้า ×3", "bg-(--color-f1)/80"],
+                ] as const)
+              : ([["corner", "โค้ง", "bg-(--color-f1)/60"]] as const)),
             ["drs", "DRS", "bg-white/30"],
             ["vbox", "V-BOX", "border border-white/60"],
             ...(state.flags.length ? ([["flag", "ธงเหลือง", "bg-yellow-400/70"]] as const) : []),
           ] as const
         ).map(([k, label, sw]) => (
-          <button key={k} type="button" onClick={() => onHelp?.(k)} className="flex items-center gap-1 underline decoration-white/25 decoration-dotted underline-offset-2">
+          <button key={label} type="button" onClick={() => onHelp?.(k)} className="flex items-center gap-1 underline decoration-white/25 decoration-dotted underline-offset-2">
             <i className={`h-2 w-2 rounded-sm ${sw}`} />
             {label}
           </button>

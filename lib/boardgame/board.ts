@@ -50,7 +50,12 @@ export function resampleLoop(pts: Pt[], count: number): Pt[] {
 }
 
 /** โค้งบนกระดาน: ช่วงช่องในรอบ (นับรวมปลาย) อาจคร่อมเส้นชัยได้ (start > end) */
-export type Zone = { start: number; end: number };
+export type Zone = {
+  start: number;
+  end: number;
+  /** โค้งความเร็วต่ำ (เลี้ยวแรง ช่องน้อย) — ไม่มี = โค้งความเร็วสูง (ช่องเยอะ) */
+  slow?: boolean;
+};
 
 export type Board = {
   circuitId: string;
@@ -75,8 +80,10 @@ export const CELLS_PER_LAP = 36;
 const CORNER_DEG = 30;
 /** เก็บโค้งที่แรงที่สุดไม่เกินเท่านี้ต่อรอบ — มากกว่านี้รถจะติดโค้งแทบทุกตา */
 const MAX_CORNERS = 6;
-/** โค้งหนึ่งยาวไม่เกินเท่านี้ (ช่อง) */
-const MAX_ZONE = 3;
+/** โค้งความเร็วต่ำ = จุดเลี้ยวแรงกว่านี้ (องศา) · ยาวไม่เกิน SLOW_ZONE ช่อง ส่วนโค้งความเร็วสูงยาวได้ถึง FAST_ZONE */
+const SLOW_DEG = 90;
+const SLOW_ZONE = 2;
+const FAST_ZONE = 4;
 
 /** มุมเลี้ยว (องศา) ที่แต่ละช่องของวงปิด */
 export function turnAngles(cells: Pt[]): number[] {
@@ -122,23 +129,23 @@ export function findCorners(cells: Pt[]): Zone[] {
   return zones
     .sort((a, b) => b.peak - a.peak)
     .slice(0, MAX_CORNERS)
-    .map((z) => trimZone(z, ang, n))
+    .map((z) => (z.peak >= SLOW_DEG ? { ...trimZone(z, ang, n, SLOW_ZONE), slow: true } : trimZone(z, ang, n, FAST_ZONE)))
     .sort((a, b) => a.start - b.start);
 }
 
-/** โค้งยาวเกิน MAX_ZONE ช่อง: เก็บไว้แค่ช่วงรอบจุดที่เลี้ยวแรงสุด */
-function trimZone(z: Zone, ang: number[], n: number): Zone {
+/** โค้งยาวเกิน max ช่อง: เก็บไว้แค่ช่วงรอบจุดที่เลี้ยวแรงสุด */
+function trimZone(z: Zone, ang: number[], n: number, max: number): Zone {
   const len = z.start <= z.end ? z.end - z.start + 1 : n - z.start + z.end + 1;
-  if (len <= MAX_ZONE) return { start: z.start, end: z.end };
+  if (len <= max) return { start: z.start, end: z.end };
   let peak = z.start;
   for (let k = 0; k < len; k++) {
     const i = (z.start + k) % n;
     if (ang[i] > ang[peak]) peak = i;
   }
   // ให้จุดแรงสุดอยู่กลางช่วง แต่ไม่หลุดออกนอกโค้งเดิม
-  const offset = Math.min(Math.max((peak - z.start + n) % n - 1, 0), len - MAX_ZONE);
+  const offset = Math.min(Math.max((peak - z.start + n) % n - 1, 0), len - max);
   const start = (z.start + offset) % n;
-  return { start, end: (start + MAX_ZONE - 1) % n };
+  return { start, end: (start + max - 1) % n };
 }
 
 /** ช่องที่เลี้ยวน้อยกว่านี้ (องศา) นับเป็นทางตรง */

@@ -17,7 +17,7 @@ import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
   ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
   DAMP, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
-  NEUTRAL_ROUNDS, PASS_NEED, PASS_NEED_DRS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
+  FAST_CORNER_COST, NEUTRAL_ROUNDS, SLOW_CORNER_COST, PASS_NEED, PASS_NEED_DRS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
   LAUNCH, activeDriver, aiLaunch, aiStep, applyLaunch, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
   moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
   type CarSpec, type Choice, type LaunchKind, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
@@ -286,7 +286,7 @@ function logText(s: GameState, l: TurnLog) {
   if (l.passed.length) bits.push(`แซง ${l.passed.map((id) => `#${s.drivers[id].num}`).join(" ")}`);
   if (l.attacked !== null) bits.push(`ATTACK ดัน #${s.drivers[l.attacked].num} ออก`);
   if (l.block) bits.push("BLOCK");
-  if (l.corner) bits.push("หยุดในโค้ง");
+  if (l.corner) bits.push(s.rules === "ours" ? "ผ่านโค้ง" : "หยุดในโค้ง");
   if (l.blocked) bits.push("ติดรถ");
   if (l.wear) bits.push(`ยางสึก ${l.wear}`);
   if (l.nowWorn) bits.push("ยางพัง!");
@@ -667,7 +667,20 @@ export default function BoardGame({ board }: { board: Board }) {
 
   // ทำไมระยะจริงน้อยกว่าที่ไพ่บอก
   const moved = landing && d ? landing.progress - d.progress : 0;
-  const cutWhy = preview && moved < goal ? (preview.corner ? "ติดโค้ง ต้องหยุดในโค้ง" : preview.blocked ? "ติดรถข้างหน้า" : "") : "";
+  const cutWhy =
+    preview && moved < goal
+      ? ours
+        ? preview.blocked
+          ? "ติดรถข้างหน้า"
+          : preview.corner
+            ? `ช่องโค้งกินแรง (เร็ว ×${FAST_CORNER_COST} ช้า ×${SLOW_CORNER_COST})`
+            : ""
+        : preview.corner
+          ? "ติดโค้ง ต้องหยุดในโค้ง"
+          : preview.blocked
+            ? "ติดรถข้างหน้า"
+            : ""
+      : "";
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex flex-col bg-[#08080A] text-white md:flex-row">
@@ -979,7 +992,7 @@ export default function BoardGame({ board }: { board: Board }) {
                     ) : (
                       cutWhy && (
                         <p className="text-xs font-semibold text-yellow-400">
-                          เหลือ {moved} จาก {goal} — {cutWhy}
+                          {ours ? `แรง ${goal} → ${moved} ช่อง` : `เหลือ ${moved} จาก ${goal}`} — {cutWhy}
                         </p>
                       )
                     )}
@@ -1170,8 +1183,8 @@ function RulesList({ rules }: { rules: Rules }) {
         <RuleBlock title="เห็นระยะแล้วเสริมได้">
           <b>ERS</b> +{ERS_BONUS} ช่อง (ทางตรง DRS +{ERS_DRS_BONUS}) มี {ERS_MAX} ขั้น — เดิน BASE โดยไม่ใช้ ERS ชาร์จคืน +{ERS_BASE_CHARGE} ขั้น
         </RuleBlock>
-        <RuleBlock title="แซงและโค้ง">
-          เดินถึงช่องหลังคันหน้าแล้วต้อง<b>เหลือระยะมากกว่า {PASS_NEED} ช่อง</b> (ทางตรง DRS มากกว่า {PASS_NEED_DRS}) ถึงแซงได้ แล้ววิ่งต่อจนครบ ไม่พอก็จอดหลังมัน · เข้าโค้ง (แดง) ต้องหยุดในโค้งก่อน
+        <RuleBlock title="โค้งและการแซง">
+          ระยะบนไพ่คือ<b>แรง</b> ทางปกติช่องละ 1 · <b>โค้งความเร็วสูง ช่องละ {FAST_CORNER_COST}</b> · <b>โค้งความเร็วต่ำ ช่องละ {SLOW_CORNER_COST}</b> (ไม่ต้องหยุดในโค้ง) · แซง: ถึงช่องหลังคันหน้าแล้วต้องเหลือแรงมากกว่า {PASS_NEED} (ทางตรง DRS มากกว่า {PASS_NEED_DRS})
         </RuleBlock>
         <RuleBlock title="ออกตัว">
           ไฟแดงครบ 5 ดวงแล้วดับ แตะจอให้เร็ว: ต่ำกว่า 0.2 วิ แซง 2 อันดับ · 0.2–0.3 วิ แซง 1 · ช้ากว่า 0.45 วิ หล่น 1 · แตะก่อนไฟดับ หล่น 3

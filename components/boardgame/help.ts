@@ -1,5 +1,5 @@
 import {
-  BACK_CELLS, BASE_MOVE, PASS_NEED, PASS_NEED_DRS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
+  BACK_CELLS, BASE_MOVE, FAST_CORNER_COST, PASS_NEED, PASS_NEED_DRS, SLOW_CORNER_COST, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
   DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, WEAR_MAX, WORN_MOVE, type Rules,
 } from "@/lib/boardgame/engine";
 
@@ -57,7 +57,12 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
           : "แต่ละช่องมี 2 เลน เลนในคือเส้นแข่ง อยู่นอกเส้นเปิดไพ่ MOVE ไม่ได้ ได้แค่ BASE · ช่องเต็มสองเลนผ่านไม่ได้",
       };
     case "corner":
-      return { title: "โค้ง", text: "ช่องสีแดงขอบแดงขาว — วิ่งเข้าโค้งแล้วต้องหยุดในโค้งก่อน ตาถัดไปค่อยออก เข้าโค้งก่อนคู่แข่งคือหัวใจของเกม" };
+      return ours
+        ? {
+            title: "โค้ง",
+            text: `ไม่ต้องหยุดในโค้ง แต่ช่องโค้งกินแรงมากกว่า: ทางปกติช่องละ 1 · โค้งความเร็วสูง (แดงจาง ป้าย ×${FAST_CORNER_COST}) ช่องละ ${FAST_CORNER_COST} · โค้งความเร็วต่ำ (แดงเข้ม ป้าย ×${SLOW_CORNER_COST}) ช่องละ ${SLOW_CORNER_COST} — ระยะบนไพ่คือแรงที่ใช้ได้`,
+          }
+        : { title: "โค้ง", text: "ช่องสีแดงขอบแดงขาว — วิ่งเข้าโค้งแล้วต้องหยุดในโค้งก่อน ตาถัดไปค่อยออก เข้าโค้งก่อนคู่แข่งคือหัวใจของเกม" };
     case "pitwall":
       return { title: "ไพ่ PITWALL", text: "ไพ่กลยุทธ์ของทีม ใช้กับคันไหนก็ได้ตอนถึงตา ใช้แล้วทิ้ง ได้เพิ่มจากไพ่ MOVE ที่มีป้าย PIT — แตะไพ่เพื่อดูว่าทำอะไร" };
     case "vbox":

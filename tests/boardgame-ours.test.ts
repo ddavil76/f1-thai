@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_DECK, ACTION_OURS, BACK_CELLS, ERS_BASE_CHARGE, ERS_MAX, PASS_NEED, PASS_NEED_DRS, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
+  ACTION_DECK, ACTION_OURS, BACK_CELLS, ERS_BASE_CHARGE, ERS_MAX, PASS_NEED, PASS_NEED_DRS, FAST_CORNER_COST, SLOW_CORNER_COST, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
   PITWALL_DECK, PITWALL_OURS, RAIN_ROUNDS, WEAR_MAX,
-  activeDriver, applyLaunch, canPitwall, choose, launchKind, commit, moveFor, newGame, options, playPitwall, travel,
+  activeDriver, applyLaunch, canPitwall, choose, launchKind, stepCost, commit, moveFor, newGame, options, playPitwall, travel,
   type ActionKind, type CarSpec, type GameState, type IncidentFace, type Lane, type Rng, type Track,
 } from "@/lib/boardgame/engine";
 
@@ -79,6 +79,19 @@ describe("กติกาของเรา", () => {
     const s = at(game(2, track({ drs: [{ start: 8, end: 20 }] })), [[9, 0], [30, 0]]);
     const out = commit(choose(s, { kind: "base" }, never), { ers: true }, never);
     expect(out.drivers[0].progress).toBe(9 + BASE_MOVE + ERS_DRS_BONUS);
+  });
+
+  it("ไม่ต้องหยุดในโค้ง แต่ช่องโค้งกินแรง: ทางปกติ 1 · โค้งความเร็วสูง 2 · โค้งความเร็วต่ำ 3", () => {
+    const t = track({ corners: [{ start: 3, end: 4 }, { start: 8, end: 8, slow: true }] });
+    const s = at(game(2, t), [[0, 0], [30, 0]]);
+    expect([1, 3, 8].map((p) => stepCost(t, p))).toEqual([1, FAST_CORNER_COST, SLOW_CORNER_COST]);
+    // 1+1 (ช่อง 1–2) + 2+2 (โค้งเร็ว 3–4) = 6 → ถึงช่อง 4 แรงหมดพอดี ไม่ต้องหยุดในโค้ง
+    expect(travel(s, s.drivers[0], 6)).toMatchObject({ progress: 4, corner: true });
+    // แรง 9: ถึงช่อง 4 ใช้ 6 แล้วช่อง 5–7 อีก 3 = 9 → ช่อง 7
+    expect(travel(s, s.drivers[0], 9)).toMatchObject({ progress: 7 });
+    // แรง 11: ช่อง 8 เป็นโค้งช้าใช้ 3 → ต้องมี 12 ถึงเข้าได้ จึงหยุดช่อง 7
+    expect(travel(s, s.drivers[0], 11)).toMatchObject({ progress: 7 });
+    expect(travel(s, s.drivers[0], 12)).toMatchObject({ progress: 8 });
   });
 
   it("แซงด้วยแรงเหลือ: ถึงช่องหลังคันหน้าต้องเหลือมากกว่า 2 ถึงแซงได้ แล้ววิ่งต่อจนครบ", () => {

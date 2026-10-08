@@ -55,14 +55,14 @@ describe("findCorners", () => {
     }
   });
 
-  it("สี่เหลี่ยม = 4 มุมตรงตำแหน่ง", () => {
+  it("สี่เหลี่ยม = 4 มุมตรงตำแหน่ง (มุม 90° นับเป็นโค้งความเร็วต่ำ)", () => {
     // เริ่มกลางด้านล่าง ระยะช่อง 2.5 → มุมตรงช่อง 2, 6, 10, 14 ของ 16 ช่อง
     const sq = resampleLoop(parsePolyline("M5,0 L10,0 L10,10 L0,10 L0,0 L5,0"), 16);
     expect(findCorners(sq)).toEqual([
-      { start: 2, end: 2 },
-      { start: 6, end: 6 },
-      { start: 10, end: 10 },
-      { start: 14, end: 14 },
+      { start: 2, end: 2, slow: true },
+      { start: 6, end: 6, slow: true },
+      { start: 10, end: 10, slow: true },
+      { start: 14, end: 14, slow: true },
     ]);
   });
 });

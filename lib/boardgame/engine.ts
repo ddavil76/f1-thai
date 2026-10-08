@@ -36,6 +36,9 @@ export const ERS_BASE_CHARGE = 0.5;
 /** กติกาของเรา: ถึงช่องหลังคันหน้าแล้วต้องเหลือระยะมากกว่าเท่านี้ถึงแซงได้ (ในโซน DRS ง่ายขึ้น) */
 export const PASS_NEED = 2;
 export const PASS_NEED_DRS = 1;
+/** กติกาของเรา: ช่องโค้งใช้แรงกี่ก้าว (ทางปกติ 1) */
+export const FAST_CORNER_COST = 2;
+export const SLOW_CORNER_COST = 3;
 /** รางยางสึกมีกี่ขั้น — สุดรางแล้วเจอไพ่สึกอีก = ยางพัง */
 export const WEAR_MAX = 6;
 /** เหรียญ ATTACK / BLOCK / SLIPSTREAM ใช้ได้กี่ครั้งต่อคัน */
@@ -561,6 +564,7 @@ export type TravelResult = {
 };
 
 export function travel(s: GameState, d: Driver, want: number, lanePref: Lane = 0): TravelResult {
+  if (s.rules === "ours") return travelOurs(s, d, want, lanePref);
   const t = s.track;
   const start = d.progress;
   let target = start + Math.max(0, want);
@@ -587,8 +591,6 @@ export function travel(s: GameState, d: Driver, want: number, lanePref: Lane = 0
     corner = true;
   }
 
-  if (s.rules === "ours") return travelOurs(s, d, target, lanePref, corner, blocked);
-
   const occ = (p: number, l: Lane) => occupied(s.drivers, d.id, p, l);
   let lanes = new Set<Lane>([d.lane]);
   let reach = start;
@@ -614,19 +616,51 @@ export function travel(s: GameState, d: Driver, want: number, lanePref: Lane = 0
   return { progress: reach, lane, corner, blocked, passed: [], stuck: null };
 }
 
+/** กติกาของเรา: เข้าช่องนี้ใช้แรงกี่ก้าว — ทางปกติ 1 · โค้งความเร็วสูง 2 · โค้งความเร็วต่ำ 3 */
+export function stepCost(t: Track, p: number): number {
+  const z = zoneAt(t, t.corners, p);
+  return z < 0 ? 1 : t.corners[z].slow ? SLOW_CORNER_COST : FAST_CORNER_COST;
+}
+
 /**
- * กติกาของเรา — แซงด้วยแรงเหลือ: เดินถึงช่องหลังคันหน้าแล้วต้องเหลือระยะมากกว่า PASS_NEED
- * (ในโซน DRS มากกว่า PASS_NEED_DRS) ถึงแซงผ่านได้ ใช้ระยะที่เหลือวิ่งต่อจนครบ
- * แซงหลายคันเช็กทีละคัน · รถจอดคู่ 2 เลนนับเป็นคันเดียว · ช่องปลายทางเต็มถอยมาช่องว่างที่ใกล้สุด
+ * กติกาของเรา — ไม่ต้องหยุดในโค้ง แต่ช่องโค้งกินแรงมากกว่า (stepCost) ระยะบนไพ่คือ "แรง" ที่ใช้เดิน
+ * แซงด้วยแรงเหลือ: เดินถึงช่องหลังคันหน้าแล้วต้องเหลือแรงมากกว่า PASS_NEED (ในโซน DRS มากกว่า PASS_NEED_DRS)
+ * ถึงแซงผ่านได้ · แซงหลายคันเช็กทีละคัน · รถจอดคู่ 2 เลนนับเป็นคันเดียว · ช่องปลายทางเต็มถอยมาช่องว่างที่ใกล้สุด
  */
-function travelOurs(s: GameState, d: Driver, target: number, lanePref: Lane, corner: boolean, blocked: boolean): TravelResult {
+function travelOurs(s: GameState, d: Driver, want: number, lanePref: Lane): TravelResult {
+  const t = s.track;
   const start = d.progress;
+  // แรงที่ใช้สะสมถึงแต่ละช่อง แล้วไปได้ไกลสุดเท่าที่แรงพอ
+  const spent = new Map<number, number>([[start, 0]]);
+  let target = start;
+  let corner = false;
+  let blocked = false;
+  for (let p = start + 1, used = 0; ; p++) {
+    used += stepCost(t, p);
+    if (used > want) break;
+    spent.set(p, used);
+    target = p;
+    if (zoneAt(t, t.corners, p) >= 0) corner = true;
+  }
+  // ตั้งใจเข้าพิท: หยุดในโซนเข้าพิท
+  if (d.boxing) {
+    const capped = capAtZone(t, [t.pitEntry], start, target);
+    if (capped < target) target = capped;
+  }
+  // เซฟตี้คาร์: ห้ามแซง
+  if (s.neutral?.kind === "sc") {
+    const ahead = s.drivers.filter((o) => o.id !== d.id && solid(o) && o.progress > start).map((o) => o.progress);
+    if (ahead.length && target > Math.min(...ahead) - 1) {
+      target = Math.max(start, Math.min(...ahead) - 1);
+      blocked = true;
+    }
+  }
   const others = s.drivers.filter((o) => o.id !== d.id && solid(o));
   const cells = [...new Set(others.filter((o) => o.progress > start && o.progress <= target).map((o) => o.progress))].sort((a, b) => a - b);
   let limit = target;
   let stuck: TravelResult["stuck"] = null;
   for (const q of cells) {
-    const left = target - (q - 1);
+    const left = want - (spent.get(q - 1) ?? 0);
     const need = zoneAt(s.track, s.track.drs, q - 1) >= 0 ? PASS_NEED_DRS : PASS_NEED;
     if (left > need) continue;
     limit = q - 1;
