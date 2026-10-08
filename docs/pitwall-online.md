@@ -32,6 +32,9 @@
 
 หลังจากนี้ทุกครั้งที่มีการ push ขึ้น branch ที่ตั้งไว้ Cloudflare จะ deploy ให้เอง
 
+**สั่ง build ใหม่เอง:** เข้า Worker `pitwall-room` → แท็บ **Deployments** → ที่รายการ build ล่าสุดกด **View build** (หรือ "…") → **Retry build**
+ถ้าไม่เจอปุ่ม ให้ push อะไรก็ได้ขึ้น branch นั้น ระบบจะ build ใหม่ให้เอง
+
 ## ขั้นที่ 3: บอก Vercel ว่าเซิร์ฟเวอร์อยู่ไหน
 1. เข้า Vercel → โปรเจกต์ **f1-thai** → **Settings** → **Environment Variables**
 2. เพิ่มตัวแปร
