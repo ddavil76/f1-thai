@@ -91,9 +91,10 @@ export const DAMP_ROUNDS = 2;
 /** เซฟตี้คาร์ / VSC อยู่กี่เทิร์น — เทิร์นสุดท้ายขึ้นสถานะ ENDING */
 export const NEUTRAL_ROUNDS = 2;
 
-export const COMPOUNDS: Record<Compound, { label: string; wear: number }> = {
-  yellow: { label: "เหลือง", wear: 1 },
-  red: { label: "แดง", wear: 2 },
+/** yellow = ยาง Medium (M) ทนกว่า · red = ยาง Soft (S) เร็วกว่าแต่สึกไว */
+export const COMPOUNDS: Record<Compound, { label: string; short: string; wear: number }> = {
+  yellow: { label: "Medium", short: "M", wear: 1 },
+  red: { label: "Soft", short: "S", wear: 2 },
 };
 
 export const moveValue = (c: MoveCard, comp: Compound) => (comp === "red" ? c.r : c.y);
@@ -364,7 +365,7 @@ export type CarSpec = {
   wear?: number;
 };
 
-/** ยางทั้งหมดต่อคัน: เหลือง 2 แดง 2 — ใส่ออกตัว 1 ชุด ที่เหลือรอในพิท */
+/** ยางทั้งหมดต่อคัน: Medium 2 Soft 2 — ใส่ออกตัว 1 ชุด ที่เหลือรอในพิท */
 const SETS: Compound[] = ["yellow", "yellow", "red", "red"];
 
 /** stepAI = ไม่ให้รถ AI เดินรวดเดียว — หน้าจอเรียก aiStep ทีละคันเพื่อทำแอนิเมชัน */

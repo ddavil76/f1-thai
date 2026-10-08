@@ -8,10 +8,13 @@ import Qualifying from "@/components/boardgame/Qualifying";
 import TrackView from "@/components/boardgame/TrackView";
 import LaunchScreen from "@/components/boardgame/Launch";
 import {
-  ActionCard3D, Coin, DieFace, HandCard, Meter, MoveCard3D, PitwallChip, SimpleCard,
+  ActionCard3D, Coin, DieFace, HandCard, Meter, MoveBadges, MoveCard3D, PitwallChip, SimpleCard,
 } from "@/components/boardgame/Cards";
 import { COMPOUND_COLOR, NAMES_NOTE, TEAMS, WET_COLOR, look, tyreOf } from "@/components/boardgame/look";
 import { BACK_TEXT, helpText, type HelpKey } from "@/components/boardgame/help";
+import {
+  IconBase, IconDrs, IconMove, IconPitLane, IconPush, IconPace, IconRejoin, IconSlip, IconWorn, PitwallIcon, TyreBadge,
+} from "@/components/boardgame/icons";
 import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
@@ -192,8 +195,10 @@ function SetupForm({ onStart }: { onStart: (s: Setup) => void }) {
                         up({ compounds: s.compounds.map((row, r) => (r === ti ? row.map((v, c) => (c === di ? k : v)) : row)) })
                       }
                     >
-                      <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full" style={{ background: COMPOUND_COLOR[k] }} aria-hidden />
-                      {COMPOUNDS[k].label}
+                      <span className="flex items-center gap-1.5">
+                        <TyreBadge compound={k} className="h-5 w-5" />
+                        <b>{COMPOUNDS[k].label}</b>
+                      </span>
                       <span className="block text-[11px] text-white/55">{k === "red" ? "เร็ว สึกเร็ว" : "ช้ากว่า ทน"}</span>
                     </Toggle>
                   ))}
@@ -956,7 +961,7 @@ export default function BoardGame({ board }: { board: Board }) {
             <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 rounded-xl bg-[#1a1a20] px-2.5 py-2">
               <div className="min-w-0">
                 <Term k="tyre" ask={ask} className="text-[10px] text-white/60">
-                  ยาง{COMPOUNDS[d.compound].label} {d.worn ? "พัง!" : `${WEAR_MAX - d.wear}/${WEAR_MAX}`}
+                  <TyreBadge compound={d.compound} wet={d.wet} className="h-3.5 w-3.5" /> {COMPOUNDS[d.compound].label} {d.worn ? "พัง!" : `${WEAR_MAX - d.wear}/${WEAR_MAX}`}
                 </Term>
                 <Meter value={d.worn ? 0 : WEAR_MAX - d.wear} max={WEAR_MAX} color={d.wet ? WET_COLOR : COMPOUND_COLOR[d.compound]} label="ยางเหลือ" />
               </div>
@@ -1028,31 +1033,31 @@ export default function BoardGame({ board }: { board: Board }) {
                 <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 pt-1">
                   {o.inBox ? (
                     d.pit?.served ? (
-                      <HandCard i={0} tone="dark" kicker="PIT" big="→" foot="รับโทษครบ ออกจากพิท" onClick={() => pick({ kind: "box" })} />
+                      <HandCard i={0} tone="dark" kicker="PIT" icon={<IconPitLane />} big="" foot="รับโทษครบ ออกจากพิท" onClick={() => pick({ kind: "box" })} />
                     ) : (
                       <>
                         {[...new Set(d.sets)].map((k, i) => (
-                          <HandCard key={k} i={i} tone={k === "red" ? "red" : "yellow"} kicker="PIT" big={<span className="text-xl">{COMPOUNDS[k].label}</span>} foot={rain ? "ยางใหม่ (ใส่แบบฝน)" : "ใส่ยางใหม่ชุดนี้"} onClick={() => pick({ kind: "box", set: k })} />
+                          <HandCard key={k} i={i} tone="dark" kicker="PIT" icon={<TyreBadge compound={k} className="h-10 w-10" />} big="" foot={`ใส่ยาง ${COMPOUNDS[k].label} ใหม่`} onClick={() => pick({ kind: "box", set: k })} />
                         ))}
                         {!d.worn && (
-                          <HandCard i={3} tone="dark" kicker="PIT" big={<span className="text-xl">เดิม</span>} foot={d.penalty ? "ยางเดิม · จอดรับโทษ" : "ยางเดิม ซ่อมรถ"} onClick={() => pick({ kind: "box", set: "keep" })} />
+                          <HandCard i={3} tone="dark" kicker="PIT" icon={<TyreBadge compound={d.compound} className="h-10 w-10" />} big="" foot={d.penalty ? "ยางเดิม · จอดรับโทษ" : "ยางเดิม ซ่อมรถ"} onClick={() => pick({ kind: "box", set: "keep" })} />
                         )}
                       </>
                     )
                   ) : o.pitLane ? (
-                    <HandCard i={0} tone="yellow" kicker="PIT LANE" big={PIT_SPEED} foot="วิ่งในเลนพิท แซงไม่ได้" onClick={() => pick({ kind: "pitLane" })} />
+                    <HandCard i={0} tone="yellow" kicker="PIT LANE" icon={<IconPitLane />} big={PIT_SPEED} foot="วิ่งในเลนพิท แซงไม่ได้" onClick={() => pick({ kind: "pitLane" })} />
                   ) : o.rejoin ? (
-                    <HandCard i={0} tone="yellow" kicker="กลับสนาม" big="↩" foot="ช่องข้างว่างก็กลับได้ (จบตา)" onClick={() => pick({ kind: "rejoin" })} />
+                    <HandCard i={0} tone="yellow" kicker="กลับสนาม" icon={<IconRejoin />} big="" foot="ช่องข้างว่างก็กลับได้ (จบตา)" onClick={() => pick({ kind: "rejoin" })} />
                   ) : (
                     <>
                       {o.worn ? (
-                        <HandCard i={0} tone="yellow" kicker={d.damage ? "เสียหาย" : "ยางพัง"} big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
+                        <HandCard i={0} tone="yellow" kicker={d.damage ? "เสียหาย" : "ยางพัง"} icon={<IconWorn />} big={WORN_MOVE} foot="เดินเอง ใช้ไพ่/เหรียญไม่ได้" onClick={() => pick({ kind: "worn" })} />
                       ) : (
-                        <HandCard i={0} tone="dark" kicker="BASE" big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : ours && d.ers < ERS_MAX ? `${BASE_MOVE} ช่องชัวร์ · ERS +${ERS_BASE_CHARGE}` : `${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง`} onClick={() => pick({ kind: "base" })} />
+                        <HandCard i={0} tone="dark" kicker="BASE" icon={<IconBase />} big={BASE_MOVE} foot={d.mode && free ? "ทิ้งโหมด · ไม่สึกยาง" : ours && d.ers < ERS_MAX ? `${BASE_MOVE} ช่องชัวร์ · ERS +${ERS_BASE_CHARGE}` : `${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง`} onClick={() => pick({ kind: "base" })} />
                       )}
-                      {o.push && <HandCard i={1} tone="orange" kicker="PUSH" big={<span className="text-2xl">»»</span>} foot="วิ่งสุด ยางสึก" onClick={() => pick({ kind: "push" })} />}
+                      {o.push && <HandCard i={1} tone="orange" kicker="PUSH" icon={<IconPush />} big="" foot="วิ่งสุด ยางสึก" onClick={() => pick({ kind: "push" })} />}
                       {o.pace && d.mode?.kind === "pace" && (
-                        <HandCard i={1} tone="orange" kicker="PACE" big={d.mode.value} foot="คงที่ ไม่สึกยาง" onClick={() => pick({ kind: "pace" })} />
+                        <HandCard i={1} tone="orange" kicker="PACE" icon={<IconPace />} big={d.mode.value} foot="คงที่ ไม่สึกยาง" onClick={() => pick({ kind: "pace" })} />
                       )}
                       {!o.worn && ours &&
                         handCards.map((h, k) => (
@@ -1060,7 +1065,9 @@ export default function BoardGame({ board }: { board: Board }) {
                             key={h.id}
                             i={2 + k}
                             tone="red"
-                            kicker={`MOVE${h.tags ? ` · ${h.tags}` : ""}`}
+                            kicker="MOVE"
+                            icon={<IconMove />}
+                            badges={<MoveBadges c={MOVE_DECK[h.id]} />}
                             big={<span className="tabular-nums">{h.value}</span>}
                             foot={!o.card ? "ติดข้อจำกัด" : h.passed ? `ไปช่อง +${h.cells} · แซง ${h.passed}` : `ไปได้ ${h.cells} ช่อง`}
                             disabled={!o.card}
@@ -1072,7 +1079,8 @@ export default function BoardGame({ board }: { board: Board }) {
                           i={2}
                           tone="red"
                           kicker="MOVE"
-                          big={<span className="text-2xl tabular-nums">{`${moveRange.min}–${moveRange.max}`}</span>}
+                          icon={<IconMove />}
+                          big={<span className="text-lg tabular-nums">{`${moveRange.min}–${moveRange.max}`}</span>}
                           foot={
                             o.card
                               ? `สุ่ม · ${moveRange.risk}${moveRange.off ? ` · นอกเส้น −${moveRange.off}` : ""}`
@@ -1085,9 +1093,9 @@ export default function BoardGame({ board }: { board: Board }) {
                           onClick={() => pick({ kind: "card" })}
                         />
                       )}
-                      {o.drs && <HandCard i={3} tone="light" kicker="DRS" big={<span className="text-xl">แซง</span>} foot={`ขึ้นหน้า #${drsTarget(state, d)?.num}`} onClick={() => pick({ kind: "drs" })} />}
-                      {o.slip && <HandCard i={4} tone="dark" kicker="SLIP" big="→" foot={`ตามติด #${slipTargetOf(state, d)?.num} ฟรี`} onClick={() => pick({ kind: "slip" })} />}
-                      {o.pitIn && <HandCard i={5} tone="yellow" kicker="PIT" big={PIT_SPEED} foot="เข้าเลนพิทเปลี่ยนยาง" onClick={() => pick({ kind: "pitIn" })} />}
+                      {o.drs && <HandCard i={3} tone="light" kicker="DRS" icon={<IconDrs />} big="" foot={`ขึ้นหน้า #${drsTarget(state, d)?.num}`} onClick={() => pick({ kind: "drs" })} />}
+                      {o.slip && <HandCard i={4} tone="dark" kicker="SLIP" icon={<IconSlip />} big="" foot={`ตามติด #${slipTargetOf(state, d)?.num} ฟรี`} onClick={() => pick({ kind: "slip" })} />}
+                      {o.pitIn && <HandCard i={5} tone="yellow" kicker="PIT" icon={<IconPitLane />} big={PIT_SPEED} foot="เข้าเลนพิทเปลี่ยนยาง" onClick={() => pick({ kind: "pitIn" })} />}
                     </>
                   )}
                 </div>
@@ -1106,7 +1114,12 @@ export default function BoardGame({ board }: { board: Board }) {
                   {p.card !== null ? (
                     <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} playing={playing} />
                   ) : (
-                    <SimpleCard kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "BASE"} value={p.value} playing={playing} />
+                    <SimpleCard
+                      kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "BASE"}
+                      icon={p.kind === "drs" ? <IconDrs /> : p.kind === "push" ? <IconPush /> : p.kind === "pace" ? <IconPace /> : <IconBase />}
+                      value={p.value}
+                      playing={playing}
+                    />
                   )}
                   <div className="min-w-0 flex-1 space-y-1">
                     <p className="poster text-xs text-white/70">เดินได้</p>
@@ -1258,6 +1271,9 @@ function PitwallDetail({ state, d, cardId, onPlay }: { state: GameState; d: Driv
   return (
     <div className="mt-1 space-y-2 rounded-xl border border-[#fb923c]/40 bg-[#1f160f] p-2.5">
       <p className="text-xs text-white">
+        <span className="float-left mr-2 text-[#fdba74]">
+          <PitwallIcon kind={c.kind} />
+        </span>
         <b className="text-[#fdba74]">
           {info.title}
           {c.value ? ` ${c.value}` : ""}
@@ -1271,7 +1287,7 @@ function PitwallDetail({ state, d, cardId, onPlay }: { state: GameState; d: Driv
         <div className="flex flex-wrap gap-1.5">
           {[...new Set(d.sets)].map((k) => (
             <button key={k} type="button" onClick={() => onPlay(k)} className="rounded-full bg-[#fb923c] px-3 py-1.5 text-xs font-bold text-[#08080A]">
-              เปลี่ยนเป็นยาง{COMPOUNDS[k].label}
+              เปลี่ยนเป็นยาง {COMPOUNDS[k].label} ({COMPOUNDS[k].short})
             </button>
           ))}
           {!d.worn && (
@@ -1346,7 +1362,7 @@ function RulesList({ rules }: { rules: Rules }) {
           ไฟแดงครบ 5 ดวงแล้วดับ แตะจอให้เร็ว: ต่ำกว่า 0.2 วิ แซง 2 อันดับ · 0.2–0.3 วิ แซง 1 · ช้ากว่า 0.45 วิ หล่น 1 · แตะก่อนไฟดับ หล่น 3
         </RuleBlock>
         <RuleBlock title="ยางและพิท">
-          ยางสึกจาก {WEAR_MAX} ขั้น (เหลือง 1 แดง 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
+          ยางสึกจาก {WEAR_MAX} ขั้น (M 1 · S 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
         </RuleBlock>
         <RuleBlock title="เหตุการณ์">
           ไพ่ป้าย ACT เปิดเหตุการณ์ (ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · รถเสียหาย = VSC (ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม) · ชนออก = SAFETY CAR (ทุกคันได้แค่ BASE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
@@ -1358,9 +1374,9 @@ function RulesList({ rules }: { rules: Rules }) {
     <ol className="list-decimal space-y-1.5 pl-5 text-sm text-white/75">
       <li>ทีมละ 2 คัน แข่งกับรถ AI จนครบ {GRID_SIZE} คัน เดินตามอันดับ คันนำก่อน · ควอลิฟาย: ไพ่ 2 ใบ เลือกใบ Q1 อีกใบใช้ Q2 (เลขน้อยเร็ว) รอบพิเศษได้คันละครั้งแต่ยางสึกครึ่งราง</li>
       <li>
-        ทุกตาเลือก <b>BASE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> (เร็วกว่า ค่าตามยาง เหลือง/แดง) — เปิดได้เฉพาะรถบนเส้นแข่ง ยกเว้นตาแรก
+        ทุกตาเลือก <b>BASE {BASE_MOVE} ช่อง</b> (ไม่สึกยาง) หรือ <b>เปิดไพ่ MOVE</b> (เร็วกว่า ค่าตามยาง M/S) — เปิดได้เฉพาะรถบนเส้นแข่ง ยกเว้นตาแรก
       </li>
-      <li>ไพ่ป้าย “สึก” ทำยางเสื่อม (เหลือง 1 แดง 2 จาก {WEAR_MAX} ขั้น) สุดรางแล้วเจออีก = ยางพัง เดินเองช่องละ {WORN_MOVE} ต้องเข้าพิท</li>
+      <li>ไพ่ป้าย “สึก” ทำยางเสื่อม (M 1 · S 2 จาก {WEAR_MAX} ขั้น) สุดรางแล้วเจออีก = ยางพัง เดินเองช่องละ {WORN_MOVE} ต้องเข้าพิท</li>
       <li>เปิดไพ่แล้วเลือกเสริม: ERS +{ERS_BONUS} · ATTACK (ดันคันหน้าออก) · BLOCK (คันถัดไปแซงไม่ได้) · SLIP ตามติดคันหน้าฟรี · DRS ในโซนแซงขึ้นหน้า</li>
       <li>เข้าโค้ง (แดง) ต้องหยุดในโค้งก่อน ช่องหนึ่งจุ 2 คัน แซงทแยงผ่านรถเยื้องกันไม่ได้</li>
       <li>

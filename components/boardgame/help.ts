@@ -24,7 +24,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "tyre":
       return {
         title: "ยาง",
-        text: `ไพ่ป้าย “สึก” ทำยางเสื่อม เหลือง 1 ขั้น แดง 2 ขั้น จาก ${WEAR_MAX} ขั้น หมดรางแล้วโดนอีกใบ = ยางพัง เดินเองช่องละ ${WORN_MOVE} ต้องเข้าพิท · ยางแดงเร็วกว่าแต่สึกไว`,
+        text: `ไพ่ป้าย “สึก” ทำยางเสื่อม Medium (M) 1 ขั้น Soft (S) 2 ขั้น จาก ${WEAR_MAX} ขั้น หมดรางแล้วโดนอีกใบ = ยางพัง เดินเองช่องละ ${WORN_MOVE} ต้องเข้าพิท · ยาง S เร็วกว่าแต่สึกไว ยาง M ช้ากว่าแต่ทน`,
       };
     case "ers":
       return {

@@ -1,10 +1,9 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Zap } from "lucide-react";
 import {
   ACTION_INFO, COMPOUNDS, INCIDENT_INFO, MOVE_DECK, PITWALL_DECK, PITWALL_INFO, moveValue,
   type ActionKind, type Compound, type IncidentFace,
 } from "@/lib/boardgame/engine";
-import { COMPOUND_COLOR } from "@/components/boardgame/look";
+import { ActionIcon, IconAlert, IconBolt, IconMove, IconWear, IconWrench, PitwallIcon, TyreBadge } from "@/components/boardgame/icons";
 
 export function Meter({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
   return (
@@ -43,8 +42,12 @@ export function Coin({ n, style, label }: { n: number; style: CSSProperties; lab
 
 /** ไพ่ตัวเลือกในมือ — ปุ่มจริง แจกเข้ามือทีละใบ */
 export function HandCard({
-  i, onClick, disabled, tone, kicker, big, foot, peek = false,
+  i, onClick, disabled, tone, kicker, big, foot, peek = false, icon, badges,
 }: {
+  /** รูปบอกว่าไพ่ทำอะไร */
+  icon?: ReactNode;
+  /** ป้ายไอคอนเล็กมุมขวาบน (เช่น ไพ่ MOVE: สึก / สายฟ้า / ACT / PIT) */
+  badges?: ReactNode;
   i: number;
   onClick: () => void;
   disabled?: boolean;
@@ -67,10 +70,20 @@ export function HandCard({
         type="button"
         onClick={onClick}
         disabled={disabled}
-        className={`flex h-[7.4rem] w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 motion-reduce:transition-none ${tones[tone]} ${peek && !disabled ? "bg-peek" : ""}`}
+        className={`flex h-[8rem] w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 motion-reduce:transition-none ${tones[tone]} ${peek && !disabled ? "bg-peek" : ""}`}
       >
-        <span className="poster text-[11px] opacity-80">{kicker}</span>
-        <span className="poster text-center text-3xl leading-none">{big}</span>
+        <span className="flex items-start justify-between gap-1">
+          <span className="poster text-[11px] opacity-80">{kicker}</span>
+          {badges && <span className="flex flex-wrap justify-end gap-0.5">{badges}</span>}
+        </span>
+        {icon ? (
+          <span className="flex items-center justify-center gap-1">
+            <span className="opacity-90">{icon}</span>
+            <span className="poster text-2xl leading-none">{big}</span>
+          </span>
+        ) : (
+          <span className="poster text-center text-3xl leading-none">{big}</span>
+        )}
         <span className="text-center text-[10px] leading-tight opacity-80">{foot}</span>
       </button>
     </div>
@@ -80,41 +93,37 @@ export function HandCard({
 /** ไพ่ MOVE ที่เปิดแล้ว: พลิกจากหลังไพ่มาหน้าไพ่ตอนแสดงครั้งแรก */
 export function MoveCard3D({ id, compound, playing }: { id: number; compound: Compound; playing: boolean }) {
   const c = MOVE_DECK[id];
-  const rows: { k: Compound; label: string; color: string; v: number }[] = [
-    { k: "yellow", label: COMPOUNDS.yellow.label, color: COMPOUND_COLOR.yellow, v: moveValue(c, "yellow") },
-    { k: "red", label: COMPOUNDS.red.label, color: COMPOUND_COLOR.red, v: moveValue(c, "red") },
+  const rows: { k: Compound; label: string; v: number }[] = [
+    { k: "red", label: COMPOUNDS.red.label, v: moveValue(c, "red") },
+    { k: "yellow", label: COMPOUNDS.yellow.label, v: moveValue(c, "yellow") },
   ];
   return (
     <div className={`bg-stage h-[148px] w-[104px] flex-none ${playing ? "bg-play" : ""}`}>
       <div
         className="bg-card3d bg-flip h-full w-full"
         role="img"
-        aria-label={`ไพ่ MOVE เหลือง ${c.y} แดง ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall ? " จั่ว PITWALL" : ""}`}
+        aria-label={`ไพ่ MOVE ยาง M ${c.y} ยาง S ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall ? " จั่ว PITWALL" : ""}`}
       >
         <div className="bg-face flex items-center justify-center border-[3px] border-white bg-(--color-f1)">
           <span className="poster text-xl text-white">MOVE</span>
         </div>
         <div className="bg-face bg-front flex flex-col gap-1.5 border-[3px] border-white bg-[#f4f4f2] p-1.5 text-[#08080A]">
-          <div className="flex min-h-4 flex-wrap items-center gap-0.5">
-            {c.tires && <Tag className="bg-(--color-f1) text-white">สึก</Tag>}
-            {c.ers && (
-              <Tag className="bg-[#08080A] text-white">
-                <Zap className="h-2.5 w-2.5 fill-white" aria-hidden />
-              </Tag>
-            )}
-            {c.action && <Tag className="bg-[#08080A] text-white">ACT</Tag>}
-            {c.pitwall && <Tag className="bg-[#fb923c]">PIT</Tag>}
+          <div className="flex items-center justify-between">
+            <span className="text-(--color-f1)">
+              <IconMove />
+            </span>
+            <MoveBadges c={c} />
           </div>
           {rows.map((r) => (
             <div
               key={r.k}
               className={`flex items-center justify-between rounded-md px-1.5 py-0.5 ${r.k === compound ? "bg-[#08080A] text-white" : "bg-[#e7e7e3] text-black/55"}`}
             >
-              <span className="flex items-center gap-1 text-[10px] font-semibold">
-                <span className="h-2 w-2 rounded-full border border-current" style={{ background: r.color }} />
+              <span className="flex items-center gap-1 text-[10px] font-bold">
+                <TyreBadge compound={r.k} className="h-4 w-4" />
                 {r.label}
               </span>
-              <span className={`poster tabular-nums ${r.k === compound ? "text-3xl" : "text-lg"}`}>{r.v}</span>
+              <span className={`poster tabular-nums ${r.k === compound ? "text-2xl" : "text-base"}`}>{r.v}</span>
             </div>
           ))}
         </div>
@@ -123,14 +132,40 @@ export function MoveCard3D({ id, compound, playing }: { id: number; compound: Co
   );
 }
 
-function Tag({ children, className }: { children: ReactNode; className: string }) {
-  return <span className={`flex items-center rounded px-1 py-px text-[8px] font-extrabold ${className}`}>{children}</span>;
+/** ป้ายไอคอนของไพ่ MOVE: สึกยาง · ชาร์จ ERS · เปิดเหตุการณ์ · จั่ว PITWALL */
+export function MoveBadges({ c }: { c: (typeof MOVE_DECK)[number] }) {
+  const chip = "flex h-4 w-4 items-center justify-center rounded";
+  return (
+    <span className="flex gap-0.5">
+      {c.tires && (
+        <span className={`${chip} bg-(--color-f1) text-white`} title="ยางสึก">
+          <IconWear />
+        </span>
+      )}
+      {c.ers && (
+        <span className={`${chip} bg-[#08080A] text-yellow-300`} title="ชาร์จ ERS">
+          <IconBolt />
+        </span>
+      )}
+      {c.action && (
+        <span className={`${chip} bg-[#facc15] text-[#08080A]`} title="เปิดไพ่เหตุการณ์">
+          <IconAlert />
+        </span>
+      )}
+      {c.pitwall && (
+        <span className={`${chip} bg-[#fb923c] text-[#08080A]`} title="จั่ว PITWALL">
+          <IconWrench />
+        </span>
+      )}
+    </span>
+  );
 }
 
-export function SimpleCard({ kicker, value, playing }: { kicker: string; value: number; playing: boolean }) {
+export function SimpleCard({ kicker, value, playing, icon }: { kicker: string; value: number; playing: boolean; icon?: ReactNode }) {
   return (
     <div className={`flex h-[148px] w-[104px] flex-none flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/25 bg-[#1F1F24] ${playing ? "bg-play" : ""}`}>
       <span className="poster text-xs text-white/70">{kicker}</span>
+      {icon && <span className="text-white/85 [&_svg]:h-11 [&_svg]:w-11">{icon}</span>}
       <span className="poster text-5xl leading-none text-white tabular-nums">{value}</span>
     </div>
   );
@@ -146,7 +181,12 @@ export function ActionCard3D({ kind, ok, text }: { kind: ActionKind; ok: boolean
           <span className="poster text-lg text-white">ACTION</span>
         </div>
         <div className="bg-face bg-front flex flex-col gap-1 border-[3px] border-(--color-f1) bg-[#f4f4f2] p-2 text-[#08080A]">
-          <span className="poster text-[10px] text-(--color-f1)">ACTION</span>
+          <span className="flex items-center justify-between">
+            <span className="poster text-[10px] text-(--color-f1)">ACTION</span>
+            <span className="text-(--color-f1)">
+              <ActionIcon kind={kind} />
+            </span>
+          </span>
           <span className="text-sm font-black leading-tight">{info.title}</span>
           <span className="text-[9px] leading-snug text-black/70">{info.text}</span>
           {!ok && <span className="mt-auto text-[9px] font-bold text-black/55">ไม่มีผล</span>}
@@ -187,14 +227,19 @@ export function PitwallChip({
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`flex h-12 w-[4.6rem] flex-none flex-col justify-between rounded-lg border-2 px-1.5 py-1 text-left transition-transform ${
+      className={`flex h-12 w-[5.2rem] flex-none items-center gap-1 rounded-lg border-2 px-1 py-1 text-left transition-transform ${
         selected ? "-translate-y-1 border-white" : "border-[#fb923c]/60"
       } ${disabled ? "bg-[#3a2516] text-white/55" : "bg-[#fb923c] text-[#08080A]"}`}
     >
-      <span className="poster text-[8px] opacity-75">PITWALL</span>
-      <span className="truncate text-[11px] font-black leading-none">
-        {info.title}
-        {c.value ? ` ${c.value}` : ""}
+      <span className="flex-none [&_svg]:h-7 [&_svg]:w-7">
+        <PitwallIcon kind={c.kind} />
+      </span>
+      <span className="min-w-0">
+        <span className="poster block text-[7px] opacity-75">PITWALL</span>
+        <span className="line-clamp-2 text-[10px] font-black leading-tight">
+          {info.title}
+          {c.value ? ` ${c.value}` : ""}
+        </span>
       </span>
     </button>
   );

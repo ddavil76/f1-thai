@@ -8,7 +8,7 @@ const times = <T>(n: number, x: T) => Array.from({ length: n }, () => x);
 /* ---------- ไพ่ MOVE ---------- */
 
 /**
- * y/r = ระยะเมื่อใส่ยางเหลือง/แดง · w = ระยะเมื่อใส่ยางฝน
+ * y/r = ระยะเมื่อใส่ยาง Medium (M) / Soft (S) · w = ระยะเมื่อใส่ยางฝน
  * tires = ป้ายสึก (ไพ่ความเร็วสูงสุด) · ers = สายฟ้าชาร์จ ERS
  * action = เปิดไพ่ ACTION หลังเดิน · pitwall = จั่ว PITWALL เพิ่ม 1 ใบ
  * spinDry / spinWet = ฝนตกแล้วหมุนออกนอกสนามถ้าใส่ยางแห้ง / ยางฝน
@@ -148,7 +148,7 @@ export const ACTION_INFO: Record<ActionKind, { title: string; text: string }> = 
   mistake: { title: "พลาดเอง", text: "หลุดไลน์ ถูกเบียดออกนอกเส้นแข่ง (ถ้าข้างว่าง)" },
   weather: { title: "ฟ้าเปลี่ยน", text: "สภาพอากาศเลื่อนไป 1 ขั้น" },
   storm: { title: "ฟ้าแปรปรวน", text: "ทอยเต๋าอากาศ ตั้งสภาพอากาศใหม่ทันที" },
-  tires: { title: "ยางช้ำ", text: "ยางสึกเพิ่ม (เหลือง 1 · แดง 2)" },
+  tires: { title: "ยางช้ำ", text: "ยางสึกเพิ่ม (M 1 · S 2 ขั้น)" },
   ersFail: { title: "ERS ดับ", text: "แบตเตอรี่หมดเกลี้ยง ชาร์จใหม่ได้ตามปกติ" },
   focusAttack: { title: "เสียสมาธิ", text: "ทิ้งเหรียญ ATTACK ทั้งหมด" },
   focusBlock: { title: "เสียสมาธิ", text: "ทิ้งเหรียญ BLOCK ทั้งหมด" },
@@ -226,7 +226,7 @@ export const PITWALL_INFO: Record<PitwallKind, { title: string; text: string }> 
   block: { title: "สั่งตั้งรับ", text: "เหรียญ BLOCK +1 ใช้ได้ทันที" },
   slip: { title: "วิทยุทีม", text: "เหรียญ SLIP +1 ใช้ได้ทันที" },
   charge: { title: "ชาร์จแบต", text: "ERS +1 ขั้น" },
-  tires: { title: "ถนอมยาง", text: "ยางฟื้น (เหลือง 1 · แดง 2 ขั้น) ใช้กับยางพังไม่ได้" },
+  tires: { title: "ถนอมยาง", text: "ยางฟื้น (M 1 · S 2 ขั้น) ใช้กับยางพังไม่ได้" },
   radar: { title: "เรดาร์ฝน", text: "สภาพอากาศเลื่อนไป 2 ขั้น" },
   report: { title: "ร้องเรียน", text: "รถที่อยู่ติดหน้าในเลนเดียวกันโดนใบเตือน" },
   teamSpeed: { title: "ทีมเวิร์ก", text: "ตานี้ +1 ช่อง และเพื่อนร่วมทีมขยับไป 1 ช่อง" },
