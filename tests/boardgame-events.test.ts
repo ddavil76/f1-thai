@@ -106,7 +106,7 @@ describe("ไพ่ ACTION", () => {
     expect(s.drivers[0].ers).toBe(0);
     s = topAction(topMove(at(s, [[0, 0], [20, 0]]), 0, ACTION_CARD), "focusAll");
     s = playCard(s);
-    expect(s.drivers[0].tokens).toEqual({ attack: TOKEN_USES - 1, block: TOKEN_USES - 1, slip: TOKEN_USES - 1, pass: 0 });
+    expect(s.drivers[0].tokens).toEqual({ attack: TOKEN_USES - 1, block: TOKEN_USES - 1, slip: TOKEN_USES - 1 });
   });
 });
 
@@ -224,7 +224,7 @@ describe("ไพ่ PITWALL", () => {
   });
 
   it("ชาร์จแบต / สั่งบุก / ถนอมยาง", () => {
-    let s = hand(patch(at(game(), [[0, 0], [20, 0]]), 0, { ers: 1, wear: 3, tokens: { attack: 0, block: 2, slip: 2, pass: 0 } }), 0, "charge", "attack", "tires");
+    let s = hand(patch(at(game(), [[0, 0], [20, 0]]), 0, { ers: 1, wear: 3, tokens: { attack: 0, block: 2, slip: 2 } }), 0, "charge", "attack", "tires");
     s = playPitwall(s, 0, never);
     expect(s.drivers[0].ers).toBe(2);
     s = playPitwall(s, 0, never);

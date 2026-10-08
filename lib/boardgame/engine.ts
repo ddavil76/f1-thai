@@ -33,6 +33,9 @@ export const ERS_BONUS = 2;
 export const ERS_MAX = 3;
 /** กติกาของเรา: เดิน BASE โดยไม่ใช้ ERS ชาร์จคืนเท่านี้ (ERS เป็นขั้นละครึ่งได้ ใช้ได้เมื่อมีอย่างน้อย 1) */
 export const ERS_BASE_CHARGE = 0.5;
+/** กติกาของเรา: ถึงช่องหลังคันหน้าแล้วต้องเหลือระยะมากกว่าเท่านี้ถึงแซงได้ (ในโซน DRS ง่ายขึ้น) */
+export const PASS_NEED = 2;
+export const PASS_NEED_DRS = 1;
 /** รางยางสึกมีกี่ขั้น — สุดรางแล้วเจอไพ่สึกอีก = ยางพัง */
 export const WEAR_MAX = 6;
 /** เหรียญ ATTACK / BLOCK / SLIPSTREAM ใช้ได้กี่ครั้งต่อคัน */
@@ -90,8 +93,8 @@ export type PitState = {
   served: boolean;
 };
 
-/** attack/block/slip = เหรียญของกติกาเต็มรูปแบบ · pass = เหรียญ "แซง" ของกติกาของเรา */
-export type Tokens = { attack: number; block: number; slip: number; pass: number };
+/** เหรียญ ATTACK / BLOCK / SLIPSTREAM ของกติกาเต็มรูปแบบ (กติกาของเราไม่ใช้เหรียญ) */
+export type Tokens = { attack: number; block: number; slip: number };
 /** ours = กติกาของเรา (ง่าย ค่าเริ่มต้นของหน้าเว็บ) · full = กติกาเต็มรูปแบบ */
 export type Rules = "ours" | "full";
 export type Mode = { kind: "push" } | { kind: "pace"; value: number };
@@ -181,10 +184,10 @@ export type TurnLog = {
   /** ATTACK ใส่ใคร */
   attacked: number | null;
   block: boolean;
+  /** รถที่แซงผ่านได้ในตานี้ (กติกาของเรา) */
+  passed: number[];
   /** ERS ที่ชาร์จคืนตานี้ (0 = ไม่ได้ชาร์จ) */
   charged: number;
-  /** ใช้เหรียญแซง */
-  pass: boolean;
   /** ยางสึกเพิ่มกี่ขั้น */
   wear: number;
   nowWorn: boolean;
@@ -371,8 +374,8 @@ export function newGame(
       ers: ERS_MAX,
       tokens:
         rules === "ours"
-          ? { attack: 0, block: 0, slip: 0, pass: TOKEN_USES }
-          : { attack: TOKEN_USES, block: TOKEN_USES, slip: TOKEN_USES, pass: 0 },
+          ? { attack: 0, block: 0, slip: 0 }
+          : { attack: TOKEN_USES, block: TOKEN_USES, slip: TOKEN_USES },
       boxing: false,
       blockVictim: null,
       slipTarget: null,
@@ -546,11 +549,18 @@ function capAtZone(t: Track, zones: Zone[], from: number, to: number): number {
  * แล้วไล่ทีละช่อง — ช่องเต็มสองเลนผ่านไม่ได้ และเปลี่ยนเลนแนวทแยงผ่านรถ 2 คันไม่ได้
  * จบแล้วเลื่อนข้างไปเลนที่ต้องการได้ถ้าว่าง (ค่าเริ่มต้นเส้นแข่ง)
  */
-export function travel(
-  s: GameState, d: Driver, want: number, lanePref: Lane = 0,
-  /** เหรียญแซง: ผ่านจุดที่รถขวางเต็มทางได้กี่จุด */
-  squeeze = 0,
-): { progress: number; lane: Lane; corner: boolean; blocked: boolean } {
+export type TravelResult = {
+  progress: number;
+  lane: Lane;
+  corner: boolean;
+  blocked: boolean;
+  /** กติกาของเรา: รถที่แซงผ่านได้ในการเดินนี้ */
+  passed: number[];
+  /** กติกาของเรา: แซงคันนี้ไม่ได้ — ถึงหลังมันเหลือ left ช่อง ต้องมากกว่า need */
+  stuck: { id: number; left: number; need: number } | null;
+};
+
+export function travel(s: GameState, d: Driver, want: number, lanePref: Lane = 0): TravelResult {
   const t = s.track;
   const start = d.progress;
   let target = start + Math.max(0, want);
@@ -577,6 +587,8 @@ export function travel(
     corner = true;
   }
 
+  if (s.rules === "ours") return travelOurs(s, d, target, lanePref, corner, blocked);
+
   const occ = (p: number, l: Lane) => occupied(s.drivers, d.id, p, l);
   let lanes = new Set<Lane>([d.lane]);
   let reach = start;
@@ -590,22 +602,44 @@ export function travel(
       else if (lanes.has(other) && !(occ(p - 1, l) && occ(p, other))) next.add(l);
     }
     if (next.size === 0) {
-      if (squeeze > 0) {
-        // ลอดผ่านจุดที่ขวาง — จอดทับไม่ได้ แต่ไปต่อได้ทั้งสองเลน
-        squeeze--;
-        lanes = new Set<Lane>([0, 1]);
-        continue;
-      }
       blocked = true;
       break;
     }
     lanes = next;
     reach = p;
   }
-  if (reach === start) return { progress: start, lane: d.lane, corner, blocked };
+  if (reach === start) return { progress: start, lane: d.lane, corner, blocked, passed: [], stuck: null };
   const free = (l: Lane) => !occ(reach, l);
   const lane: Lane = free(lanePref) ? lanePref : free(0) ? 0 : 1;
-  return { progress: reach, lane, corner, blocked };
+  return { progress: reach, lane, corner, blocked, passed: [], stuck: null };
+}
+
+/**
+ * กติกาของเรา — แซงด้วยแรงเหลือ: เดินถึงช่องหลังคันหน้าแล้วต้องเหลือระยะมากกว่า PASS_NEED
+ * (ในโซน DRS มากกว่า PASS_NEED_DRS) ถึงแซงผ่านได้ ใช้ระยะที่เหลือวิ่งต่อจนครบ
+ * แซงหลายคันเช็กทีละคัน · รถจอดคู่ 2 เลนนับเป็นคันเดียว · ช่องปลายทางเต็มถอยมาช่องว่างที่ใกล้สุด
+ */
+function travelOurs(s: GameState, d: Driver, target: number, lanePref: Lane, corner: boolean, blocked: boolean): TravelResult {
+  const start = d.progress;
+  const others = s.drivers.filter((o) => o.id !== d.id && solid(o));
+  const cells = [...new Set(others.filter((o) => o.progress > start && o.progress <= target).map((o) => o.progress))].sort((a, b) => a - b);
+  let limit = target;
+  let stuck: TravelResult["stuck"] = null;
+  for (const q of cells) {
+    const left = target - (q - 1);
+    const need = zoneAt(s.track, s.track.drs, q - 1) >= 0 ? PASS_NEED_DRS : PASS_NEED;
+    if (left > need) continue;
+    limit = q - 1;
+    stuck = { id: others.find((o) => o.progress === q)!.id, left, need };
+    break;
+  }
+  for (let p = limit; p > start; p--) {
+    const lane = ([lanePref, (1 - lanePref) as Lane] as Lane[]).find((l) => !occupied(s.drivers, d.id, p, l));
+    if (lane === undefined) continue;
+    const passed = others.filter((o) => o.progress > start && o.progress < p).map((o) => o.id);
+    return { progress: p, lane, corner, blocked: blocked || p < target, passed, stuck };
+  }
+  return { progress: start, lane: d.lane, corner, blocked: blocked || target > start, passed: [], stuck };
 }
 
 /** วางรถที่ออกจากพิท/ถูกย้าย ไม่ให้ทับคันอื่น (ลองเลนที่ต้องการก่อน แล้วถอยทีละช่อง) */
@@ -674,8 +708,8 @@ const replace = (s: GameState, d: Driver): GameState => ({
 });
 
 const emptyLog = (kind: MoveKind): Omit<TurnLog, "finished" | "driver" | "ai"> => ({
-  kind, card: null, moved: 0, corner: false, blocked: false, ers: false, recharge: false, charged: 0,
-  attacked: null, block: false, pass: false, wear: 0, nowWorn: false, events: [],
+  kind, card: null, moved: 0, corner: false, blocked: false, ers: false, recharge: false, charged: 0, passed: [],
+  attacked: null, block: false, wear: 0, nowWorn: false, events: [],
 });
 
 /** เลื่อนอากาศ — เต็มรูปแบบวนมาตร 1–6 · กติกาของเรา แดด → เมฆ → ฝน (ฝนแล้วค้างที่ฝน) */
@@ -999,7 +1033,7 @@ export function attackTarget(s: GameState, d: Driver, at: { progress: number; la
   return occupied(s.drivers, d.id, at.progress + 1, 1) ? null : t;
 }
 
-type Extras = { ers?: boolean; attack?: boolean; block?: boolean; pass?: boolean; lane?: Lane };
+type Extras = { ers?: boolean; attack?: boolean; block?: boolean; lane?: Lane };
 
 /** ป้ายบนไพ่ที่เกี่ยวกับผลหลังเดิน */
 type CardFx = { tires: boolean; ers: boolean; action: boolean; pitwall: boolean; spin: boolean };
@@ -1036,15 +1070,11 @@ function resolve(
     log.ers = true;
   }
   const extra = ["base", "card", "push", "pace"].includes(kind) ? d.bonus : 0;
-  const pass = !!extras.pass && free && d.tokens.pass > 0 && kind !== "slip";
-  if (pass) {
-    d = { ...d, tokens: { ...d.tokens, pass: d.tokens.pass - 1 } };
-    log.pass = true;
-  }
-  const goal = want + extra + (ers ? ersBonus(s, d0) : 0) + (pass ? 1 : 0);
-  const go = travel(s, d, goal, extras.lane ?? 0, pass ? 1 : 0);
+  const goal = want + extra + (ers ? ersBonus(s, d0) : 0);
+  const go = travel(s, d, goal, extras.lane ?? 0);
   log.corner = go.corner;
   log.blocked = go.blocked;
+  log.passed = go.passed;
   d = { ...d, progress: go.progress, lane: go.lane, bonus: 0 };
   if (throughVbox(s.track, d0.progress, go.progress)) d = vboxVisit(d, lim.rain, events);
   let drivers = s.drivers.map((o) => (o.id === d.id ? d : o));
@@ -1334,6 +1364,51 @@ function diff(a: Driver, b: Driver): Partial<Driver> {
   return out;
 }
 
+/* ---------- ออกตัว ---------- */
+
+/** ผลออกตัวจากเวลาตอบสนองตอนไฟดับ — gain = ขึ้น (บวก) / หล่น (ลบ) กี่อันดับ */
+export type LaunchKind = "great" | "good" | "ok" | "slow" | "jump";
+export const LAUNCH: Record<LaunchKind, { gain: number; title: string }> = {
+  great: { gain: 2, title: "ออกตัวสุดยอด" },
+  good: { gain: 1, title: "ออกตัวดี" },
+  ok: { gain: 0, title: "ออกตัวปกติ" },
+  slow: { gain: -1, title: "ล้อฟรี" },
+  jump: { gain: -3, title: "Jump start" },
+};
+
+/** เวลา (ms) ตั้งแต่ไฟดับถึงแตะจอ — "jump" = แตะก่อนไฟดับ */
+export function launchKind(ms: number | "jump"): LaunchKind {
+  if (ms === "jump") return "jump";
+  if (ms < 200) return "great";
+  if (ms < 300) return "good";
+  if (ms <= 450) return "ok";
+  return "slow";
+}
+
+/** รถ AI สุ่มผลออกตัว — ส่วนใหญ่ปกติ */
+export function aiLaunch(rng: Rng): LaunchKind {
+  const r = rng();
+  return r < 0.1 ? "great" : r < 0.32 ? "good" : r < 0.8 ? "ok" : r < 0.97 ? "slow" : "jump";
+}
+
+/**
+ * จัดกริดใหม่ตามผลออกตัว (ก่อนเริ่มเทิร์นแรกเท่านั้น) — คันที่ไม่มีผลนับเป็นออกตัวปกติ
+ * คันที่ได้มากกว่าเมื่อเลขเท่ากันขึ้นก่อน
+ */
+export function applyLaunch(s: GameState, kinds: Record<number, LaunchKind>): GameState {
+  if (s.round !== 1 || s.turn !== 0 || s.feed.length > 0) return s;
+  const gain = (id: number) => LAUNCH[kinds[id] ?? "ok"].gain;
+  const grid = s.order
+    .map((id, i) => ({ id, key: i - gain(id), g: gain(id), i }))
+    .sort((a, b) => a.key - b.key || b.g - a.g || a.i - b.i)
+    .map((x) => x.id);
+  const drivers = s.drivers.map((d) => {
+    const slot = grid.indexOf(d.id);
+    return slot < 0 ? d : { ...d, progress: -Math.floor(slot / 2) || 0, lane: (slot % 2) as Lane };
+  });
+  return { ...s, drivers, order: grid };
+}
+
 /* ---------- รถ AI ---------- */
 
 /** AI เข้าพิทได้ครั้งเดียว หลังผ่านระยะเรซไปแล้วราวหนึ่งในสาม */
@@ -1368,7 +1443,7 @@ function aiTurn(s: GameState, rng: Rng): GameState {
   const raw = d.wet ? card.w : card.v;
   const cut = s.rules === "ours" && !d.wet ? (l.rain ? 2 : s.weather === DAMP ? 1 : 0) : 0;
   const value = s.rules === "full" ? (l.rain && d.wet ? card.w : card.v) - offlinePenalty(s, d) : Math.max(1, raw - cut) - offlinePenalty(s, d);
-  const extras = s.rules === "ours" ? { pass: card.attack } : { attack: card.attack, block: card.block };
+  const extras = s.rules === "ours" ? {} : { attack: card.attack, block: card.block };
   return resolve(replace(st, x), x, "card", value, aiFx(card, d, l.rain), r.id, extras, rng);
 }
 

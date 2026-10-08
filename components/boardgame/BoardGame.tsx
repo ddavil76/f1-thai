@@ -6,6 +6,7 @@ import { ChevronDown, CircleHelp, CloudRain, Flag, Info, List, RotateCcw, X, Zap
 import Car from "@/components/boardgame/Car";
 import Qualifying from "@/components/boardgame/Qualifying";
 import TrackView from "@/components/boardgame/TrackView";
+import LaunchScreen from "@/components/boardgame/Launch";
 import {
   ActionCard3D, Coin, DieFace, HandCard, Meter, MoveCard3D, PitwallChip, SimpleCard,
 } from "@/components/boardgame/Cards";
@@ -16,18 +17,16 @@ import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
   ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
   DAMP, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
-  NEUTRAL_ROUNDS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
-  activeDriver, aiStep, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
+  NEUTRAL_ROUNDS, PASS_NEED, PASS_NEED_DRS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
+  LAUNCH, activeDriver, aiLaunch, aiStep, applyLaunch, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
   moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
-  type CarSpec, type Choice, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
+  type CarSpec, type Choice, type LaunchKind, type Compound, type Driver, type GameEvent, type GameState, type Lane, type Rules,
   type TurnLog,
 } from "@/lib/boardgame/engine";
 
 const LAP_CHOICES = [4, 2, 1];
 /** ความยาวแอนิเมชันไพ่ลอยขึ้นตอนกดเดิน (ตรงกับ .bg-play ใน globals.css) */
 const PLAY_MS = 550;
-/** ไฟสตาร์ท 5 ดวงแล้วดับ (ตรงกับ .bg-lights ใน globals.css) */
-const LIGHTS_MS = 3400;
 /** รถ AI ขยับทีละคัน ห่างกันเท่านี้ (ms) — รอให้คันก่อนวิ่งถึงที่ (DRIVE_MAX_MS ใน TrackView) */
 const AI_STEP_MS = 900;
 /** โชว์ช่อง "จะเข้าพิท" เมื่ออยู่ห่างโซนเข้าพิทไม่เกินเท่านี้ */
@@ -284,7 +283,7 @@ function logText(s: GameState, l: TurnLog) {
   };
   const bits = [`${carName(s, l.driver)} ${how[l.kind]}${l.moved ? ` ${l.moved} ช่อง` : ""}`];
   if (l.ers) bits.push("ERS");
-  if (l.pass) bits.push("แซง");
+  if (l.passed.length) bits.push(`แซง ${l.passed.map((id) => `#${s.drivers[id].num}`).join(" ")}`);
   if (l.attacked !== null) bits.push(`ATTACK ดัน #${s.drivers[l.attacked].num} ออก`);
   if (l.block) bits.push("BLOCK");
   if (l.corner) bits.push("หยุดในโค้ง");
@@ -391,15 +390,33 @@ function EventLayer({ s, events, onClose }: { s: GameState; events: GameEvent[];
   );
 }
 
-function Lights() {
+/** สรุปผลออกตัว: ใครขึ้นใครหล่น แล้วกดเริ่มเรซ */
+function LaunchSummary({ s, rows, onStart }: { s: GameState; rows: { id: number; kind: LaunchKind; from: number; to: number }[]; onStart: () => void }) {
   return (
-    <div className="bg-lights pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/70" aria-live="polite">
-      <div className="flex gap-2 rounded-2xl bg-[#121216] p-3">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <span key={i} className="bg-light h-8 w-8 rounded-full bg-[#2a0a0a]" style={{ animationDelay: `${i * 0.5}s` }} />
-        ))}
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#08080A]/90 p-3" role="dialog" aria-label="ผลออกตัว">
+      <div className="bg-pop flex max-h-full w-full max-w-sm flex-col gap-2 rounded-2xl border border-white/15 bg-[#121216] p-3">
+        <p className="poster text-lg text-white">ผลออกตัว</p>
+        <ol className="min-h-0 space-y-1 overflow-y-auto text-xs">
+          {rows.map((r) => {
+            const d = s.drivers[r.id];
+            const moved = r.from - r.to;
+            return (
+              <li key={r.id} className={`flex items-center gap-2 rounded-lg px-1.5 py-1 ${d.ai ? "text-white/65" : "bg-white/5 font-bold text-white"}`}>
+                <span className="poster w-7 tabular-nums text-white/60">P{r.to + 1}</span>
+                <Car {...look(d)} num={d.num} width={26} />
+                <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                <span className={r.kind === "great" || r.kind === "good" ? "text-[#22c55e]" : r.kind === "ok" ? "text-white/55" : "text-(--color-f1-text)"}>
+                  {LAUNCH[r.kind].title}
+                </span>
+                <span className="w-8 text-right tabular-nums">{moved > 0 ? `▲${moved}` : moved < 0 ? `▼${-moved}` : "–"}</span>
+              </li>
+            );
+          })}
+        </ol>
+        <button type="button" onClick={onStart} className="min-h-12 rounded-full bg-(--color-f1) text-base font-bold text-white">
+          เริ่มเรซ
+        </button>
       </div>
-      <p className="bg-go poster text-3xl text-white">ไฟดับ! ออกตัว</p>
     </div>
   );
 }
@@ -443,13 +460,18 @@ export default function BoardGame({ board }: { board: Board }) {
   const [ers, setErs] = useState(false);
   const [attack, setAttack] = useState(false);
   const [block, setBlock] = useState(false);
-  const [pass, setPass] = useState(false);
   const [lane, setLane] = useState<Lane>(0);
   const [playing, setPlaying] = useState(false);
   const [zoomed, setZoomed] = useState(true);
   const [seen, setSeen] = useState<TurnLog[] | null>(null);
   const [pw, setPw] = useState<number | null>(null);
-  const [lights, setLights] = useState(false);
+  /** ช่วงออกตัว: คิวรถผู้เล่นที่ยังไม่ได้กด และผลที่ได้แล้ว · summary = สรุปหลังจัดกริดใหม่ */
+  const [launch, setLaunch] = useState<{
+    queue: number[];
+    kinds: Record<number, LaunchKind>;
+    summary: { id: number; kind: LaunchKind; from: number; to: number }[] | null;
+  } | null>(null);
+  const lights = launch !== null;
   const [modal, setModal] = useState<"rules" | "log" | null>(null);
   const [help, setHelp] = useState<HelpKey | null>(null);
 
@@ -479,15 +501,14 @@ export default function BoardGame({ board }: { board: Board }) {
 
   const startRace = (setup: Setup, cars: CarSpec[], teams: string[], grid?: number[], wear?: number[]) => {
     const spec = wear ? cars.map((c, i) => ({ ...c, wear: wear[i] })) : cars;
-    setState(newGame(spec, teams, track, setup.laps, Math.random, grid, { rules: setup.rules, stepAI: true }));
+    const g = newGame(spec, teams, track, setup.laps, Math.random, grid, { rules: setup.rules, stepAI: true });
+    setState(g);
     setPhase({ at: "race" });
     setSeen(null);
     setZoomed(true);
     setHelp(null);
-    if (!calm()) {
-      setLights(true);
-      setTimeout(() => setLights(false), LIGHTS_MS);
-    }
+    // ไฟดับ: รถผู้เล่นทุกคันเล่นมินิเกมออกตัวตามลำดับกริด (ลดการเคลื่อนไหว = ข้าม ออกตัวปกติ)
+    setLaunch(calm() ? null : { queue: g.order.filter((id) => !g.drivers[id].ai), kinds: {}, summary: null });
   };
 
   if (phase.at === "setup" || !state || phase.at === "quali") {
@@ -524,7 +545,6 @@ export default function BoardGame({ board }: { board: Board }) {
     setErs(false);
     setAttack(false);
     setBlock(false);
-    setPass(false);
     setLane(0);
     setPw(null);
   };
@@ -535,7 +555,7 @@ export default function BoardGame({ board }: { board: Board }) {
   };
   const go = () => {
     if (playing) return;
-    const extras = { ers, attack, block, pass, lane };
+    const extras = { ers, attack, block, lane };
     const apply = () => {
       setState((s) => (s ? commit(s, extras, Math.random) : s));
       resetExtras();
@@ -556,6 +576,22 @@ export default function BoardGame({ board }: { board: Board }) {
   };
   const ask = (k: HelpKey) => setHelp((cur) => (cur === k ? null : k));
 
+  /** รถผู้เล่นคันหนึ่งออกตัวเสร็จ — ครบทุกคันแล้วสุ่มให้รถ AI แล้วจัดกริดใหม่ */
+  const launched = (id: number, kind: LaunchKind) => {
+    if (!launch) return;
+    const kinds = { ...launch.kinds, [id]: kind };
+    const queue = launch.queue.filter((x) => x !== id);
+    if (queue.length > 0) {
+      setLaunch({ ...launch, queue, kinds });
+      return;
+    }
+    for (const x of state.order) if (state.drivers[x].ai) kinds[x] = aiLaunch(Math.random);
+    const next = applyLaunch(state, kinds);
+    const summary = next.order.map((x, to) => ({ id: x, kind: kinds[x] ?? "ok", from: state.order.indexOf(x), to }));
+    setState(next);
+    setLaunch({ queue, kinds, summary });
+  };
+
   const d = state.over || aiBusy ? null : activeDriver(state);
   // ระหว่างรถ AI เดิน กล้องตามคันที่เพิ่งขยับ
   const lastMover = state.feed.at(-1)?.driver;
@@ -572,12 +608,11 @@ export default function BoardGame({ board }: { board: Board }) {
   let preview: ReturnType<typeof travel> | null = null;
   let canAttack = false;
   const useErs = ers && free && !!d && d.ers >= 1;
-  const usePass = ours && pass && free && !!d && d.tokens.pass > 0;
   let goal = 0;
   if (d && p) {
     const bonus = p.kind === "drs" ? 0 : d.bonus;
-    goal = p.value + bonus + (useErs ? ersAdd : 0) + (usePass ? 1 : 0);
-    preview = travel(state, d, goal, lane, usePass ? 1 : 0);
+    goal = p.value + bonus + (useErs ? ersAdd : 0);
+    preview = travel(state, d, goal, lane);
     canAttack = !ours && free && attackTarget(state, d, preview) !== null;
   }
   const atk = attack && canAttack;
@@ -684,7 +719,15 @@ export default function BoardGame({ board }: { board: Board }) {
             </div>
           )}
           {showEvents && <EventLayer s={state} events={popups} onClose={() => setSeen(state.feed)} />}
-          {lights && <Lights />}
+          {launch && launch.queue.length > 0 && (
+            <LaunchScreen
+              key={launch.queue[0]}
+              car={state.drivers[launch.queue[0]]}
+              team={state.teams[state.drivers[launch.queue[0]].team]?.name ?? ""}
+              onDone={(kind) => launched(launch.queue[0], kind)}
+            />
+          )}
+          {launch?.summary && <LaunchSummary s={state} rows={launch.summary} onStart={() => setLaunch(null)} />}
         </div>
 
         <section aria-label="อันดับ" className="flex h-9 flex-none items-center gap-1 overflow-x-auto border-t border-white/10 px-2">
@@ -714,6 +757,8 @@ export default function BoardGame({ board }: { board: Board }) {
       >
         {state.over ? (
           <Results state={state} order={order} onRestart={exit} />
+        ) : launch ? (
+          <p className="poster py-6 text-center text-sm text-white/70">เตรียมออกตัว…</p>
         ) : aiBusy ? (
           <div className="space-y-2" aria-live="polite">
             <div className="flex items-center justify-between gap-2">
@@ -779,9 +824,9 @@ export default function BoardGame({ board }: { board: Board }) {
                 <Meter value={d.ers} max={ERS_MAX} color="#DEDEDE" label="ERS" />
               </div>
               {ours ? (
-                <button type="button" onClick={() => ask("pass")} className="flex flex-col items-center gap-0.5">
-                  <Coin n={d.tokens.pass} label="เหรียญแซง" style={{ border: "2px solid #E10600" }} />
-                  <span className="text-[9px] text-white/60">แซง</span>
+                <button type="button" onClick={() => ask("pass")} className="flex flex-col items-center gap-0.5 rounded-lg px-1 text-white/70">
+                  <Info className="h-4 w-4" aria-hidden />
+                  <span className="text-[9px]">กฎแซง</span>
                 </button>
               ) : (
                 <div className="flex gap-1">
@@ -918,26 +963,31 @@ export default function BoardGame({ board }: { board: Board }) {
                         p.kind !== "drs" && d.bonus > 0 ? `ทีมเวิร์ก +${d.bonus}` : "",
                         useErs ? `ERS +${ersAdd}` : "",
                         ours && p.kind === "base" && !useErs && d.ers < ERS_MAX ? `ชาร์จ ERS +${ERS_BASE_CHARGE}` : "",
-                        usePass ? "แซง +1" : "",
                         atk ? "ATTACK" : "",
                       ]
                         .filter(Boolean)
                         .join(" · ")}
                       {p.kind === "card" && offlinePenalty(state, d) > 0 && ` (นอกเส้น −${OFFLINE_PENALTY} แล้ว)`}
                     </p>
-                    {cutWhy && (
+                    {ours && preview.passed.length > 0 && (
+                      <p className="text-xs font-semibold text-[#22c55e]">แซง {preview.passed.map((id) => `#${state.drivers[id].num}`).join(" ")} ได้!</p>
+                    )}
+                    {ours && preview.stuck ? (
                       <p className="text-xs font-semibold text-yellow-400">
-                        เหลือ {moved} จาก {goal} — {cutWhy}
+                        แซง #{state.drivers[preview.stuck.id].num} ไม่ได้ — ถึงหลังมันเหลือ {preview.stuck.left} ต้องมากกว่า {preview.stuck.need}
                       </p>
+                    ) : (
+                      cutWhy && (
+                        <p className="text-xs font-semibold text-yellow-400">
+                          เหลือ {moved} จาก {goal} — {cutWhy}
+                        </p>
+                      )
                     )}
                     {slowWhy && <p className="text-[11px] text-yellow-300">{slowWhy}</p>}
                   </div>
                 </div>
                 {ours ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""}`} />
-                    <Extra on={usePass} disabled={!free || d.tokens.pass <= 0 || playing} onClick={() => setPass((v) => !v)} title={`แซง +1 (${d.tokens.pass})`} foot="ลอดผ่านรถที่ขวาง 1 จุด" />
-                  </div>
+                  <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ersAdd}`} foot={`เหลือ ${d.ers}/${ERS_MAX}${ersAdd > ERS_BONUS ? " · โซน DRS!" : ""} · เพิ่มแรงไว้แซง`} />
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
                     <Extra on={useErs} disabled={!free || d.ers < 1 || playing} onClick={() => setErs((v) => !v)} title={`ERS +${ERS_BONUS}`} foot={`เหลือ ${d.ers}/${ERS_MAX}`} />
@@ -1118,10 +1168,13 @@ function RulesList({ rules }: { rules: Rules }) {
           <b>BASE {BASE_MOVE} ช่อง</b> ชัวร์ ไม่สึกยาง · หรือ <b>เปิดไพ่ MOVE</b> ได้ระยะสุ่ม (ดูช่วงบนไพ่) เร็วกว่าแต่บางใบทำยางสึก — อยู่นอกเส้นแข่งระยะ −{OFFLINE_PENALTY}
         </RuleBlock>
         <RuleBlock title="เห็นระยะแล้วเสริมได้">
-          <b>ERS</b> +{ERS_BONUS} ช่อง (ทางตรง DRS +{ERS_DRS_BONUS}) มี {ERS_MAX} ขั้น — เดิน BASE โดยไม่ใช้ ERS ชาร์จคืน +{ERS_BASE_CHARGE} ขั้น · <b>เหรียญแซง</b> +1 ช่องและลอดผ่านรถที่ขวาง คันละ {TOKEN_USES} ครั้ง
+          <b>ERS</b> +{ERS_BONUS} ช่อง (ทางตรง DRS +{ERS_DRS_BONUS}) มี {ERS_MAX} ขั้น — เดิน BASE โดยไม่ใช้ ERS ชาร์จคืน +{ERS_BASE_CHARGE} ขั้น
         </RuleBlock>
-        <RuleBlock title="โค้งและการจราจร">
-          เข้าโค้ง (แดง) ต้องหยุดในโค้งก่อน · ช่องหนึ่งมี 2 เลน เต็มแล้วผ่านไม่ได้
+        <RuleBlock title="แซงและโค้ง">
+          เดินถึงช่องหลังคันหน้าแล้วต้อง<b>เหลือระยะมากกว่า {PASS_NEED} ช่อง</b> (ทางตรง DRS มากกว่า {PASS_NEED_DRS}) ถึงแซงได้ แล้ววิ่งต่อจนครบ ไม่พอก็จอดหลังมัน · เข้าโค้ง (แดง) ต้องหยุดในโค้งก่อน
+        </RuleBlock>
+        <RuleBlock title="ออกตัว">
+          ไฟแดงครบ 5 ดวงแล้วดับ แตะจอให้เร็ว: ต่ำกว่า 0.2 วิ แซง 2 อันดับ · 0.2–0.3 วิ แซง 1 · ช้ากว่า 0.45 วิ หล่น 1 · แตะก่อนไฟดับ หล่น 3
         </RuleBlock>
         <RuleBlock title="ยางและพิท">
           ยางสึกจาก {WEAR_MAX} ขั้น (เหลือง 1 แดง 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง

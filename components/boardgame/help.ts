@@ -1,6 +1,6 @@
 import {
-  BACK_CELLS, BASE_MOVE, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
-  DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX, WORN_MOVE, type Rules,
+  BACK_CELLS, BASE_MOVE, PASS_NEED, PASS_NEED_DRS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN, OFFLINE_PENALTY, PENALTY_PLACES, PIT_SPEED,
+  DAMP_ROUNDS, NEUTRAL_ROUNDS, RAIN_ROUNDS, WEAR_MAX, WORN_MOVE, type Rules,
 } from "@/lib/boardgame/engine";
 
 export type HelpKey =
@@ -32,7 +32,10 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
         text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ MOVE รูปสายฟ้า +1${ours ? ` · เดิน BASE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS) · ไพ่ PITWALL ชาร์จแบต +1`,
       };
     case "pass":
-      return { title: "เหรียญแซง", text: `+1 ช่อง และลอดผ่านจุดที่รถขวางเต็มทางได้ 1 จุด ใช้ได้คันละ ${TOKEN_USES} ครั้ง` };
+      return {
+        title: "การแซง",
+        text: `เดินถึงช่องหลังคันหน้าแล้วต้องเหลือระยะมากกว่า ${PASS_NEED} ช่อง (ทางตรง DRS มากกว่า ${PASS_NEED_DRS}) ถึงแซงผ่านได้ แล้ววิ่งต่อจนครบระยะ — แซงหลายคันเช็กทีละคัน รถจอดคู่นับเป็นคันเดียว · กด ERS เพิ่มแรงไว้แซงได้ · โค้งยังต้องหยุดเหมือนเดิม`,
+      };
     case "attack":
       return { title: "ATTACK", text: "จบติดท้ายรถคันหน้าบนเส้นแข่ง และข้างมันว่าง → เข้าที่แทน ดันมันออกนอกเส้น" };
     case "block":

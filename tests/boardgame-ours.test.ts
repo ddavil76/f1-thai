@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_DECK, ACTION_OURS, BACK_CELLS, ERS_BASE_CHARGE, ERS_MAX, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
-  PITWALL_DECK, PITWALL_OURS, RAIN_ROUNDS, TOKEN_USES, WEAR_MAX,
-  activeDriver, canPitwall, choose, commit, moveFor, newGame, options, playPitwall, travel,
+  ACTION_DECK, ACTION_OURS, BACK_CELLS, ERS_BASE_CHARGE, ERS_MAX, PASS_NEED, PASS_NEED_DRS, DAMP, DAMP_ROUNDS, NEUTRAL_ROUNDS, BASE_MOVE, ERS_DRS_BONUS, INCIDENT_DIE_OURS, MOVE_DECK, OFFLINE_PENALTY,
+  PITWALL_DECK, PITWALL_OURS, RAIN_ROUNDS, WEAR_MAX,
+  activeDriver, applyLaunch, canPitwall, choose, launchKind, commit, moveFor, newGame, options, playPitwall, travel,
   type ActionKind, type CarSpec, type GameState, type IncidentFace, type Lane, type Rng, type Track,
 } from "@/lib/boardgame/engine";
 
@@ -47,9 +47,9 @@ const topAction = (s: GameState, kind: ActionKind): GameState => ({ ...s, action
 const events = (s: GameState) => s.feed.flatMap((l) => l.events);
 
 describe("กติกาของเรา", () => {
-  it("เหรียญแซงคันละ 2 ไม่มี DRS / SLIP / ATTACK / BLOCK", () => {
+  it("ไม่มีเหรียญ ไม่มี DRS / SLIP / ATTACK / BLOCK", () => {
     const s = at(game(2, track({ drs: [{ start: 8, end: 14 }] })), [[9, 0], [10, 0]]);
-    expect(s.drivers[0].tokens).toEqual({ attack: 0, block: 0, slip: 0, pass: TOKEN_USES });
+    expect(s.drivers[0].tokens).toEqual({ attack: 0, block: 0, slip: 0 });
     expect(options(s)).toMatchObject({ drs: false, slip: false });
   });
 
@@ -81,12 +81,33 @@ describe("กติกาของเรา", () => {
     expect(out.drivers[0].progress).toBe(9 + BASE_MOVE + ERS_DRS_BONUS);
   });
 
-  it("เหรียญแซง: +1 ช่อง และลอดผ่านจุดที่รถขวางเต็มทางได้ 1 จุด", () => {
+  it("แซงด้วยแรงเหลือ: ถึงช่องหลังคันหน้าต้องเหลือมากกว่า 2 ถึงแซงได้ แล้ววิ่งต่อจนครบ", () => {
+    const s = at(game(2), [[0, 0], [3, 0]]);
+    // ไปถึงช่อง 2 (หลังคันหน้า) เหลือ 2 — ไม่พอ
+    expect(travel(s, s.drivers[0], 4)).toMatchObject({ progress: 2, blocked: true, stuck: { id: 1, left: 2, need: PASS_NEED } });
+    // เหลือ 3 — แซงได้ จบช่อง 5
+    expect(travel(s, s.drivers[0], 5)).toMatchObject({ progress: 5, passed: [1], stuck: null });
+  });
+
+  it("รถจอดคู่ 2 เลนนับเป็นคันเดียว · แซงหลายคันเช็กทีละคัน", () => {
     const s = at(game(3), [[0, 0], [3, 0], [3, 1]]);
-    expect(travel(s, s.drivers[0], 6)).toMatchObject({ progress: 2, blocked: true });
-    const out = commit(choose(s, { kind: "base" }, never), { pass: true }, never);
-    expect(out.drivers[0].progress).toBe(BASE_MOVE + 1);
-    expect(out.drivers[0].tokens.pass).toBe(TOKEN_USES - 1);
+    expect(travel(s, s.drivers[0], 6)).toMatchObject({ progress: 6, passed: [1, 2] });
+    // คันแรกช่อง 3 คันที่สองช่อง 6: ถึงหลังคันที่สอง (ช่อง 5) เหลือ 2 — แซงได้แค่คันแรก
+    const t = at(game(3), [[0, 0], [3, 0], [6, 0]]);
+    expect(travel(t, t.drivers[0], 7)).toMatchObject({ progress: 5, passed: [1], stuck: { id: 2 } });
+  });
+
+  it("ในโซน DRS แซงง่ายขึ้น: เหลือมากกว่า 1 ก็พอ", () => {
+    const s = at(game(2, track({ drs: [{ start: 0, end: 10 }] })), [[0, 0], [3, 0]]);
+    expect(travel(s, s.drivers[0], 4)).toMatchObject({ progress: 4, passed: [1] });
+    expect(travel(s, s.drivers[0], 3)).toMatchObject({ progress: 2, stuck: { need: PASS_NEED_DRS } });
+  });
+
+  it("ช่องปลายทางเต็มสองเลน ถอยมาจอดช่องว่างที่ใกล้ที่สุด", () => {
+    const four: CarSpec[] = [...cars, { name: "D", num: 4, team: 1, ai: false }];
+    const s0 = newGame(four, ["ทีม", "ทีม 2"], track(), 4, () => 0.5, [0, 1, 2, 3], { rules: "ours" });
+    const s = at(s0, [[0, 0], [2, 0], [8, 0], [8, 1]]);
+    expect(travel(s, s.drivers[0], 8)).toMatchObject({ progress: 7, passed: [1] });
   });
 
   it("ออกนอกขอบสนาม = ถอยหลัง 2 ช่องทันที ไม่มีใบเตือน", () => {
@@ -185,7 +206,7 @@ describe("กติกาของเรา", () => {
       while (!s.over && steps < 4000) {
         steps++;
         if (s.pending) {
-          s = commit(s, { ers: true, pass: rng() < 0.3 }, rng);
+          s = commit(s, { ers: true }, rng);
           continue;
         }
         const d = activeDriver(s);
@@ -212,5 +233,25 @@ describe("กติกาของเรา", () => {
       // รถผู้เล่นไม่ชนออกในกติกานี้
       expect(s.drivers.filter((x) => !x.ai && x.out)).toHaveLength(0);
     }
+  });
+});
+
+describe("ออกตัวตอนไฟดับ", () => {
+  it("แปลงเวลาเป็นผลออกตัว", () => {
+    expect([150, 250, 400, 600].map(launchKind)).toEqual(["great", "good", "ok", "slow"]);
+    expect(launchKind("jump")).toBe("jump");
+  });
+
+  it("จัดกริดใหม่ตามผล: ออกตัวสุดยอดแซง 2 อันดับ jump start หล่น 3", () => {
+    const six: CarSpec[] = Array.from({ length: 6 }, (_, i) => ({ name: `C${i}`, num: i + 1, team: 0, ai: false }));
+    const s = newGame(six, ["ทีม"], track(), 4, () => 0.5, [0, 1, 2, 3, 4, 5], { rules: "ours", stepAI: true });
+    const out = applyLaunch(s, { 3: "great", 0: "jump" });
+    // คันที่ 0 หล่นไปหลัง → คันที่ 3 (ออกตัวสุดยอด) ชนะจังหวะเท่ากับคันที่ 1 ขึ้นนำ
+    expect(out.order).toEqual([3, 1, 2, 0, 4, 5]);
+    expect(out.drivers[3]).toMatchObject({ progress: 0, lane: 0 });
+    expect(out.drivers[0]).toMatchObject({ progress: -1, lane: 1 });
+    // หลังเริ่มเดินแล้วจัดใหม่ไม่ได้
+    const moved = commit(choose(out, { kind: "base" }, never), {}, never);
+    expect(applyLaunch(moved, { 5: "great" })).toBe(moved);
   });
 });
