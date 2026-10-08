@@ -13,12 +13,17 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
   const ours = rules === "ours";
   switch (k) {
     case "base":
-      return { title: "SAVE", text: `เดิน ${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง — ปลอดภัย เหมาะตอนจะเข้าโค้งหรือยางใกล้หมด` };
+      return {
+        title: "SAVE",
+        text: ours
+          ? `เดิน ${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง และโค้งไม่หักระยะ — ปลอดภัย เหมาะตอนจะผ่านโค้งหรือยางใกล้หมด`
+          : `เดิน ${BASE_MOVE} ช่องแน่นอน ไม่สึกยาง — ปลอดภัย เหมาะตอนจะเข้าโค้งหรือยางใกล้หมด`,
+      };
     case "move":
       return {
         title: "ไพ่ FLAT OUT",
         text: ours
-          ? `เปิดไพ่ใบบนสุดของทีม ได้ระยะสุ่มตามยาง (เร็วกว่า SAVE) บางใบทำยางสึก บางใบเปิดเหตุการณ์ (ACT) หรือแจกไพ่ PITWALL (PIT) — อยู่นอกเส้นแข่งระยะ −${OFFLINE_PENALTY}`
+          ? `เปิดไพ่ใบบนสุดของทีม ได้ระยะสุ่มตามยาง (เร็วกว่า SAVE) บางใบทำยางสึก บางใบเปิดเหตุการณ์ (ACT) — อยู่นอกเส้นแข่งระยะ −${OFFLINE_PENALTY}`
           : "เปิดไพ่ใบบนสุดของทีม ได้ระยะสุ่มตามยาง บางใบทำยางสึก บางใบเปิดเหตุการณ์ — ใช้ได้เฉพาะรถบนเส้นแข่ง (ยกเว้นตาแรก)",
       };
     case "tyre":
@@ -29,7 +34,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
     case "ers":
       return {
         title: "ERS",
-        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ FLAT OUT รูปสายฟ้า +1${ours ? ` · เดิน SAVE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS) · ไพ่ PITWALL ชาร์จแบต +1`,
+        text: `แบตเสริม เลือกใช้หลังเปิดไพ่ +${ERS_BONUS} ช่อง${ours ? ` (ในโซน DRS +${ERS_DRS_BONUS})` : ""} มี ${ERS_MAX} ขั้น (ใช้ได้เมื่อมีอย่างน้อย 1) · ชาร์จคืน: ไพ่ FLAT OUT รูปสายฟ้า +1${ours ? ` · เดิน SAVE +${ERS_BASE_CHARGE}` : ""} (ตานั้นต้องไม่ได้ใช้ ERS)${ours ? "" : " · ไพ่ PITWALL ชาร์จแบต +1"}`,
       };
     case "pass":
       return {
@@ -60,7 +65,7 @@ export function helpText(k: HelpKey, rules: Rules): { title: string; text: strin
       return ours
         ? {
             title: "โค้ง",
-            text: `ไม่ต้องหยุดในโค้ง แต่ช่องโค้งกินแรงมากกว่า: ทางปกติช่องละ 1 · โค้งความเร็วสูง (แดงจาง ป้าย ×${FAST_CORNER_COST}) ช่องละ ${FAST_CORNER_COST} · โค้งความเร็วต่ำ (แดงเข้ม ป้าย ×${SLOW_CORNER_COST}) ช่องละ ${SLOW_CORNER_COST} — ระยะบนไพ่คือแรงที่ใช้ได้`,
+            text: `ไม่ต้องหยุดในโค้ง แต่ช่องโค้งกินแรงมากกว่า: ทางปกติช่องละ 1 · โค้งความเร็วสูง (แดงจาง ป้าย ×${FAST_CORNER_COST}) ช่องละ ${FAST_CORNER_COST} · โค้งความเร็วต่ำ (แดงเข้ม ป้าย ×${SLOW_CORNER_COST}) ช่องละ ${SLOW_CORNER_COST} — ระยะบนไพ่คือแรงที่ใช้ได้ · เดิน SAVE ไม่โดนโค้งหักระยะ`,
           }
         : { title: "โค้ง", text: "ช่องสีแดงขอบแดงขาว — วิ่งเข้าโค้งแล้วต้องหยุดในโค้งก่อน ตาถัดไปค่อยออก เข้าโค้งก่อนคู่แข่งคือหัวใจของเกม" };
     case "pitwall":

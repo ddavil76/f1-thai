@@ -39,6 +39,8 @@ export const PASS_NEED_DRS = 1;
 /** กติกาของเรา: ช่องโค้งใช้แรงกี่ก้าว (ทางปกติ 1) */
 export const FAST_CORNER_COST = 2;
 export const SLOW_CORNER_COST = 3;
+/** กติกาของเรา: ปิดไพ่ PITWALL ไว้ก่อน (ไม่แจกเข้ามือ และไพ่ป้าย PIT ไม่จั่วเพิ่ม) */
+export const PITWALL_IN_OURS = false;
 /** กติกาของเรา: ไพ่ MOVE ในมือทีมกี่ใบ */
 export const HAND_SIZE = 3;
 /** กติกาของเรา: จบตาติดท้ายคันหน้าบนทางตรง ตาหน้า +1 (สลิปสตรีม) · ในโค้ง −1 (อากาศปั่นป่วน) */
@@ -429,7 +431,9 @@ export function newGame(
   });
   // เกมแข่งแดดออกอย่างเดียว: ไม่มีไพ่ที่เปลี่ยนอากาศในกอง (ระบบอากาศในเอนจินยังอยู่ เผื่อเปิดใช้ภายหลัง)
   const pwIds = ids(PITWALL_DECK.length).filter(
-    (i) => !WEATHER_PITWALL.includes(PITWALL_DECK[i].kind) && (rules === "full" || PITWALL_OURS.includes(PITWALL_DECK[i].kind)),
+    (i) =>
+      !WEATHER_PITWALL.includes(PITWALL_DECK[i].kind) &&
+      (rules === "full" || (PITWALL_IN_OURS && PITWALL_OURS.includes(PITWALL_DECK[i].kind))),
   );
   const acIds = ids(ACTION_DECK.length).filter(
     (i) => !WEATHER_ACTIONS.includes(ACTION_DECK[i]) && (rules === "full" || ACTION_OURS.includes(ACTION_DECK[i])),
@@ -601,8 +605,9 @@ export type TravelResult = {
   stuck: { id: number; left: number; need: number } | null;
 };
 
-export function travel(s: GameState, d: Driver, want: number, lanePref: Lane = 0): TravelResult {
-  if (s.rules === "ours") return travelOurs(s, d, want, lanePref);
+/** flat = กติกาของเรา: เดิน SAVE ช่องละ 1 ก้าวเสมอ ไม่โดนโค้งหักระยะ */
+export function travel(s: GameState, d: Driver, want: number, lanePref: Lane = 0, flat = false): TravelResult {
+  if (s.rules === "ours") return travelOurs(s, d, want, lanePref, flat);
   const t = s.track;
   const start = d.progress;
   let target = start + Math.max(0, want);
@@ -665,7 +670,7 @@ export function stepCost(t: Track, p: number): number {
  * แซงด้วยแรงเหลือ: เดินถึงช่องหลังคันหน้าแล้วต้องเหลือแรงมากกว่า PASS_NEED (ในโซน DRS มากกว่า PASS_NEED_DRS)
  * ถึงแซงผ่านได้ · แซงหลายคันเช็กทีละคัน · รถจอดคู่ 2 เลนนับเป็นคันเดียว · ช่องปลายทางเต็มถอยมาช่องว่างที่ใกล้สุด
  */
-function travelOurs(s: GameState, d: Driver, want: number, lanePref: Lane): TravelResult {
+function travelOurs(s: GameState, d: Driver, want: number, lanePref: Lane, flat: boolean): TravelResult {
   const t = s.track;
   const start = d.progress;
   // แรงที่ใช้สะสมถึงแต่ละช่อง แล้วไปได้ไกลสุดเท่าที่แรงพอ
@@ -674,7 +679,7 @@ function travelOurs(s: GameState, d: Driver, want: number, lanePref: Lane): Trav
   let corner = false;
   let blocked = false;
   for (let p = start + 1, used = 0; ; p++) {
-    used += stepCost(t, p);
+    used += flat ? 1 : stepCost(t, p);
     if (used > want) break;
     spent.set(p, used);
     target = p;
@@ -1149,7 +1154,7 @@ function resolve(
   const goal = Math.max(0, want + extra + (ers ? ersBonus(s, d0) : 0));
   // ปิดไลน์ของตาก่อนหมดเมื่อรถคันนี้เดินอีกครั้ง
   d = { ...d, defending: false };
-  const go = travel({ ...s, drivers: s.drivers.map((o) => (o.id === d.id ? d : o)) }, d, goal, extras.lane ?? 0);
+  const go = travel({ ...s, drivers: s.drivers.map((o) => (o.id === d.id ? d : o)) }, d, goal, extras.lane ?? 0, kind === "base");
   log.corner = go.corner;
   log.blocked = go.blocked;
   log.passed = go.passed;

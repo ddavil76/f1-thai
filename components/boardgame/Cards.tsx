@@ -90,7 +90,7 @@ export function HandCard({
 }
 
 /** ไพ่ FLAT OUT ที่เปิดแล้ว: คว่ำก่อนแล้วพลิกมาหน้าไพ่ */
-export function MoveCard3D({ id, compound, playing }: { id: number; compound: Compound; playing: boolean }) {
+export function MoveCard3D({ id, compound, playing, pit = true }: { id: number; compound: Compound; playing: boolean; pit?: boolean }) {
   const c = MOVE_DECK[id];
   const rows: { k: Compound; label: string; v: number }[] = [
     { k: "red", label: COMPOUNDS.red.label, v: moveValue(c, "red") },
@@ -101,9 +101,9 @@ export function MoveCard3D({ id, compound, playing }: { id: number; compound: Co
       <FlipCard
         back="back-flat-out"
         size="play"
-        label={`ไพ่ FLAT OUT ยาง M ${c.y} ยาง S ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall ? " จั่ว PITWALL" : ""}`}
+        label={`ไพ่ FLAT OUT ยาง M ${c.y} ยาง S ${c.r}${c.tires ? " สึกยาง" : ""}${c.ers ? " ชาร์จ ERS" : ""}${c.action ? " เปิด ACTION" : ""}${c.pitwall && pit ? " จั่ว PITWALL" : ""}`}
       >
-        <CardFace title="FLAT OUT" cat="drive" art="flat-out" corner={<MoveBadges c={c} />}>
+        <CardFace title="FLAT OUT" cat="drive" art="flat-out" corner={<MoveBadges c={c} pit={pit} />}>
           <span className="flex flex-col gap-[0.2em]">
             {rows.map((r) => (
               <span
@@ -125,7 +125,7 @@ export function MoveCard3D({ id, compound, playing }: { id: number; compound: Co
 }
 
 /** ป้ายไอคอนของไพ่ MOVE: สึกยาง · ชาร์จ ERS · เปิดเหตุการณ์ · จั่ว PITWALL */
-export function MoveBadges({ c }: { c: (typeof MOVE_DECK)[number] }) {
+export function MoveBadges({ c, pit = true }: { c: (typeof MOVE_DECK)[number]; pit?: boolean }) {
   const chip = "flex h-4 w-4 items-center justify-center rounded";
   return (
     <span className="flex gap-0.5">
@@ -144,7 +144,7 @@ export function MoveBadges({ c }: { c: (typeof MOVE_DECK)[number] }) {
           <IconAlert />
         </span>
       )}
-      {c.pitwall && (
+      {c.pitwall && pit && (
         <span className={`${chip} bg-[#fb923c] text-[#08080A]`} title="จั่ว PITWALL">
           <IconWrench />
         </span>

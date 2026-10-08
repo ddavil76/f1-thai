@@ -290,10 +290,11 @@ describe("กติกาของเรา: ไพ่ในมือ สลิ�
     expect(s.drivers[0].tow).toBe(TOW);
     const t = track({ corners: [{ start: 4, end: 5 }] });
     let c = at(game(2, t), [[0, 0], [5, 0]]);
-    c = commit(choose(c, { kind: "base" }, never), {}, never); // ช่อง 1–3 ใช้ 3 · ช่อง 4 เป็นโค้ง ใช้ 2 เกินแรง → จอดช่อง 3
-    expect(c.drivers[0].progress).toBe(3);
-    const d = commit(choose(at(game(2, t), [[2, 0], [5, 0]]), { kind: "base" }, never), {}, never); // ช่อง 3 (1) + ช่อง 4 โค้ง (2) = 3 → ช่อง 4 ติดท้าย B ในโค้ง
-    expect(d.drivers[0]).toMatchObject({ progress: 4, tow: -TOW });
+    // แรง 4 แบบไพ่: ช่อง 1–3 ใช้ 3 · ช่อง 4 เป็นโค้ง ใช้ 2 เกินแรง → จอดช่อง 3
+    expect(travel(c, c.drivers[0], 4).progress).toBe(3);
+    // SAVE ไม่โดนโค้งหักระยะ: 4 ช่องเต็ม → ช่อง 4 ติดท้าย B ในโค้ง
+    c = commit(choose(c, { kind: "base" }, never), {}, never);
+    expect(c.drivers[0]).toMatchObject({ progress: 4, tow: -TOW });
     // ตาถัดไปได้/เสียแรงตามนั้น แล้วล้างค่า
     const next = commit(choose({ ...s, turn: 0, order: [0, 1], drivers: s.drivers.map((x, i) => (i === 1 ? { ...x, progress: 30 } : x)) }, { kind: "base" }, never), {}, never);
     expect(next.drivers[0]).toMatchObject({ progress: 4 + BASE_MOVE + TOW, tow: 0 });
@@ -324,5 +325,19 @@ describe("กติกาของเรา: ไพ่ในมือ สลิ�
     const run = (aiLevel: "easy" | "hard") =>
       newGame(field, ["ทีม"], track(), 4, () => 0.5, [1, 0], { rules: "ours", aiLevel }).drivers[1].progress;
     expect(run("hard") - run("easy")).toBe(AI_LEVEL.hard.add - AI_LEVEL.easy.add);
+  });
+});
+
+describe("กติกาของเรา: SAVE ในโค้ง และไม่มี PITWALL", () => {
+  it("SAVE เดิน 4 ช่องเต็มแม้ผ่านโค้งความเร็วต่ำ", () => {
+    const t = track({ corners: [{ start: 2, end: 3, slow: true }] });
+    const s = commit(choose(at(game(2, t), [[0, 0], [20, 0]]), { kind: "base" }, never), {}, never);
+    expect(s.drivers[0].progress).toBe(BASE_MOVE);
+  });
+
+  it("เริ่มเกมไม่มีไพ่ PITWALL ในมือ และไพ่ป้าย PIT ไม่จั่วเพิ่ม", () => {
+    const s = game(2);
+    expect(s.teams.every((t) => t.pitwall.length === 0)).toBe(true);
+    expect(s.pwDeck.length).toBe(0);
   });
 });

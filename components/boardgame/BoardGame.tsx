@@ -20,7 +20,7 @@ import type { Board } from "@/lib/boardgame/board";
 import { CELLS_PER_LAP } from "@/lib/boardgame/board";
 import {
   ACTION_INFO, ACTION_TEXT_OURS, BACK_CELLS, BASE_MOVE, COMPOUNDS, ERS_BASE_CHARGE, ERS_BONUS, ERS_DRS_BONUS, ERS_MAX, FLAG_LEN,
-  DAMP, GRID_SIZE, INCIDENT_INFO, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
+  DAMP, GRID_SIZE, INCIDENT_INFO, PITWALL_IN_OURS, MOVE_DECK, OFFLINE_PENALTY, PENALTY_PLACES, PITWALL_DECK, PITWALL_INFO,
   FAST_CORNER_COST, NEUTRAL_ROUNDS, SLOW_CORNER_COST, PASS_NEED, PASS_NEED_DRS, PIT_SPEED, RAIN_AT, TOKEN_USES, WEAR_MAX, WORN_MOVE,
   AI_LEVEL, DEFEND_ERS, LAUNCH, activeDriver, aiLaunch, aiStep, applyLaunch, aiTurnPending, attackTarget, canPitwall, choose, commit, drsTarget, ersBonus, isRain, limits, newGame,
   moveBonus, moveFor, offlinePenalty, options, playPitwall, reportTarget, runAI, slipTargetOf, standings, travel,
@@ -684,7 +684,7 @@ export default function BoardGame({ board }: { board: Board }) {
   if (d && p) {
     const bonus = p.kind === "drs" ? 0 : moveBonus(d);
     goal = p.value + bonus + (useErs ? ersAdd : 0);
-    preview = travel(state, d, goal, lane);
+    preview = travel(state, d, goal, lane, p.kind === "base");
     canAttack = !ours && free && attackTarget(state, d, preview) !== null;
   }
   const atk = attack && canAttack;
@@ -726,7 +726,7 @@ export default function BoardGame({ board }: { board: Board }) {
     return { min: Math.min(...vals), max: Math.max(...vals), risk, off };
   })();
   // กติกาของเรา: ไพ่ในมือ — ค่าแรงตามยาง และผลถ้าเล่นใบนั้น (ไปได้กี่ช่อง แซงได้กี่คัน)
-  const forecast = (value: number) => (d ? travel(state, d, value + moveBonus(d)) : null);
+  const forecast = (value: number, flat = false) => (d ? travel(state, d, value + moveBonus(d), 0, flat) : null);
   const handCards =
     ours && d && !p
       ? (state.teams[d.team]?.hand ?? []).map((id) => {
@@ -737,7 +737,7 @@ export default function BoardGame({ board }: { board: Board }) {
           return { id, value, tags, cells: f ? f.progress - d.progress : 0, passed: f?.passed.length ?? 0, spot: f };
         })
       : [];
-  const baseSpot = ours && d && !p && options(state, d).base ? forecast(BASE_MOVE) : null;
+  const baseSpot = ours && d && !p && options(state, d).base ? forecast(BASE_MOVE, true) : null;
   const reach =
     ours && d && !p
       ? [
@@ -995,7 +995,8 @@ export default function BoardGame({ board }: { board: Board }) {
               )}
             </div>
 
-            {/* ไพ่ PITWALL ของทีม */}
+            {/* ไพ่ PITWALL ของทีม (กติกาของเราปิดไว้ก่อน) */}
+            {(!ours || PITWALL_IN_OURS) && (
             <div>
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
                 <Term k="pitwall" ask={ask} className="poster flex-none pr-1 text-[10px] text-[#fb923c]">
@@ -1024,6 +1025,7 @@ export default function BoardGame({ board }: { board: Board }) {
                 />
               )}
             </div>
+            )}
 
             {!p && history.length > 1 && <Recap s={state} d={d} order={order} onReplay={() => setReplay(0)} />}
             {slowWhy && !p && <p className="rounded-lg bg-yellow-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-yellow-300">{slowWhy}</p>}
@@ -1070,7 +1072,7 @@ export default function BoardGame({ board }: { board: Board }) {
                             art="flat-out"
                             back="back-flat-out"
                             icon={<IconMove />}
-                            badges={<MoveBadges c={MOVE_DECK[h.id]} />}
+                            badges={<MoveBadges c={MOVE_DECK[h.id]} pit={PITWALL_IN_OURS} />}
                             big={<span className="tabular-nums">{h.value}</span>}
                             foot={!o.card ? "ติดข้อจำกัด" : h.passed ? `ไปช่อง +${h.cells} · แซง ${h.passed}` : `ไปได้ ${h.cells} ช่อง`}
                             disabled={!o.card}
@@ -1117,7 +1119,7 @@ export default function BoardGame({ board }: { board: Board }) {
               <div className="space-y-2.5">
                 <div className="flex items-center gap-3">
                   {p.card !== null ? (
-                    <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} playing={playing} />
+                    <MoveCard3D key={p.card + state.round * 100} id={p.card} compound={d.compound} playing={playing} pit={!ours || PITWALL_IN_OURS} />
                   ) : (
                     <SimpleCard
                       kicker={p.kind === "drs" ? "DRS" : p.kind === "push" ? "PUSH" : p.kind === "pace" ? "PACE" : "SAVE"}
@@ -1375,7 +1377,7 @@ function RulesList({ rules }: { rules: Rules }) {
           ยางสึกจาก {WEAR_MAX} ขั้น (M 1 · S 2 ต่อใบ “สึก”) หมดแล้วยางพัง เดินเองช่องละ {WORN_MOVE} · ใกล้ทางเข้าพิทติ๊ก “จะเข้าพิท” แล้วเปลี่ยนยาง
         </RuleBlock>
         <RuleBlock title="เหตุการณ์">
-          ไพ่ป้าย ACT เปิดเหตุการณ์ (ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · ป้าย PIT ได้ไพ่ PITWALL ของทีม · รถเสียหาย = VSC (ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม) · ชนออก = SAFETY CAR (ทุกคันได้แค่ SAVE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
+          ไพ่ป้าย ACT เปิดเหตุการณ์ (ยางช้ำ ERS ดับ เบรกร้อน ออกนอกขอบสนามถอย {BACK_CELLS} ช่อง เฉี่ยวชน) · รถเสียหาย = VSC (ผ่าน V-BOX หรือเข้าพิทเพื่อซ่อม) · ชนออก = SAFETY CAR (ทุกคันได้แค่ SAVE {NEUTRAL_ROUNDS} เทิร์น เทิร์นสุดท้ายขึ้น ENDING)
         </RuleBlock>
       </div>
     );
