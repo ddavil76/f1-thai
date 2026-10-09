@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Globe, LogIn, User } from "lucide-react";
+import { Gauge, Globe, LogIn, User } from "lucide-react";
 import Live from "@/components/pitwall/Live";
+import DriverMode from "@/components/pitwall/driver/DriverMode";
 import { createRoom, onlineReady, useLocalSession, useOnlineSession, type Session } from "@/components/pitwall/session";
 import { Btn, Card, Head } from "@/components/pitwall/ui";
 import { Final, Grid, Lobby, Prep, Results } from "@/components/pitwall/Weekend";
 import { NAMES_NOTE } from "@/lib/pitwall/teams";
 
-type Mode = { kind: "solo" } | { kind: "online"; code: string } | null;
+type Mode = { kind: "solo" } | { kind: "online"; code: string } | { kind: "driver" } | null;
 
 const NAME_KEY = "pitwall-name";
 
@@ -40,6 +41,7 @@ export default function PitWallApp() {
 
   if (mode?.kind === "solo") return <SoloGame name={nick} onExit={() => setMode(null)} />;
   if (mode?.kind === "online") return <OnlineGame code={mode.code} name={nick} onExit={() => setMode(null)} />;
+  if (mode?.kind === "driver") return <DriverMode onExit={() => setMode(null)} />;
 
   return (
     <div className="space-y-4">
@@ -120,6 +122,12 @@ export default function PitWallApp() {
             {err && <p className="text-sm text-(--color-f1-text)">{err}</p>}
           </div>
         )}
+      </Card>
+      <Card>
+        <Head kicker="ทดลอง" title="โหมดนักขับ · Time Trial" sub="ขับเองในมุมกล้องบนรถแบบ 3D กดคันเร่ง/เบรกตามเส้นช่วยสีเขียว เหลือง แดง ทำเวลาต่อรอบให้ดีที่สุด" />
+        <Btn tone="white" className="w-full" onClick={() => setMode({ kind: "driver" })}>
+          <Gauge className="inline h-4 w-4" /> ลองขับ
+        </Btn>
       </Card>
       <HowTo />
       <p className="text-center text-[11px] text-white/50">{NAMES_NOTE}</p>
