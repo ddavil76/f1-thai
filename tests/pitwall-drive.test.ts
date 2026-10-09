@@ -35,6 +35,16 @@ describe("โหมดนักขับ: สนาม", () => {
     }
   });
 
+  it("สนามมีเนิน: สปาสูงต่ำต่างกันมาก มอนซาเกือบราบ ความชันไม่เกิน 12%", () => {
+    const range = (id: string) => {
+      const t = buildDriveTrack(id)!;
+      return Math.max(...t.y) - Math.min(...t.y);
+    };
+    expect(range("spa")).toBeGreaterThan(70);
+    expect(range("monza")).toBeLessThan(8);
+    for (const id of CIRCUITS) expect(Math.max(...buildDriveTrack(id)!.grade.map(Math.abs))).toBeLessThanOrEqual(0.12);
+  });
+
   it("racing line อยู่ในถนน ใช้ความกว้างถนน (นอก-ใน-นอก) และไม่หักเลี้ยวกะทันหัน", () => {
     for (const id of CIRCUITS) {
       const t = buildDriveTrack(id)!;

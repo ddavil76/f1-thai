@@ -2,10 +2,11 @@
  * สนามสำหรับโหมดนักขับ (หน่วยเมตร)
  * — เส้นกลางสนามละเอียดทุก DS เมตร, ความโค้ง, ความเร็วสูงสุดที่เข้าโค้งได้,
  *   ความเร็วอ้างอิง (ขับตามเส้นเป๊ะ) และโซนสีของเส้นช่วย: เขียว = คันเร่ง, เหลือง = ปล่อย, แดง = เบรก
- * คำนวณจากผังสนาม 2D (ไม่มีเนิน) — ทรงพอใกล้ของจริง ไม่ได้แม่นระดับเซนติเมตร
+ * คำนวณจากผังสนาม 2D + ความสูงโดยประมาณ (elevation.ts) — ทรงพอใกล้ของจริง ไม่ได้แม่นระดับเซนติเมตร
  */
 import { circuitTrack } from "../../circuits";
 import { parsePolyline, resampleLoop, type Pt } from "../board";
+import { elevationAt } from "./elevation";
 
 /** ระยะห่างของจุดบนเส้นกลาง (เมตร) */
 export const DS = 4;
@@ -15,6 +16,8 @@ export const VMAX = 92;
 export const ALAT = 38;
 /** มองไปข้างหน้ากี่จุดเพื่อหาความเร็วต่ำสุดของโค้งต่อเนื่อง (จุดละ DS เมตร) */
 const PLAN_WIN = 8;
+/** แรงโน้มถ่วง (ม./วิ²) — ขึ้นเนินเร่งช้าลง เบรกได้ไวขึ้น */
+export const G = 9.81;
 /** ความกว้างครึ่งหนึ่งของถนน (เมตร) */
 export const HALF_WIDTH = 6;
 
@@ -48,6 +51,12 @@ export type DriveTrack = {
   zone: Zone[];
   /** ระยะเยื้องจากเส้นกลางของ racing line (เมตร, บวก = ไปทางขวาของทิศวิ่ง) */
   lineOffset: Float64Array;
+  /** ระยะจริงบน racing line ต่อ 1 ม. ของเส้นกลาง (ในโค้งด้านในสั้นกว่า ด้านนอกยาวกว่า) */
+  stretch: Float64Array;
+  /** ความสูงของถนน (เมตร) */
+  y: Float64Array;
+  /** ความชันของถนน (ขึ้น/ระยะ) — บวก = ขึ้นเนิน */
+  grade: Float64Array;
   /** เวลาต่อรอบเมื่อขับตามเส้นเป๊ะ (วินาที) */
   refLap: number;
 };
@@ -179,6 +188,25 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
     curve[i] = wrap(hb - ha) / len;
   }
   curve = smoothLoop(curve, 4);
+  // ระยะบน racing line ต่อช่วง (จุด i → i+1)
+  let stretch: Float64Array = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    stretch[i] = Math.hypot(lx[j] - lx[i], lz[j] - lz[i]) / DS;
+  }
+  stretch = smoothLoop(stretch, 2);
+
+  // ความสูง: จุดควบคุมรายสนาม (ประมาณ) → เกลี่ย · ความชันคิดตามระยะบน racing line
+  const seed = Math.abs([...circuitId].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7));
+  let y: Float64Array = Float64Array.from({ length: n }, (_, i) => elevationAt(circuitId, i / n, seed));
+  y = smoothLoop(y, 12);
+  // ความชันตามระยะบนเส้นกลาง (ทางลาดของถนนจริง) จำกัดไม่เกิน 12% — สนามจริงชันสุดราว ๆ นี้
+  const grade = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = (i - 1 + n) % n;
+    const b = (i + 1) % n;
+    grade[i] = Math.max(-0.12, Math.min(0.12, (y[b] - y[a]) / (2 * DS)));
+  }
 
   const vlat = new Float64Array(n);
   for (let i = 0; i < n; i++) vlat[i] = Math.min(VMAX, Math.sqrt(ALAT / Math.max(Math.abs(curve[i]), 1e-6)));
@@ -196,12 +224,12 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
     for (let k = 2 * n - 1; k >= 0; k--) {
       const i = k % n;
       const j = (i + 1) % n;
-      vref[i] = Math.min(vref[i], Math.sqrt(vref[j] ** 2 + 2 * brakeAt(vref[j]) * DS));
+      vref[i] = Math.min(vref[i], Math.sqrt(vref[j] ** 2 + 2 * Math.max(4, brakeAt(vref[j]) + G * grade[i]) * DS * stretch[i]));
     }
     for (let k = 0; k < 2 * n; k++) {
       const i = k % n;
       const j = (i + 1) % n;
-      vref[j] = Math.min(vref[j], Math.sqrt(vref[i] ** 2 + 2 * accelAt(vref[i]) * DS));
+      vref[j] = Math.min(vref[j], Math.sqrt(vref[i] ** 2 + 2 * Math.max(0.3, accelAt(vref[i]) - G * grade[i]) * DS * stretch[i]));
     }
   }
 
@@ -210,7 +238,7 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     const dv2 = vref[j] ** 2 - vref[i] ** 2;
-    if (dv2 < -brakeAt(vref[i]) * DS) zone[i] = "brake";
+    if (dv2 < -(brakeAt(vref[i]) + G * grade[i]) * DS * stretch[i]) zone[i] = "brake";
     else if (dv2 > 0.5 || vref[i] > VMAX * 0.97) zone[i] = "throttle";
     else zone[i] = "lift";
   }
@@ -223,9 +251,9 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
   }
 
   let refLap = 0;
-  for (let i = 0; i < n; i++) refLap += DS / Math.max(1, (vref[i] + vref[(i + 1) % n]) / 2);
+  for (let i = 0; i < n; i++) refLap += (DS * stretch[i]) / Math.max(1, (vref[i] + vref[(i + 1) % n]) / 2);
 
-  return { circuitId, length: n * DS, n, x, z, heading, curve, vlat, vref, zone, lineOffset, refLap };
+  return { circuitId, length: n * DS, n, x, z, heading, curve, vlat, vref, zone, lineOffset, stretch, y, grade, refLap };
 }
 
 /** ค่าที่ระยะ s (เมตร, นับข้ามรอบได้) แบบเชิงเส้นระหว่างจุด */
@@ -238,15 +266,30 @@ export function sample(t: DriveTrack, arr: Float64Array, s: number) {
 
 export const zoneAt = (t: DriveTrack, s: number): Zone => t.zone[Math.floor((((s / DS) % t.n) + t.n) % t.n)];
 
+/** ค่าที่ระยะ s แบบโค้งเรียบ (Catmull-Rom) — ใช้กับตำแหน่ง จะได้ไม่เป็นเส้นหักทุก DS เมตร */
+export function sampleSmooth(t: DriveTrack, arr: Float64Array, s: number) {
+  const u = (((s / DS) % t.n) + t.n) % t.n;
+  const i = Math.floor(u);
+  const f = u - i;
+  const a = arr[(i - 1 + t.n) % t.n];
+  const b = arr[i];
+  const c = arr[(i + 1) % t.n];
+  const d = arr[(i + 2) % t.n];
+  return 0.5 * (2 * b + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (-a + 3 * b - 3 * c + d) * f * f * f);
+}
+
+/** ความสูงของถนนที่ระยะ s */
+export const heightAt = (t: DriveTrack, s: number) => sampleSmooth(t, t.y, s);
+
 /** ตำแหน่ง/ทิศบนสนามที่ระยะ s เยื้องขวา lateral เมตร */
 export function poseAt(t: DriveTrack, s: number, lateral = 0) {
-  const px = sample(t, t.x, s);
-  const pz = sample(t, t.z, s);
+  const px = sampleSmooth(t, t.x, s);
+  const pz = sampleSmooth(t, t.z, s);
   // ทิศวิ่งจากจุดก่อน/หลัง (ไม่ใช้ heading ตรง ๆ เพราะเชิงเส้นข้าม ±π ไม่ได้)
-  const ax = sample(t, t.x, s - 2);
-  const az = sample(t, t.z, s - 2);
-  const bx = sample(t, t.x, s + 2);
-  const bz = sample(t, t.z, s + 2);
+  const ax = sampleSmooth(t, t.x, s - 2);
+  const az = sampleSmooth(t, t.z, s - 2);
+  const bx = sampleSmooth(t, t.x, s + 2);
+  const bz = sampleSmooth(t, t.z, s + 2);
   const h = Math.atan2(bz - az, bx - ax);
   // ขวาของทิศวิ่ง (แกน z ชี้ลงจอ) = (-sin h, cos h)
   return { x: px - Math.sin(h) * lateral, z: pz + Math.cos(h) * lateral, heading: h };

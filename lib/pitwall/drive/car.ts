@@ -3,7 +3,7 @@
  * — เร็วเกินที่โค้งรับไหว = ไถลออกนอกไลน์ เสียความเร็ว และถ้าเกินมากรอบนั้นไม่นับ
  * จำลองแบบขั้นเวลาคงที่ (ผลเหมือนเดิมทุกเครื่อง ไม่ขึ้นกับเฟรมเรต)
  */
-import { accelAt, brakeAt, coastAt, DS, sample, VMAX, type DriveTrack } from "./line";
+import { accelAt, brakeAt, coastAt, DS, G, sample, VMAX, type DriveTrack } from "./line";
 
 export const STEP = 1 / 120;
 /** ระยะเริ่มก่อนเส้นสตาร์ท (เมตร) — วิ่งเข้าเส้นแบบมีความเร็วแล้ว */
@@ -47,7 +47,8 @@ export function newCar(t: DriveTrack): CarState {
 export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, events: StepEvent[] = []): StepEvent[] {
   const dt = STEP;
   const v = c.v;
-  const a = input.brake ? -brakeAt(v) : input.throttle ? accelAt(v) * perf.accel : -coastAt(v);
+  // ขึ้นเนิน = แรงโน้มถ่วงดึงถอยหลัง · ลงเนิน = ไหลเร็วขึ้น
+  const a = (input.brake ? -brakeAt(v) : input.throttle ? accelAt(v) * perf.accel : -coastAt(v)) - G * sample(t, t.grade, c.s);
   c.v = Math.max(0, Math.min(VMAX * perf.top, v + a * dt));
 
   // เร็วเกินโค้ง → ไถลออกนอกไลน์และเสียความเร็ว
@@ -69,7 +70,8 @@ export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, ev
   }
 
   const before = c.s;
-  c.s += c.v * dt;
+  // v = ความเร็วจริงบน racing line · s นับตามเส้นกลาง (ในโค้งด้านใน 1 ม. ของไลน์ = มากกว่า 1 ม. ของเส้นกลาง)
+  c.s += (c.v * dt) / Math.max(0.2, sample(t, t.stretch, c.s));
   c.t += dt;
 
   // บันทึกเวลาที่ผ่านทุก GHOST_DS เมตรในรอบนี้
