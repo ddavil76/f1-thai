@@ -24,7 +24,7 @@
    | Project name | `pitwallroom` |
    | Production branch | `main` |
    | Builds for non-production branches | ปิด (เซิร์ฟเวอร์ deploy จาก `main` อย่างเดียว) |
-   | Build watch paths → Include paths | `cloudflare/pitwall/*` (build เฉพาะตอนแก้โค้ดเซิร์ฟเวอร์) |
+   | Build watch paths → Include paths | `cloudflare/pitwall/*` และ `lib/pitwall/*` (เซิร์ฟเวอร์ใช้โค้ดเกมจาก `lib/pitwall` ด้วย) |
    | Root directory / Path | `cloudflare/pitwall` |
    | Build command | (เว้นว่าง) |
    | Deploy command | `npx wrangler deploy` |
