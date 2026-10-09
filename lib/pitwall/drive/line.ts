@@ -34,7 +34,9 @@ const FALLBACK: Record<string, { half: number; runoff: number }> = { monaco: { h
 const RUNOFF = 11;
 
 /** แรงเร่ง (ม./วิ²) — มากตอนช้า ลดลงใกล้ความเร็วสูงสุด */
-export const accelAt = (v: number) => 14 * (1 - (v / VMAX) ** 2) + 0.4;
+/** แรงเร่งเมื่อความเร็วสูงสุด (ตามแรงต้าน) เป็น vtop */
+export const accelFor = (v: number, vtop: number) => 14 * (1 - (v / vtop) ** 2) + 0.4;
+export const accelAt = (v: number) => accelFor(v, VMAX);
 /** แรงเบรก (ม./วิ²) — ยิ่งเร็ว downforce ยิ่งช่วยให้เบรกแรง */
 export const brakeAt = (v: number) => 24 + 26 * (v / VMAX) ** 2;
 /** ปล่อยคันเร่ง (ประคอง) — เสียความเร็วนิดหน่อย ใช้ผ่านโค้งยาวโดยไม่ต้องเบรก */
@@ -54,6 +56,20 @@ const SM_MIN_LEN = 320;
 const SM_MAX_CURVE = 0.0022;
 
 export type Zone = "throttle" | "lift" | "brake";
+
+/** เส้นวิ่งหนึ่งเส้น: ระยะเยื้องจากเส้นกลาง ความโค้ง ระยะต่อช่วง ความเร็วในโค้ง/อ้างอิง และโซนสี */
+export type Lane = {
+  offset: Float64Array;
+  curve: Float64Array;
+  stretch: Float64Array;
+  vlat: Float64Array;
+  vref: Float64Array;
+  zone: Zone[];
+  refLap: number;
+};
+
+/** ระยะห่างระหว่างเลน (เมตร) — กว้างพอให้รถสองคันวิ่งเคียงกัน */
+export const LANE_GAP = 2.6;
 
 export type DriveTrack = {
   circuitId: string;
@@ -91,6 +107,8 @@ export type DriveTrack = {
   bank: Float64Array;
   /** 1 = เปิด Straight Mode ได้ที่จุดนี้ */
   smZone: Uint8Array;
+  /** เลนสำหรับแข่ง/แซง: [0] เยื้องซ้าย · [1] racing line · [2] เยื้องขวา (ข้อมูลของ [1] ซ้ำกับฟิลด์หลักข้างบน) */
+  lanes: Lane[];
   /** เวลาต่อรอบเมื่อขับตามเส้นเป๊ะ (วินาที) */
   refLap: number;
 };
@@ -248,31 +266,35 @@ export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): Drive
   }
   // racing line: เส้นโค้งน้อยที่สุดภายในขอบถนน (นอก → ใน → นอก) แล้วใช้ความโค้งของเส้นนี้คำนวณความเร็ว
   const lineOffset = racingLine(x, z, heading, wl, wr);
-  const lx = new Float64Array(n);
-  const lz = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    lx[i] = x[i] - Math.sin(heading[i]) * lineOffset[i];
-    lz[i] = z[i] + Math.cos(heading[i]) * lineOffset[i];
-  }
-  let curve: Float64Array = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const a = (i - 3 + n) % n;
-    const b = (i + 3) % n;
-    const ha = Math.atan2(lz[i] - lz[a], lx[i] - lx[a]);
-    const hb = Math.atan2(lz[b] - lz[i], lx[b] - lx[i]);
-    const len = Math.hypot(lx[b] - lx[a], lz[b] - lz[a]) / 2 || DS * 3;
-    curve[i] = wrap(hb - ha) / len;
-  }
-  curve = smoothLoop(curve, 4);
-  // ระยะบน racing line ต่อช่วง (จุด i → i+1)
-  let stretch: Float64Array = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    stretch[i] = Math.hypot(lx[j] - lx[i], lz[j] - lz[i]) / DS;
-  }
-  stretch = smoothLoop(stretch, 2);
+  const geom = (offset: Float64Array) => {
+    const lx = new Float64Array(n);
+    const lz = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      lx[i] = x[i] - Math.sin(heading[i]) * offset[i];
+      lz[i] = z[i] + Math.cos(heading[i]) * offset[i];
+    }
+    let curve: Float64Array = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = (i - 3 + n) % n;
+      const b = (i + 3) % n;
+      const ha = Math.atan2(lz[i] - lz[a], lx[i] - lx[a]);
+      const hb = Math.atan2(lz[b] - lz[i], lx[b] - lx[i]);
+      const len = Math.hypot(lx[b] - lx[a], lz[b] - lz[a]) / 2 || DS * 3;
+      curve[i] = wrap(hb - ha) / len;
+    }
+    curve = smoothLoop(curve, 4);
+    // ระยะบนเส้นต่อช่วง (จุด i → i+1)
+    let stretch: Float64Array = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      stretch[i] = Math.hypot(lx[j] - lx[i], lz[j] - lz[i]) / DS;
+    }
+    stretch = smoothLoop(stretch, 2);
+    return { curve, stretch };
+  };
+  const { curve } = geom(lineOffset);
 
-  // ความสูง: จุดควบคุมรายสนาม (ประมาณ) → เกลี่ย · ความชันคิดตามระยะบน racing line
+  // ความสูง: จุดควบคุมรายสนาม (ประมาณ) → เกลี่ย
   const seed = Math.abs([...circuitId].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7));
   let y: Float64Array = Float64Array.from({ length: n }, (_, i) => elevationAt(circuitId, i * DS, n * DS, seed));
   y = smoothLoop(y, 20);
@@ -305,15 +327,6 @@ export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): Drive
     }
   }
 
-  // ความเร็วสูงสุดในโค้ง: v²·|k| = ALAT + DOWNFORCE·v²/VMAX² + ALAT·v²·kv/G + G·sin(bank)
-  //   → v² = (ALAT + G·sin(bank)) / (|k| − DOWNFORCE/VMAX² − ALAT·kv/G) · ตัวหารไม่บวก = กดเต็มได้
-  const vlat = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const den = Math.abs(curve[i]) - DOWNFORCE / VMAX ** 2 - (ALAT * vcurve[i]) / G;
-    const cap = ALAT + G * Math.sin(Math.abs(bank[i]));
-    // เพดานเป็นความเร็วสูงสุดของ Straight Mode — ความเร็วสูงสุดจริงของแต่ละจุดคุมด้วยแรงเร่ง/แรงต้าน
-    vlat[i] = den <= 1e-6 ? VSM : Math.min(VSM, Math.sqrt(cap / den));
-  }
   // โซน Straight Mode: ทางตรงยาว (ความโค้งของ racing line น้อย) เริ่มหลังออกจากโค้ง 40 ม. จบก่อนถึงโค้ง 80 ม.
   const smZone = new Uint8Array(n);
   {
@@ -339,56 +352,99 @@ export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): Drive
     }
   }
 
-  // ความเร็วอ้างอิงใช้ค่าต่ำสุดของช่วงข้างหน้า — โค้งต่อเนื่องจะได้เบรกครั้งเดียวแล้วประคองผ่าน ไม่เบรกถี่ ๆ
-  const vplan = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    let m = vlat[i];
-    for (let k = 1; k <= PLAN_WIN; k++) m = Math.min(m, vlat[(i + k) % n]);
-    vplan[i] = m;
-  }
-
-  // ความเร็วอ้างอิง: เบรกให้ทันโค้งถัดไป (ย้อนหลัง) แล้วเร่งได้เท่าที่รถไหว (เดินหน้า) — วนสองรอบให้ต่อกันที่เส้นชัย
-  const vref = Float64Array.from(vplan);
-  for (let pass = 0; pass < 2; pass++) {
-    for (let k = 2 * n - 1; k >= 0; k--) {
-      const i = k % n;
-      const j = (i + 1) % n;
-      vref[i] = Math.min(vref[i], Math.sqrt(vref[j] ** 2 + 2 * Math.max(4, brakeAt(vref[j]) + G * grade[i]) * DS * stretch[i]));
+  /** ความเร็วในโค้ง ความเร็วอ้างอิง และโซนสีของเส้นใดเส้นหนึ่ง (racing line หรือเลนข้าง ๆ) */
+  const profile = (offset: Float64Array): Lane => {
+    const { curve, stretch } = geom(offset);
+    // ความเร็วสูงสุดในโค้ง: v²·|k| = ALAT + DOWNFORCE·v²/VMAX² + ALAT·v²·kv/G + G·sin(bank)
+    //   → v² = (ALAT + G·sin(bank)) / (|k| − DOWNFORCE/VMAX² − ALAT·kv/G) · ตัวหารไม่บวก = กดเต็มได้
+    const vlat = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const den = Math.abs(curve[i]) - DOWNFORCE / VMAX ** 2 - (ALAT * vcurve[i]) / G;
+      const cap = ALAT + G * Math.sin(Math.abs(bank[i]));
+      // เพดานเป็นความเร็วสูงสุดของ Straight Mode — ความเร็วสูงสุดจริงของแต่ละจุดคุมด้วยแรงเร่ง/แรงต้าน
+      vlat[i] = den <= 1e-6 ? VSM : Math.min(VSM, Math.sqrt(cap / den));
     }
-    for (let k = 0; k < 2 * n; k++) {
-      const i = k % n;
-      const j = (i + 1) % n;
-      // ในโซนใช้ Straight Mode (แรงต้านน้อย) · พ้นโซนแล้วถ้ายังเร็วกว่าปกติ ความเร็วค่อย ๆ ลดลงเอง
-      const sm = smZone[i] === 1;
-      const acc = sm ? accelSM(vref[i]) : accelAt(vref[i]);
-      let v = Math.sqrt(Math.max(0, vref[i] ** 2 + 2 * Math.max(0.3, acc - G * grade[i]) * DS * stretch[i]));
-      const cap = sm ? VSM : VMAX;
-      if (v > cap) v = Math.max(cap, Math.sqrt(Math.max(0, vref[i] ** 2 - 2 * SM_BLEED * DS * stretch[i])));
-      vref[j] = Math.min(vref[j], v);
+    // ความเร็วอ้างอิงใช้ค่าต่ำสุดของช่วงข้างหน้า — โค้งต่อเนื่องจะได้เบรกครั้งเดียวแล้วประคองผ่าน ไม่เบรกถี่ ๆ
+    const vref = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      let m = vlat[i];
+      for (let k = 1; k <= PLAN_WIN; k++) m = Math.min(m, vlat[(i + k) % n]);
+      vref[i] = m;
     }
-  }
+    // ความเร็วอ้างอิง: เบรกให้ทันโค้งถัดไป (ย้อนหลัง) แล้วเร่งได้เท่าที่รถไหว (เดินหน้า) — วนสองรอบให้ต่อกันที่เส้นชัย
+    for (let pass = 0; pass < 2; pass++) {
+      for (let k = 2 * n - 1; k >= 0; k--) {
+        const i = k % n;
+        const j = (i + 1) % n;
+        vref[i] = Math.min(vref[i], Math.sqrt(vref[j] ** 2 + 2 * Math.max(4, brakeAt(vref[j]) + G * grade[i]) * DS * stretch[i]));
+      }
+      for (let k = 0; k < 2 * n; k++) {
+        const i = k % n;
+        const j = (i + 1) % n;
+        // ในโซนใช้ Straight Mode (แรงต้านน้อย) · พ้นโซนแล้วถ้ายังเร็วกว่าปกติ ความเร็วค่อย ๆ ลดลงเอง
+        const sm = smZone[i] === 1;
+        const acc = sm ? accelSM(vref[i]) : accelAt(vref[i]);
+        let v = Math.sqrt(Math.max(0, vref[i] ** 2 + 2 * Math.max(0.3, acc - G * grade[i]) * DS * stretch[i]));
+        const cap = sm ? VSM : VMAX;
+        if (v > cap) v = Math.max(cap, Math.sqrt(Math.max(0, vref[i] ** 2 - 2 * SM_BLEED * DS * stretch[i])));
+        vref[j] = Math.min(vref[j], v);
+      }
+    }
+    // โซน: ต้องลดความเร็วแรงกว่าครึ่งของเบรกเต็มที่ = เบรก · เร่งขึ้นหรือสุดทาง = คันเร่ง · ทรงตัวในโค้ง = ปล่อย
+    const zone: Zone[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const dv2 = vref[j] ** 2 - vref[i] ** 2;
+      if (dv2 < -(brakeAt(vref[i]) + G * grade[i]) * DS * stretch[i]) zone[i] = "brake";
+      else if (dv2 > 0.5 || vref[i] > VMAX * 0.97) zone[i] = "throttle";
+      else zone[i] = "lift";
+    }
+    // โซนเบรกสั้นมากกลางทางเร่ง = สัญญาณรบกวน ตัดทิ้ง (กันเส้นแดงกะพริบ)
+    for (let i = 0; i < n; i++) {
+      if (zone[i] !== "brake") continue;
+      let len = 0;
+      while (len < 8 && zone[(i + len) % n] === "brake") len++;
+      if (len < 5 && zone[(i - 1 + n) % n] === "throttle") for (let k = 0; k < len; k++) zone[(i + k) % n] = "lift";
+    }
+    let refLap = 0;
+    for (let i = 0; i < n; i++) refLap += (DS * stretch[i]) / Math.max(1, (vref[i] + vref[(i + 1) % n]) / 2);
+    return { offset, curve, stretch, vlat, vref, zone, refLap };
+  };
 
-  // โซน: ต้องลดความเร็วแรงกว่าครึ่งของเบรกเต็มที่ = เบรก · เร่งขึ้นหรือสุดทาง = คันเร่ง · ทรงตัวในโค้ง = ปล่อย
-  const zone: Zone[] = new Array(n);
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    const dv2 = vref[j] ** 2 - vref[i] ** 2;
-    if (dv2 < -(brakeAt(vref[i]) + G * grade[i]) * DS * stretch[i]) zone[i] = "brake";
-    else if (dv2 > 0.5 || vref[i] > VMAX * 0.97) zone[i] = "throttle";
-    else zone[i] = "lift";
-  }
-  // โซนเบรกสั้นมากกลางทางเร่ง = สัญญาณรบกวน ตัดทิ้ง (กันเส้นแดงกะพริบ)
-  for (let i = 0; i < n; i++) {
-    if (zone[i] !== "brake") continue;
-    let len = 0;
-    while (len < 8 && zone[(i + len) % n] === "brake") len++;
-    if (len < 5 && zone[(i - 1 + n) % n] === "throttle") for (let k = 0; k < len; k++) zone[(i + k) % n] = "lift";
-  }
+  // เลนแซง: เยื้องซ้าย/ขวาจาก racing line LANE_GAP ม. (ไม่เกินขอบถนน · เกลี่ยไม่ให้หักมุม)
+  const laneOffset = (k: number) => {
+    const o = new Float64Array(n);
+    for (let i = 0; i < n; i++) o[i] = Math.max(1.2 - wl[i], Math.min(wr[i] - 1.2, lineOffset[i] + k * LANE_GAP));
+    const sm = smoothLoop(o, 6);
+    for (let i = 0; i < n; i++) sm[i] = Math.max(1.2 - wl[i], Math.min(wr[i] - 1.2, sm[i]));
+    return sm;
+  };
+  const lanes = [profile(laneOffset(-1)), profile(lineOffset), profile(laneOffset(1))];
+  const main = lanes[1];
 
-  let refLap = 0;
-  for (let i = 0; i < n; i++) refLap += (DS * stretch[i]) / Math.max(1, (vref[i] + vref[(i + 1) % n]) / 2);
-
-  return { circuitId, length: n * DS, n, x, z, heading, curve, vlat, vref, zone, wl, wr, runoff, lineOffset, stretch, y, grade, bank, smZone, refLap };
+  return {
+    circuitId,
+    length: n * DS,
+    n,
+    x,
+    z,
+    heading,
+    curve: main.curve,
+    vlat: main.vlat,
+    vref: main.vref,
+    zone: main.zone,
+    wl,
+    wr,
+    runoff,
+    lineOffset,
+    stretch: main.stretch,
+    y,
+    grade,
+    bank,
+    smZone,
+    lanes,
+    refLap: main.refLap,
+  };
 }
 
 /** ค่าที่ระยะ s (เมตร, นับข้ามรอบได้) แบบเชิงเส้นระหว่างจุด */
@@ -400,6 +456,19 @@ export function sample(t: DriveTrack, arr: Float64Array, s: number) {
 }
 
 export const zoneAt = (t: DriveTrack, s: number): Zone => t.zone[Math.floor((((s / DS) % t.n) + t.n) % t.n)];
+
+type LaneKey = "offset" | "curve" | "stretch" | "vlat" | "vref";
+/** ค่าของเลนที่ตำแหน่งข้าง lat (−1 = เลนซ้าย · 0 = racing line · 1 = เลนขวา · ทศนิยม = ระหว่างเปลี่ยนเลน) */
+export function laneValue(t: DriveTrack, key: LaneKey, s: number, lat: number) {
+  const k = Math.max(0, Math.min(2, lat + 1));
+  const i = Math.min(1, Math.floor(k));
+  const f = k - i;
+  const a = sample(t, t.lanes[i][key], s);
+  return f === 0 ? a : a * (1 - f) + sample(t, t.lanes[i + 1][key], s) * f;
+}
+/** โซนสีของเลนที่ใกล้ที่สุด */
+export const laneZone = (t: DriveTrack, s: number, lat: number): Zone =>
+  t.lanes[Math.max(0, Math.min(2, Math.round(lat + 1)))].zone[Math.floor((((s / DS) % t.n) + t.n) % t.n)];
 
 /** ค่าที่ระยะ s แบบโค้งเรียบ (Catmull-Rom) — ใช้กับตำแหน่ง จะได้ไม่เป็นเส้นหักทุก DS เมตร */
 export function sampleSmooth(t: DriveTrack, arr: Float64Array, s: number) {
