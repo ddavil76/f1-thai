@@ -7,6 +7,8 @@ import { Btn, Card, Head, Seg } from "@/components/pitwall/ui";
 import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { deltaTo, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { buildDriveTrack, DS, poseAt, sample, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { cornerAhead } from "@/lib/pitwall/drive/corners";
+import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
 import type { BodyModel, CameraMode, DriveScene, Gfx } from "./scene";
 
@@ -26,7 +28,28 @@ const MODEL_FILE: Record<string, string> = {
   grove: "grove",
   stripe: "starstripe",
 };
-const bestKey = (circuit: string) => `pitwall-drive-best:${circuit}`;
+// v2: ผังสนามจริง + เนิน — เวลาเก่า (ผังคร่าว ๆ) เทียบกันไม่ได้
+const bestKey = (circuit: string) => `pitwall-drive-best2:${circuit}`;
+
+/** สนามที่สร้างแล้ว (สร้างครั้งเดียวต่อสนาม) */
+const trackCache = new Map<string, DriveTrack | null>();
+/** โหลดผังสนามจริง (ถ้ามี) แล้วสร้างสนาม · ระหว่างโหลดได้ undefined */
+function useDriveTrack(circuit: string): DriveTrack | null | undefined {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (trackCache.has(circuit)) return;
+    let alive = true;
+    (async () => {
+      const raw = hasRealTrack(circuit) ? await loadRawTrack(circuit).catch(() => null) : null;
+      trackCache.set(circuit, buildDriveTrack(circuit, raw));
+      if (alive) bump((n) => n + 1);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [circuit]);
+  return trackCache.has(circuit) ? trackCache.get(circuit) : undefined;
+}
 
 function readJson<T>(key: string): T | null {
   try {
@@ -69,14 +92,27 @@ export default function DriverMode({ onExit }: { onExit: () => void }) {
       return next;
     });
 
-  if (driving) return <DriveSession settings={settings} onExit={() => setDriving(false)} />;
-  return <Setup settings={settings} set={set} onStart={() => setDriving(true)} onExit={onExit} />;
+  const track = useDriveTrack(settings.circuit);
+
+  if (driving && track) return <DriveSession settings={settings} track={track} onExit={() => setDriving(false)} />;
+  return <Setup settings={settings} track={track} set={set} onStart={() => setDriving(true)} onExit={onExit} />;
 }
 
-function Setup({ settings, set, onStart, onExit }: { settings: Settings; set: (p: Partial<Settings>) => void; onStart: () => void; onExit: () => void }) {
+function Setup({
+  settings,
+  track,
+  set,
+  onStart,
+  onExit,
+}: {
+  settings: Settings;
+  track: DriveTrack | null | undefined;
+  set: (p: Partial<Settings>) => void;
+  onStart: () => void;
+  onExit: () => void;
+}) {
   const team = TEAMS[settings.team] ?? TEAMS[0];
   const best = useMemo(() => (typeof window === "undefined" ? null : readJson<Best>(bestKey(settings.circuit))), [settings.circuit]);
-  const track = useMemo(() => buildDriveTrack(settings.circuit), [settings.circuit]);
   return (
     <div className="space-y-4">
       <Btn tone="ghost" onClick={onExit}>
@@ -124,7 +160,7 @@ function Setup({ settings, set, onStart, onExit }: { settings: Settings; set: (p
       </Card>
 
       <Card>
-        <Head kicker="สนาม" title={circuitName(settings.circuit)} sub={track ? `${(track.length / 1000).toFixed(2)} กม. · เวลาเป้าหมาย (ขับตามเส้นเป๊ะ) ${fmtTime(track.refLap)}` : undefined} />
+        <Head kicker="สนาม" title={circuitName(settings.circuit)} sub={track ? `${(track.length / 1000).toFixed(2)} กม. · เวลาเป้าหมาย (ขับตามเส้นเป๊ะ) ${fmtTime(track.refLap)}` : track === undefined ? "กำลังโหลดผังสนาม…" : undefined} />
         <div className="flex flex-wrap gap-1.5">
           {CIRCUITS.map((c) => (
             <button
@@ -139,6 +175,11 @@ function Setup({ settings, set, onStart, onExit }: { settings: Settings; set: (p
           ))}
         </div>
         {best && <p className="text-xs text-white/60">รอบดีสุดของคุณที่สนามนี้ {fmtTime(best.time)}</p>}
+        <p className="text-[11px] text-white/55">
+          {hasRealTrack(settings.circuit)
+            ? `ผังสนามและความกว้างถนนตามจริง · มีชื่อโค้งดัง · ความสูงเนินเป็นค่าประมาณ — ${TRACK_DATA_CREDIT}`
+            : "ผังสนามแบบคร่าว ๆ (© OpenStreetMap contributors) · ความสูงเนินเป็นค่าประมาณ"}
+        </p>
       </Card>
 
       <Card>
@@ -191,15 +232,15 @@ type Hud = {
   hint: HTMLSpanElement | null;
   dot: SVGCircleElement | null;
   lap: HTMLSpanElement | null;
+  corner: HTMLParagraphElement | null;
 };
 
-function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => void }) {
+function DriveSession({ settings, track, onExit }: { settings: Settings; track: DriveTrack; onExit: () => void }) {
   const team = TEAMS[settings.team] ?? TEAMS[0];
   const driver = team.drivers[settings.driver] ?? team.drivers[0];
-  const track = useMemo(() => buildDriveTrack(settings.circuit), [settings.circuit]) as DriveTrack;
   const host = useRef<HTMLDivElement>(null);
   const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false });
-  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, hint: null, dot: null, lap: null });
+  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, hint: null, dot: null, lap: null, corner: null });
   const sceneRef = useRef<DriveScene | null>(null);
   const [camera, setCamera] = useState<CameraMode>(settings.camera);
   const [line, setLine] = useState(settings.line);
@@ -431,6 +472,13 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
             const fast = dist !== null && car.v > sample(track, track.vref, car.s + dist) + 2;
             h.hint.textContent = !fast || dist === null ? "" : dist < 8 ? "เบรก!" : `เบรกใน ${Math.round(dist)} ม.`;
           }
+          // ชื่อโค้งดังที่กำลังจะถึง (เช่น EAU ROUGE)
+          if (h.corner) {
+            const c = d >= 0 ? cornerAhead(track.circuitId, d, track.length) : null;
+            const name = c?.name ?? "";
+            if (h.corner.textContent !== name) h.corner.textContent = name;
+            h.corner.style.opacity = name ? "1" : "0";
+          }
           if (h.dot) {
             const p = poseAt(track, car.s);
             h.dot.setAttribute("cx", p.x.toFixed(0));
@@ -507,6 +555,7 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
             </p>
             <p>เป้าหมาย {fmtTime(track.refLap)}</p>
             {credit && <p className="text-[10px] text-white/50">โมเดลรถ: Meshy (CC BY 4.0)</p>}
+            {hasRealTrack(track.circuitId) && <p className="max-w-56 text-[10px] text-white/50">{TRACK_DATA_CREDIT}</p>}
             {laps.slice(0, 4).map((l) => (
               <p key={l.lap} className={l.valid ? "" : "text-(--color-f1-text) line-through"}>
                 รอบ {l.lap} {fmtTime(l.time)}
@@ -515,6 +564,13 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
           </div>
         </div>
       </div>
+
+      {/* ชื่อโค้ง */}
+      <p
+        ref={(n) => void (hud.current.corner = n)}
+        aria-live="polite"
+        className="poster pointer-events-none absolute left-3 top-16 border-l-4 border-(--color-f1) bg-black/55 px-3 py-1 text-lg uppercase tracking-wide opacity-0 backdrop-blur transition-opacity duration-300 sm:top-24 sm:text-2xl"
+      />
 
       {msg && (
         <p key={msg.id} className={`radio-toast pointer-events-none absolute inset-x-0 top-24 mx-auto w-fit rounded-xl px-4 py-2 text-center text-base font-bold sm:top-28 sm:text-lg ${msg.tone === "good" ? "bg-[#16a34a]/90" : msg.tone === "bad" ? "bg-(--color-f1)/90" : "bg-black/70"}`}>

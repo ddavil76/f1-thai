@@ -7,19 +7,31 @@
 import { circuitTrack } from "../../circuits";
 import { parsePolyline, resampleLoop, type Pt } from "../board";
 import { elevationAt } from "./elevation";
+import type { RawTrack } from "./tracks";
+import { cornersOf } from "./corners";
 
 /** ระยะห่างของจุดบนเส้นกลาง (เมตร) */
 export const DS = 4;
 /** ความเร็วสูงสุด (ม./วิ) ≈ 330 กม./ชม. */
 export const VMAX = 92;
-/** แรงเหวี่ยงข้างที่ยางรับได้ (ม./วิ²) ≈ 3.9g */
-export const ALAT = 38;
+/**
+ * แรงเหวี่ยงข้างที่รถรับได้ (ม./วิ²) = ALAT + DOWNFORCE·(v/VMAX)²
+ * ช้า ≈ 2.7g (ยางล้วน) · เร็วสุด ≈ 6g (แรงกดอากาศ) — โค้งเร็วอย่าง Eau Rouge/130R/Copse จึงกดเต็มได้
+ */
+export const ALAT = 26;
+export const DOWNFORCE = 34;
 /** มองไปข้างหน้ากี่จุดเพื่อหาความเร็วต่ำสุดของโค้งต่อเนื่อง (จุดละ DS เมตร) */
 const PLAN_WIN = 8;
 /** แรงโน้มถ่วง (ม./วิ²) — ขึ้นเนินเร่งช้าลง เบรกได้ไวขึ้น */
 export const G = 9.81;
-/** ความกว้างครึ่งหนึ่งของถนน (เมตร) */
+/** ความชันสูงสุดของถนน */
+const MAX_GRADE = 0.18;
+/** ความกว้างครึ่งหนึ่งของถนน (เมตร) เมื่อไม่มีข้อมูลจริง */
 export const HALF_WIDTH = 6;
+/** สนามที่ไม่มีข้อมูลความกว้างจริง: ครึ่งความกว้าง + ระยะถึงกำแพง (โมนาโกแคบ กำแพงชิดขอบ) */
+const FALLBACK: Record<string, { half: number; runoff: number }> = { monaco: { half: 4.3, runoff: 0.8 } };
+/** ระยะจากขอบถนนถึงกำแพง (เมตร) */
+const RUNOFF = 11;
 
 /** แรงเร่ง (ม./วิ²) — มากตอนช้า ลดลงใกล้ความเร็วสูงสุด */
 export const accelAt = (v: number) => 14 * (1 - (v / VMAX) ** 2) + 0.4;
@@ -49,6 +61,11 @@ export type DriveTrack = {
   vref: Float64Array;
   /** โซนสีของเส้นช่วย */
   zone: Zone[];
+  /** ความกว้างถนนจากเส้นกลางไปทางซ้าย/ขวาของทิศวิ่ง (เมตร) */
+  wl: Float64Array;
+  wr: Float64Array;
+  /** ระยะจากขอบถนนถึงกำแพง (เมตร) */
+  runoff: number;
   /** ระยะเยื้องจากเส้นกลางของ racing line (เมตร, บวก = ไปทางขวาของทิศวิ่ง) */
   lineOffset: Float64Array;
   /** ระยะจริงบน racing line ต่อ 1 ม. ของเส้นกลาง (ในโค้งด้านในสั้นกว่า ด้านนอกยาวกว่า) */
@@ -57,6 +74,8 @@ export type DriveTrack = {
   y: Float64Array;
   /** ความชันของถนน (ขึ้น/ระยะ) — บวก = ขึ้นเนิน */
   grade: Float64Array;
+  /** ถนนเอียงข้าง (เรเดียน): ความสูงที่ระยะเยื้อง lat = y + lat·tan(bank) */
+  bank: Float64Array;
   /** เวลาต่อรอบเมื่อขับตามเส้นเป๊ะ (วินาที) */
   refLap: number;
 };
@@ -104,9 +123,8 @@ function curv3(ax: number, az: number, bx: number, bz: number, cx: number, cz: n
  * — ได้โค้งที่เปลี่ยนความโค้งอย่างต่อเนื่อง: เข้าจากด้านนอก แตะ apex ด้านใน แล้วออกกว้าง ไม่หักเลี้ยวกะทันหัน
  * เริ่มจากระยะห่างกว้าง (ภาพรวม) ไปแคบ (รายละเอียด) ให้ลู่เข้าเร็ว
  */
-function racingLine(x: Float64Array, z: Float64Array, heading: Float64Array) {
+function racingLine(x: Float64Array, z: Float64Array, heading: Float64Array, wl: Float64Array, wr: Float64Array) {
   const n = x.length;
-  const lim = HALF_WIDTH - LINE_MARGIN;
   let off: Float64Array = new Float64Array(n);
   const nx = Float64Array.from(heading, (h) => -Math.sin(h));
   const nz = Float64Array.from(heading, (h) => Math.cos(h));
@@ -129,7 +147,7 @@ function racingLine(x: Float64Array, z: Float64Array, heading: Float64Array) {
         const d = (moved - now) / eps;
         if (Math.abs(d) < 1e-9) continue;
         const next = off[i] + ((target - now) / d) * 0.6;
-        off[i] = Math.max(-lim, Math.min(lim, next));
+        off[i] = Math.max(LINE_MARGIN - wl[i], Math.min(wr[i] - LINE_MARGIN, next));
         lx[i] = x[i] + nx[i] * off[i];
         lz[i] = z[i] + nz[i] * off[i];
       }
@@ -139,7 +157,32 @@ function racingLine(x: Float64Array, z: Float64Array, heading: Float64Array) {
   return off;
 }
 
-export function buildDriveTrack(circuitId: string): DriveTrack | null {
+/** จุดเรียงตามทิศวิ่ง (เมตร, y = เหนือ) → จุดห่างเท่ากันทุก DS เมตร */
+function resampleRaw(raw: RawTrack) {
+  const m = raw.x.length;
+  const cum = [0];
+  for (let i = 1; i <= m; i++) cum.push(cum[i - 1] + Math.hypot(raw.x[i % m] - raw.x[i - 1], raw.y[i % m] - raw.y[i - 1]));
+  const total = cum[m];
+  const n = Math.round(total / DS);
+  const out = { x: new Float64Array(n), z: new Float64Array(n), wl: new Float64Array(n), wr: new Float64Array(n) };
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const d = (i * total) / n;
+    while (cum[j + 1] < d) j++;
+    const f = (d - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j]);
+    const a = j;
+    const b = (j + 1) % m;
+    out.x[i] = raw.x[a] + (raw.x[b] - raw.x[a]) * f;
+    // แกน z ของฉากชี้ใต้ (มองจากบนแล้วเหนืออยู่บน)
+    out.z[i] = -(raw.y[a] + (raw.y[b] - raw.y[a]) * f);
+    out.wr[i] = raw.wr[a] + (raw.wr[b] - raw.wr[a]) * f;
+    out.wl[i] = raw.wl[a] + (raw.wl[b] - raw.wl[a]) * f;
+  }
+  return out;
+}
+
+/** ผังจาก lib/circuits (ไม่มีความกว้างจริง) */
+function fromOutline(circuitId: string) {
   const path = circuitTrack(circuitId);
   if (!path) return null;
   const raw = parsePolyline(path.d);
@@ -148,21 +191,39 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
   const scale = lengthM / perimeter(raw);
   const n = Math.max(200, Math.round(lengthM / DS));
   const pts = resampleLoop(raw, n);
-
-  // เกลี่ยมุมหักของผังให้เป็นโค้งเรียบ (ผังเดิมมีจุดห่าง ๆ)
-  let x: Float64Array = new Float64Array(n);
-  let z: Float64Array = new Float64Array(n);
+  const half = FALLBACK[circuitId]?.half ?? HALF_WIDTH;
+  const out: Record<"x" | "z" | "wl" | "wr", Float64Array> = { x: new Float64Array(n), z: new Float64Array(n), wl: new Float64Array(n).fill(half), wr: new Float64Array(n).fill(half) };
   pts.forEach((p, i) => {
-    x[i] = p.x * scale;
-    z[i] = p.y * scale;
+    out.x[i] = p.x * scale;
+    out.z[i] = p.y * scale;
   });
+  // เกลี่ยมุมหักของผังให้เป็นโค้งเรียบ (ผังเดิมมีจุดห่าง ๆ)
+  out.x = smoothLoop(out.x, 8);
+  out.z = smoothLoop(out.z, 8);
+  return out;
+}
+
+/**
+ * สร้างสนามสำหรับขับ · raw = ข้อมูลจริงจาก tracks.ts (ถ้ามี) — ไม่มีก็ใช้ผังจาก lib/circuits
+ */
+export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): DriveTrack | null {
+  const base = raw ? resampleRaw(raw) : fromOutline(circuitId);
+  if (!base) return null;
+  const n = base.x.length;
+  let x: Float64Array = base.x;
+  let z: Float64Array = base.z;
   // จัดให้อยู่กลางจุด (0, 0)
   const cx = (Math.max(...x) + Math.min(...x)) / 2;
   const cz = (Math.max(...z) + Math.min(...z)) / 2;
   x = x.map((v) => v - cx);
   z = z.map((v) => v - cz);
-  x = smoothLoop(x, 8);
-  z = smoothLoop(z, 8);
+  if (raw) {
+    x = smoothLoop(x, 2);
+    z = smoothLoop(z, 2);
+  }
+  const wl = raw ? smoothLoop(base.wl, 6) : base.wl;
+  const wr = raw ? smoothLoop(base.wr, 6) : base.wr;
+  const runoff = FALLBACK[circuitId]?.runoff ?? RUNOFF;
 
   const heading = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -171,7 +232,7 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
     heading[i] = Math.atan2(z[b] - z[a], x[b] - x[a]);
   }
   // racing line: เส้นโค้งน้อยที่สุดภายในขอบถนน (นอก → ใน → นอก) แล้วใช้ความโค้งของเส้นนี้คำนวณความเร็ว
-  const lineOffset = racingLine(x, z, heading);
+  const lineOffset = racingLine(x, z, heading, wl, wr);
   const lx = new Float64Array(n);
   const lz = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -198,18 +259,45 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
 
   // ความสูง: จุดควบคุมรายสนาม (ประมาณ) → เกลี่ย · ความชันคิดตามระยะบน racing line
   const seed = Math.abs([...circuitId].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7));
-  let y: Float64Array = Float64Array.from({ length: n }, (_, i) => elevationAt(circuitId, i / n, seed));
-  y = smoothLoop(y, 12);
-  // ความชันตามระยะบนเส้นกลาง (ทางลาดของถนนจริง) จำกัดไม่เกิน 12% — สนามจริงชันสุดราว ๆ นี้
+  let y: Float64Array = Float64Array.from({ length: n }, (_, i) => elevationAt(circuitId, i * DS, n * DS, seed));
+  y = smoothLoop(y, 20);
+  // ความชันตามระยะบนเส้นกลาง (ทางลาดของถนนจริง) จำกัดไม่เกิน 18% (Raidillon ชันราว ๆ นี้)
   const grade = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     const a = (i - 1 + n) % n;
     const b = (i + 1) % n;
-    grade[i] = Math.max(-0.12, Math.min(0.12, (y[b] - y[a]) / (2 * DS)));
+    grade[i] = Math.max(-MAX_GRADE, Math.min(MAX_GRADE, (y[b] - y[a]) / (2 * DS)));
+  }
+  // ความโค้งแนวดิ่ง: บวก = แอ่ง (รถถูกกดลง เกาะถนนขึ้น เช่นก้น Eau Rouge) · ลบ = ยอดเนิน (ตัวเบา เกาะน้อยลง)
+  let vcurve: Float64Array = new Float64Array(n);
+  for (let i = 0; i < n; i++) vcurve[i] = (grade[(i + 1) % n] - grade[(i - 1 + n) % n]) / (2 * DS);
+  // จำกัดผล: ยอดเนินเบาตัวได้ไม่เกิน ~0.8g ที่ความเร็วสูง · แอ่งกดได้มากกว่า
+  vcurve = smoothLoop(vcurve, 6).map((v) => Math.max(-0.0012, Math.min(0.004, v)));
+
+  // โค้งเอียง (banking) จาก corners.ts — เอียงลงด้านในโค้ง ค่อย ๆ เพิ่ม/ลดที่ปลายโค้ง
+  const bank = new Float64Array(n);
+  for (const c of cornersOf(circuitId)) {
+    if (!c.bank) continue;
+    const i0 = Math.floor(c.from / DS);
+    const i1 = Math.ceil(c.to / DS);
+    let turn = 0;
+    for (let i = i0; i <= i1; i++) turn += curve[i % n];
+    const ramp = Math.round(40 / DS);
+    for (let i = i0 - ramp; i <= i1 + ramp; i++) {
+      const w = Math.min(1, (i - (i0 - ramp)) / ramp, (i1 + ramp - i) / ramp);
+      // เลี้ยวขวา (turn > 0) = ด้านในอยู่ขวา (lat บวก) ต้องต่ำลง → tan(bank) ติดลบ
+      bank[((i % n) + n) % n] = -Math.sign(turn) * w * ((c.bank * Math.PI) / 180);
+    }
   }
 
+  // ความเร็วสูงสุดในโค้ง: v²·|k| = ALAT + DOWNFORCE·v²/VMAX² + ALAT·v²·kv/G + G·sin(bank)
+  //   → v² = (ALAT + G·sin(bank)) / (|k| − DOWNFORCE/VMAX² − ALAT·kv/G) · ตัวหารไม่บวก = กดเต็มได้
   const vlat = new Float64Array(n);
-  for (let i = 0; i < n; i++) vlat[i] = Math.min(VMAX, Math.sqrt(ALAT / Math.max(Math.abs(curve[i]), 1e-6)));
+  for (let i = 0; i < n; i++) {
+    const den = Math.abs(curve[i]) - DOWNFORCE / VMAX ** 2 - (ALAT * vcurve[i]) / G;
+    const cap = ALAT + G * Math.sin(Math.abs(bank[i]));
+    vlat[i] = den <= 1e-6 ? VMAX : Math.min(VMAX, Math.sqrt(cap / den));
+  }
   // ความเร็วอ้างอิงใช้ค่าต่ำสุดของช่วงข้างหน้า — โค้งต่อเนื่องจะได้เบรกครั้งเดียวแล้วประคองผ่าน ไม่เบรกถี่ ๆ
   const vplan = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -253,7 +341,7 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
   let refLap = 0;
   for (let i = 0; i < n; i++) refLap += (DS * stretch[i]) / Math.max(1, (vref[i] + vref[(i + 1) % n]) / 2);
 
-  return { circuitId, length: n * DS, n, x, z, heading, curve, vlat, vref, zone, lineOffset, stretch, y, grade, refLap };
+  return { circuitId, length: n * DS, n, x, z, heading, curve, vlat, vref, zone, wl, wr, runoff, lineOffset, stretch, y, grade, bank, refLap };
 }
 
 /** ค่าที่ระยะ s (เมตร, นับข้ามรอบได้) แบบเชิงเส้นระหว่างจุด */
@@ -278,8 +366,16 @@ export function sampleSmooth(t: DriveTrack, arr: Float64Array, s: number) {
   return 0.5 * (2 * b + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (-a + 3 * b - 3 * c + d) * f * f * f);
 }
 
-/** ความสูงของถนนที่ระยะ s */
+/** ความสูงของถนน (กลางถนน) ที่ระยะ s */
 export const heightAt = (t: DriveTrack, s: number) => sampleSmooth(t, t.y, s);
+
+/** ความสูงของพื้นที่ระยะ s เยื้อง lat — รวมถนนเอียง (นอกขอบถนนไม่เอียงต่อ) */
+export function surfaceAt(t: DriveTrack, s: number, lat: number) {
+  const b = sample(t, t.bank, s);
+  if (b === 0) return heightAt(t, s);
+  const edge = Math.max(-sample(t, t.wl, s), Math.min(sample(t, t.wr, s), lat));
+  return heightAt(t, s) + edge * Math.tan(b);
+}
 
 /** ตำแหน่ง/ทิศบนสนามที่ระยะ s เยื้องขวา lateral เมตร */
 export function poseAt(t: DriveTrack, s: number, lateral = 0) {

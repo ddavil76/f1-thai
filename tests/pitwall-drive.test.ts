@@ -1,12 +1,20 @@
-import { describe, expect, it } from "vitest";
-import { buildDriveTrack, DS, HALF_WIDTH, VMAX } from "@/lib/pitwall/drive/line";
+import { beforeAll, describe, expect, it } from "vitest";
+import { buildDriveTrack, DS, VMAX, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { loadRawTrack, hasRealTrack } from "@/lib/pitwall/drive/tracks";
+import { cornersOf } from "@/lib/pitwall/drive/corners";
+import { CIRCUITS as ALL } from "@/lib/pitwall/teams";
 import { deltaTo, ghostDistance, idealInput, newCar, perfOf, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 
-const CIRCUITS = ["monza", "spa", "monaco", "silverstone", "suzuka", "bahrain"];
+const CIRCUITS = ALL.map((c) => c.id);
+/** สนามที่สร้างจากข้อมูลจริง (สร้างครั้งเดียว) */
+const TRACKS: Record<string, DriveTrack> = {};
+beforeAll(async () => {
+  for (const id of CIRCUITS) TRACKS[id] = buildDriveTrack(id, await loadRawTrack(id))!;
+});
 
 /** ขับ n รอบด้วยฟังก์ชันเลือกปุ่ม คืนผลรอบ + จำนวนครั้งที่หลุดโค้ง */
-function drive(id: string, laps: number, pick: (c: ReturnType<typeof newCar>, t: NonNullable<ReturnType<typeof buildDriveTrack>>) => { throttle: boolean; brake: boolean }) {
-  const t = buildDriveTrack(id)!;
+function drive(id: string, laps: number, pick: (c: ReturnType<typeof newCar>, t: DriveTrack) => { throttle: boolean; brake: boolean }) {
+  const t = TRACKS[id];
   const c = newCar(t);
   const results: LapResult[] = [];
   let off = 0;
@@ -25,8 +33,8 @@ function drive(id: string, laps: number, pick: (c: ReturnType<typeof newCar>, t:
 describe("โหมดนักขับ: สนาม", () => {
   it("ทุกสนามสร้างได้ ความยาวใกล้ของจริง และมีครบสามโซน", () => {
     for (const id of CIRCUITS) {
-      const t = buildDriveTrack(id)!;
-      expect(t).not.toBeNull();
+      const t = TRACKS[id];
+      expect(t).toBeTruthy();
       expect(t.n * DS).toBe(t.length);
       expect(t.refLap).toBeGreaterThan(55);
       expect(t.refLap).toBeLessThan(140);
@@ -35,19 +43,42 @@ describe("โหมดนักขับ: สนาม", () => {
     }
   });
 
-  it("สนามมีเนิน: สปาสูงต่ำต่างกันมาก มอนซาเกือบราบ ความชันไม่เกิน 12%", () => {
-    const range = (id: string) => {
-      const t = buildDriveTrack(id)!;
-      return Math.max(...t.y) - Math.min(...t.y);
-    };
+  it("สนามมีเนิน: สปาสูงต่ำต่างกันมาก มอนซาเกือบราบ ความชันไม่เกิน 18%", () => {
+    const range = (id: string) => Math.max(...TRACKS[id].y) - Math.min(...TRACKS[id].y);
     expect(range("spa")).toBeGreaterThan(70);
     expect(range("monza")).toBeLessThan(8);
-    for (const id of CIRCUITS) expect(Math.max(...buildDriveTrack(id)!.grade.map(Math.abs))).toBeLessThanOrEqual(0.12);
+    for (const id of CIRCUITS) expect(Math.max(...TRACKS[id].grade.map(Math.abs))).toBeLessThanOrEqual(0.18);
+  });
+
+  it("ใช้ผังสนามจริง: ความยาวใกล้ของจริง และความกว้างถนนต่างกันตามจุด", () => {
+    const real: Record<string, number> = { spa: 7004, monza: 5793, silverstone: 5891, suzuka: 5807, americas: 5513 };
+    for (const [id, len] of Object.entries(real)) {
+      expect(hasRealTrack(id)).toBe(true);
+      expect(Math.abs(TRACKS[id].length - len) / len).toBeLessThan(0.01);
+    }
+    const w = TRACKS.spa.wl.map((v, i) => v + TRACKS.spa.wr[i]);
+    expect(Math.max(...w) - Math.min(...w)).toBeGreaterThan(3);
+  });
+
+  it("โค้งดังอยู่ในสนาม · Eau Rouge/Raidillon กดเต็ม · La Source ต้องเบรกหนัก · ซานด์วูร์ตมีโค้งเอียง", () => {
+    for (const id of CIRCUITS) for (const c of cornersOf(id)) expect(c.from < c.to && c.to <= TRACKS[id].length).toBe(true);
+    const t = TRACKS.spa;
+    const minIn = (from: number, to: number) => {
+      let m = Infinity;
+      for (let s = from; s <= to; s += DS) m = Math.min(m, t.vref[Math.floor(s / DS)]);
+      return m * 3.6;
+    };
+    const er = cornersOf("spa").find((c) => c.name === "Eau Rouge")!;
+    const rd = cornersOf("spa").find((c) => c.name === "Raidillon")!;
+    expect(minIn(er.from, rd.to)).toBeGreaterThan(280);
+    const ls = cornersOf("spa").find((c) => c.name === "La Source")!;
+    expect(minIn(ls.from, ls.to)).toBeLessThan(110);
+    expect(Math.max(...TRACKS.zandvoort.bank.map(Math.abs))).toBeGreaterThan(0.25);
   });
 
   it("racing line อยู่ในถนน ใช้ความกว้างถนน (นอก-ใน-นอก) และไม่หักเลี้ยวกะทันหัน", () => {
     for (const id of CIRCUITS) {
-      const t = buildDriveTrack(id)!;
+      const t = TRACKS[id];
       let slope = 0;
       let jump = 0;
       for (let i = 0; i < t.n; i++) {
@@ -55,11 +86,19 @@ describe("โหมดนักขับ: สนาม", () => {
         slope = Math.max(slope, Math.abs(t.lineOffset[j] - t.lineOffset[i]) / DS);
         jump = Math.max(jump, Math.abs(t.curve[j] - t.curve[i]));
       }
-      expect(Math.max(...t.lineOffset.map(Math.abs))).toBeLessThanOrEqual(HALF_WIDTH);
-      expect(Math.max(...t.lineOffset)).toBeGreaterThan(3);
-      expect(Math.min(...t.lineOffset)).toBeLessThan(-3);
-      // เดิมเส้นเยื้องข้าง ~1.5–2 ม. ต่อ 1 ม. ที่วิ่ง (เลี้ยวหักเกือบ 60°) — ต้องไม่เกิน ~0.5
-      expect(slope).toBeLessThan(0.5);
+      let nearR = Infinity;
+      let nearL = Infinity;
+      for (let i = 0; i < t.n; i++) {
+        expect(t.lineOffset[i]).toBeLessThanOrEqual(t.wr[i]);
+        expect(t.lineOffset[i]).toBeGreaterThanOrEqual(-t.wl[i]);
+        nearR = Math.min(nearR, t.wr[i] - t.lineOffset[i]);
+        nearL = Math.min(nearL, t.wl[i] + t.lineOffset[i]);
+      }
+      // ชิดขอบทั้งสองฝั่ง (เข้าจากด้านนอก แตะ apex ด้านใน)
+      expect(nearR).toBeLessThan(2);
+      expect(nearL).toBeLessThan(2);
+      // เดิมเส้นเยื้องข้าง ~1.5–2 ม. ต่อ 1 ม. ที่วิ่ง (เลี้ยวหักเกือบ 60°) — ตอนนี้มากสุดคือข้ามถนนในชิเคน (~30°)
+      expect(slope).toBeLessThan(0.6);
       // ความโค้งเปลี่ยนต่อเนื่อง ไม่กระโดด
       expect(jump).toBeLessThan(0.02);
     }
@@ -101,7 +140,7 @@ describe("โหมดนักขับ: รถ", () => {
     expect(ghostDistance(trace, 0)).toBe(0);
     expect(ghostDistance(trace, trace[50])).toBeCloseTo(500, 0);
     // รถอยู่ที่ระยะ 500 ม. ณ เวลาเดียวกับรอบดีสุด → เร็ว/ช้ากว่า = 0
-    const fake = { ...newCar(buildDriveTrack("bahrain")!), lapStart: 0, t: trace[50] };
+    const fake = { ...newCar(TRACKS.bahrain), lapStart: 0, t: trace[50] };
     expect(deltaTo(trace, fake, 500)).toBeCloseTo(0, 3);
   });
 });

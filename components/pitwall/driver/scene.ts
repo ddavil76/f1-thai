@@ -7,7 +7,7 @@
  * ผู้เรียกโหลด three และ addon แบบ dynamic แล้วส่งเข้ามา (ไม่ให้ three เข้า bundle หลักของหน้า)
  */
 import type * as THREE_NS from "three";
-import { DS, HALF_WIDTH, VMAX, heightAt, poseAt, sample, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
+import { DS, VMAX, heightAt, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
 import { buildCar, type Livery } from "./carModel";
 
 type Three = typeof THREE_NS;
@@ -19,8 +19,6 @@ export type Gfx = "high" | "low";
 const ZONE_COLOR: Record<Zone, number> = { throttle: 0x22c55e, lift: 0xfacc15, brake: 0xef4444 };
 /** ความกว้างของเส้นช่วย (เมตร) */
 const LINE_W = 0.9;
-/** ระยะกำแพงจากเส้นกลาง (เมตร) */
-const WALL_AT = 17;
 /** รัศมีล้อ (เมตร) และตำแหน่งล้อ: [x, z, ความกว้างยาง, ล้อหน้า] */
 const WHEEL_R = 0.36;
 const WHEELS: [number, number, number, boolean][] = [
@@ -172,6 +170,17 @@ export function createDriveScene(opts: {
    * แถบตามสนามระหว่างระยะเยื้อง a..b (เมตร) ที่ความสูง y · สีต่อช่วงจาก colorOf (null = ไม่วาดช่วงนั้น)
    * uv: u ข้ามถนน (0..1) · v ตามระยะ (1 หน่วย = vScale เมตร) ไว้ปูพื้นผิวซ้ำ
    */
+  /** ความสูงพื้นที่จุด i เยื้อง lat (ถนนเอียงในโค้งเอียง · นอกขอบถนนไม่เอียงต่อ) */
+  const groundY = (i: number, lat: number) =>
+    t.bank[i] === 0 ? t.y[i] : t.y[i] + Math.max(-t.wl[i], Math.min(t.wr[i], lat)) * Math.tan(t.bank[i]);
+  const R = (i: number) => t.wr[i];
+  const L = (i: number) => t.wl[i];
+  const RUN = t.runoff;
+  /** กำแพงห่างจากเส้นกลาง (ฝั่ง side) */
+  const wallAt = (i: number, side: number) => (side > 0 ? R(i) + RUN : -(L(i) + RUN));
+  let maxEdge = 0;
+  for (let i = 0; i < t.n; i++) maxEdge = Math.max(maxEdge, t.wl[i], t.wr[i]);
+  maxEdge += RUN;
   const strip = (a: (i: number) => number, b: (i: number) => number, y: number, colorOf: (i: number) => number | null, vScale = 8) => {
     const pos: number[] = [];
     const col: number[] = [];
@@ -185,9 +194,12 @@ export function createDriveScene(opts: {
       const p0b = poseAt(t, i * DS, b(i));
       const p1a = poseAt(t, j * DS, a(j % t.n));
       const p1b = poseAt(t, j * DS, b(j % t.n));
-      const y0 = y + t.y[i];
-      const y1 = y + t.y[j % t.n];
-      pos.push(p0a.x, y0, p0a.z, p1a.x, y1, p1a.z, p0b.x, y0, p0b.z, p0b.x, y0, p0b.z, p1a.x, y1, p1a.z, p1b.x, y1, p1b.z);
+      const jj = j % t.n;
+      const y0a = y + groundY(i, a(i));
+      const y0b = y + groundY(i, b(i));
+      const y1a = y + groundY(jj, a(jj));
+      const y1b = y + groundY(jj, b(jj));
+      pos.push(p0a.x, y0a, p0a.z, p1a.x, y1a, p1a.z, p0b.x, y0b, p0b.z, p0b.x, y0b, p0b.z, p1a.x, y1a, p1a.z, p1b.x, y1b, p1b.z);
       const v0 = (i * DS) / vScale;
       const v1 = (j * DS) / vScale;
       uv.push(0, v0, 0, v1, 1, v0, 1, v0, 0, v1, 1, v1);
@@ -222,22 +234,26 @@ export function createDriveScene(opts: {
     return m;
   };
 
-  /* ---------- ถนนและขอบ ---------- */
-  const W = HALF_WIDTH;
+  /* ---------- ถนนและขอบ (ความกว้างจริงต่อจุด) ---------- */
   const corner = (i: number) => Math.abs(t.curve[i]) > 0.006;
-  addFlat(new THREE.Mesh(strip(() => -W, () => W, 0, () => 0xffffff, 6), lit(asphalt)));
+  addFlat(new THREE.Mesh(strip((i) => -L(i), R, 0, () => 0xffffff, 6), lit(asphalt)));
   // เส้นยางดำตามไลน์ที่รถวิ่ง
   addFlat(new THREE.Mesh(strip((i) => t.lineOffset[i] - 1.0, (i) => t.lineOffset[i] + 1.0, 0.004, () => 0x1c1c20), flat(-1, 0.18)));
-  scene.add(new THREE.Mesh(strip(() => W - 0.45, () => W - 0.2, 0.006, () => 0xf2f2f2), flat(-1)));
-  scene.add(new THREE.Mesh(strip(() => -W + 0.2, () => -W + 0.45, 0.006, () => 0xf2f2f2), flat(-1)));
-  // kerb แดง/ขาวในโค้ง ทั้งสองฝั่ง · ทางวิ่งนอกถนน (runoff) สีทราย/หญ้าเทียม
+  scene.add(new THREE.Mesh(strip((i) => R(i) - 0.45, (i) => R(i) - 0.2, 0.006, () => 0xf2f2f2), flat(-1)));
+  scene.add(new THREE.Mesh(strip((i) => -L(i) + 0.2, (i) => -L(i) + 0.45, 0.006, () => 0xf2f2f2), flat(-1)));
+  // kerb แดง/ขาวในโค้ง ทั้งสองฝั่ง · ทางวิ่งนอกถนน (runoff) สีทราย/หญ้าเทียม — สนามกำแพงชิด (โมนาโก) มีแค่ kerb แคบ ๆ
+  const KW = Math.min(1.4, RUN - 0.1);
   const kerb = (i: number) => (corner(i) ? (i % 2 ? 0xd71920 : 0xf4f4f4) : null);
-  addFlat(new THREE.Mesh(strip(() => W, () => W + 1.4, 0.03, kerb), lit()));
-  addFlat(new THREE.Mesh(strip(() => -W - 1.4, () => -W, 0.03, kerb), lit()));
-  addFlat(new THREE.Mesh(strip(() => W, () => W + 9, 0.002, (i) => (corner(i) ? null : 0x5f6d59)), lit()));
-  addFlat(new THREE.Mesh(strip(() => -W - 9, () => -W, 0.002, (i) => (corner(i) ? null : 0x5f6d59)), lit()));
-  addFlat(new THREE.Mesh(strip(() => W + 1.4, () => W + 12, 0.002, (i) => (corner(i) ? 0xcdb68d : null)), lit()));
-  addFlat(new THREE.Mesh(strip(() => -W - 12, () => -W - 1.4, 0.002, (i) => (corner(i) ? 0xcdb68d : null)), lit()));
+  addFlat(new THREE.Mesh(strip(R, (i) => R(i) + KW, 0.03, kerb), lit()));
+  addFlat(new THREE.Mesh(strip((i) => -L(i) - KW, (i) => -L(i), 0.03, kerb), lit()));
+  if (RUN > 2) {
+    const VG = Math.min(9, RUN - 1);
+    const SD = Math.min(12, RUN);
+    addFlat(new THREE.Mesh(strip(R, (i) => R(i) + VG, 0.002, (i) => (corner(i) ? null : 0x5f6d59)), lit()));
+    addFlat(new THREE.Mesh(strip((i) => -L(i) - VG, (i) => -L(i), 0.002, (i) => (corner(i) ? null : 0x5f6d59)), lit()));
+    addFlat(new THREE.Mesh(strip((i) => R(i) + KW, (i) => R(i) + SD, 0.002, (i) => (corner(i) ? 0xcdb68d : null)), lit()));
+    addFlat(new THREE.Mesh(strip((i) => -L(i) - SD, (i) => -L(i) - KW, 0.002, (i) => (corner(i) ? 0xcdb68d : null)), lit()));
+  }
 
   // เส้นช่วยสามสี (racing line)
   const lineMesh = new THREE.Mesh(
@@ -255,8 +271,8 @@ export function createDriveScene(opts: {
       }
     }, false);
     tex.magFilter = THREE.NearestFilter;
-    const m = new THREE.Mesh(keep(new THREE.PlaneGeometry(W * 2, 1.6)), keep(new THREE.MeshBasicMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -3 })));
-    const p = poseAt(t, 0);
+    const m = new THREE.Mesh(keep(new THREE.PlaneGeometry(L(0) + R(0), 1.6)), keep(new THREE.MeshBasicMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -3 })));
+    const p = poseAt(t, 0, (R(0) - L(0)) / 2);
     // แผ่นวางราบ ด้านกว้าง (แกน x) ขวางถนน: หมุนรอบแกนตั้ง -heading - 90°
     m.rotation.x = -Math.PI / 2;
     const holder = new THREE.Group();
@@ -272,10 +288,11 @@ export function createDriveScene(opts: {
     const col: number[] = [];
     const uv: number[] = [];
     for (let i = 0; i < t.n; i++) {
-      const a = poseAt(t, i * DS, side * WALL_AT);
-      const b = poseAt(t, (i + 1) * DS, side * WALL_AT);
-      const ha = t.y[i];
-      const hb = t.y[(i + 1) % t.n];
+      const j = (i + 1) % t.n;
+      const a = poseAt(t, i * DS, wallAt(i, side));
+      const b = poseAt(t, (i + 1) * DS, wallAt(j, side));
+      const ha = groundY(i, wallAt(i, side));
+      const hb = groundY(j, wallAt(j, side));
       pos.push(a.x, ha + y0, a.z, b.x, hb + y0, b.z, a.x, ha + y1, a.z, a.x, ha + y1, a.z, b.x, hb + y0, b.z, b.x, hb + y1, b.z);
       const u0 = (i * DS) / vScale;
       const u1 = ((i + 1) * DS) / vScale;
@@ -293,7 +310,8 @@ export function createDriveScene(opts: {
   const wallMat = lit();
   for (const side of [-1, 1]) {
     // แถบกำแพงสีสลับ (ไม่มีโลโก้)
-    const w = new THREE.Mesh(wallStrip(side, 0, 1.1, (i) => (Math.floor(i / 3) % 2 ? [0.86, 0.86, 0.88] : [0.13, 0.32, 0.72])), wallMat);
+    // กำแพงยื่นลงใต้ดิน (พื้นข้างสนามต่ำกว่าถนนเล็กน้อย จะได้ไม่เห็นช่องใต้กำแพง)
+    const w = new THREE.Mesh(wallStrip(side, -1.4, 1.1, (i) => (Math.floor(i / 3) % 2 ? [0.86, 0.86, 0.88] : [0.13, 0.32, 0.72])), wallMat);
     w.castShadow = high;
     scene.add(w);
   }
@@ -336,9 +354,13 @@ export function createDriveScene(opts: {
       if (t.zone[i] !== "brake" || t.zone[prev] !== "throttle") continue;
       for (const [d, label] of [[150, "150"], [100, "100"], [50, "50"]] as const) {
         for (const side of [-1, 1]) {
-          const p = poseAt(t, i * DS - d, side * (W + 3.5));
+          const k = ((Math.round((i * DS - d) / DS) % t.n) + t.n) % t.n;
+          const edge = side > 0 ? R(k) : L(k);
+          // สนามกำแพงชิดถนน: ป้ายอยู่หลังกำแพง
+          const off = side * (RUN > 4 ? edge + 3.5 : edge + RUN + 0.7);
+          const p = poseAt(t, i * DS - d, off);
           const m = new THREE.Mesh(geo, mats[label]);
-          m.position.set(p.x, heightAt(t, i * DS - d) + 1.2, p.z);
+          m.position.set(p.x, surfaceAt(t, i * DS - d, off) + 1.2, p.z);
           // หันหน้าป้าย (แกน z) เข้าหารถที่วิ่งมา
           m.rotation.y = Math.atan2(-Math.cos(p.heading), -Math.sin(p.heading));
           m.castShadow = high;
@@ -442,9 +464,10 @@ export function createDriveScene(opts: {
   const hillSeed = r() * 100;
   /** รัศมีที่พื้นต้องอิงระดับถนน (เมตร) · ความชันคันดินข้างสนามสูงสุด */
   const NEAR = 120;
+  const SINK = 1.1;
   const BANK = 0.3;
   const SEG = high ? 24 : 40;
-  const FLAT = Math.max(WALL_AT + 6, SEG * 1.5);
+  const FLAT = Math.max(maxEdge + 6, SEG * 1.5);
   /** ความสูงพื้นดินที่ (x, z): ใกล้ถนน = ต่ำกว่าถนนเล็กน้อย · ไกลออกไปมีเนินเขาเพิ่มขึ้นเรื่อย ๆ */
   function terrainAt(x: number, z: number) {
     let h = fieldAt(field, x, z);
@@ -455,24 +478,28 @@ export function createDriveScene(opts: {
         7 * Math.sin(x / 90 - z / 120 + hillSeed * 1.3) +
         24 * far * Math.max(0, Math.sin(x / 520 + z / 610 + hillSeed)));
     // ใกล้ถนน: พื้นต้องตามระดับถนน (ต่ำกว่านิด) แล้วค่อยลาดขึ้น/ลงได้ไม่เกินความชันคันดิน — กันพื้นโผล่ทับถนนตรงเนินชัน
+    // ถนนทุกเส้นที่อยู่ใกล้: พื้นต้องต่ำกว่าทุกเส้น (สนามที่ถนนสองช่วงสูงต่างกันอยู่ใกล้กัน) ·
+    // และไม่ต่ำกว่าเส้นที่ใกล้สุดเกินความชันคันดิน (ไม่เป็นหน้าผา)
     const cx = Math.floor(x / CELL);
     const cz = Math.floor(z / CELL);
     let best = NEAR;
-    let hb = Infinity;
+    let lower = -Infinity;
+    let upper = Infinity;
     for (let a = -3; a <= 3; a++)
       for (let b = -3; b <= 3; b++)
         for (const i of grid.get(`${cx + a},${cz + b}`) ?? []) {
           const d = Math.hypot(t.x[i] - x, t.z[i] - z);
+          if (d >= NEAR) continue;
+          // ถนนเอียง: ขอบด้านในต่ำกว่ากลางถนน
+          const low = t.y[i] - SINK - Math.abs(Math.tan(t.bank[i])) * Math.max(t.wl[i], t.wr[i]);
+          const room = Math.max(0, d - FLAT) * BANK;
+          upper = Math.min(upper, low + room);
           if (d < best) {
             best = d;
-            hb = t.y[i];
+            lower = low - room;
           }
         }
-    if (hb !== Infinity) {
-      // ภายในรัศมี FLAT ต้องต่ำกว่าถนนเสมอ (กว้างกว่าสามเหลี่ยมพื้น ไม่งั้นสามเหลี่ยมที่คร่อมถนนจะยกทับถนน)
-      const room = Math.max(0, best - FLAT) * BANK;
-      h = Math.max(hb - 0.35 - room, Math.min(hb - 0.35 + room, h));
-    }
+    if (upper !== Infinity) h = Math.min(upper, Math.max(lower, h));
     return h;
   }
   {
@@ -509,9 +536,9 @@ export function createDriveScene(opts: {
     for (let tries = 0; tries < count * 6 && placed < count; tries++) {
       const i = Math.floor(r() * t.n);
       const side = r() < 0.5 ? -1 : 1;
-      const off = WALL_AT + 14 + r() ** 1.6 * 160;
+      const off = maxEdge + 14 + r() ** 1.6 * 160;
       const p = poseAt(t, i * DS, side * off);
-      if (nearTrack(p.x, p.z, WALL_AT + 10)) continue;
+      if (nearTrack(p.x, p.z, maxEdge + 10)) continue;
       const s = 0.7 + r() * 0.8;
       pos.set(p.x, terrainAt(p.x, p.z) - 0.1, p.z);
       q.setFromAxisAngle(up, r() * Math.PI * 2);
@@ -558,7 +585,8 @@ export function createDriveScene(opts: {
       const mid = run.i * DS + (run.len * DS) / 2;
       // ด้านนอก = ฝั่งตรงข้ามกับโค้งถัดไป
       const side = sample(t, t.curve, run.i * DS + run.len * DS + 40) > 0 ? -1 : 1;
-      const p = poseAt(t, mid, side * (WALL_AT + 6));
+      const k = Math.round(mid / DS) % t.n;
+      const p = poseAt(t, mid, side > 0 ? R(k) + RUN + 6 : -(L(k) + RUN + 6));
       const g = new THREE.Group();
       g.position.set(p.x, heightAt(t, mid), p.z);
       // แกน x ของกลุ่มตามทิศถนน · แกน z ชี้ออกจากถนน (ฝั่ง side)
@@ -697,7 +725,7 @@ export function createDriveScene(opts: {
     const b = poseAt(t, s + 3, sample(t, t.lineOffset, s + 3) + rel);
     const h = Math.atan2(b.z - a.z, b.x - a.x);
     // เงย/ก้มตามความชันของถนน
-    const y = heightAt(t, s);
+    const y = surfaceAt(t, s, lateral);
     const rise = (heightAt(t, s + 3) - heightAt(t, s - 3)) / 6;
     obj.position.set(p.x, y, p.z);
     tmp.set(p.x + Math.cos(h + yaw), y + rise, p.z + Math.sin(h + yaw));
@@ -739,7 +767,9 @@ export function createDriveScene(opts: {
       motion.spin += (speed / WHEEL_R) * dt;
 
       place(car.root, s, lateral, motion.yaw);
-      car.body.rotation.set(motion.pitch, 0, motion.roll);
+      // ถนนเอียง (bank > 0 = ฝั่งขวาสูง) → ตัวรถเอียงตาม (หมุน z บวก = ฝั่งซ้ายยก)
+      const bankRoll = -sample(t, t.bank, s);
+      car.body.rotation.set(motion.pitch, 0, motion.roll + bankRoll);
       for (const st of car.steer) st.rotation.y = motion.steer;
       for (const sp of car.spin) sp.rotation.x = motion.spin;
 
@@ -757,7 +787,7 @@ export function createDriveScene(opts: {
         camera.fov += (fov - camera.fov) * Math.min(1, dt * 3);
         camera.updateProjectionMatrix();
       }
-      const onKerb = Math.abs(lateral) > HALF_WIDTH - 0.6 ? 1 : 0;
+      const onKerb = lateral > sample(t, t.wr, s) - 0.6 || lateral < 0.6 - sample(t, t.wl, s) ? 1 : 0;
       const amp = sp01 * sp01 * 0.012 + onKerb * sp01 * 0.03;
       const sx = (Math.random() - 0.5) * amp;
       const sy = (Math.random() - 0.5) * amp;
@@ -770,7 +800,7 @@ export function createDriveScene(opts: {
         camera.position.copy(camPos);
         camera.position.x += sx;
         camera.lookAt(camLook);
-        camera.rotateZ(-motion.roll * 0.6);
+        camera.rotateZ(-(motion.roll * 0.6 + bankRoll));
       } else {
         // ตามหลังระยะคงที่ หน่วงแค่ทิศ (ไม่หน่วงตำแหน่ง — ไม่งั้นรถยิ่งเร็ว/เครื่องยิ่งช้า กล้องยิ่งหลุดห่าง) ให้เห็นรถเลี้ยว
         const back = Math.min(9.5, 7 + speed * 0.03);
