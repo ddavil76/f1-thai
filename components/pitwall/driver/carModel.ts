@@ -1,45 +1,49 @@
 /**
- * รถของโหมดนักขับแบบละเอียด (หน่วยเมตร) — ทรงรถยุคกฎ 2026: แคบ สั้น จมูกต่ำ sidepod เว้าใต้ลึก
- * ปีกหน้า 3 ชั้น ปีกหลัง 2 ชั้น halo พื้นรถ ปีกนก กระจกมองข้าง
- * — ตัวถังทำจากหน้าตัดหลายจุดลากต่อกันแบบโค้งเรียบ (ไม่ใช่กล่อง) · สีเคลือบเงา clearcoat
- * — ลายสีวาดบน canvas: สีทีมด้านบน คาร์บอนด้านล่าง เส้นสปีด และเลขรถสมมติ — ไม่มีโลโก้/ลิเวอรีของทีมจริง
+ * รถของโหมดนักขับแบบละเอียด (หน่วยเมตร) — ทรงรถยุค ground effect (แบบรถปี 2022 ขึ้นไป)
+ * จมูกยาวเรียวต่อปีกหน้า · ปีกหน้า 4 ชั้นโค้งยกขึ้นด้านนอก · sidepod ใหญ่ ปากรับลมแบน ด้านบนลาดลงท้าย ใต้ sidepod เว้าลึก
+ * ฝาครอบเครื่องกว้าง · ปีกหลังปลายโค้งมนลงหาแผ่นข้าง + beam wing · พื้นรถมีครีบด้านหน้าและปีกขอบพื้น · halo กระจกมองข้าง
+ * — ผิวตัวถัง/ปีกทำจากหน้าตัดหลายจุดลากต่อกันเป็นโค้งเรียบ · ลิเวอรีและสปอนเซอร์สมมติวาดบน canvas (liveries.ts)
  * — ไม่มีล้อ (ฉากใส่ล้อแยกชิ้นที่หมุน/เลี้ยวได้เอง) · หน้ารถชี้ +z ล้อหน้า z = +1.8 ล้อหลัง z = -1.8
  */
 import type * as THREE_NS from "three";
+import { designOf, drawLogo, drawNumber, paintBody, type Design } from "./liveries";
 
 type Three = typeof THREE_NS;
 type Geo = THREE_NS.BufferGeometry;
 type Mat = THREE_NS.Material;
+type V3 = [number, number, number];
 
-export type Livery = { colour: string; ink: string; num: number };
+/** team = id ทีมในเกม (เลือกลิเวอรี) · colour/ink = สีทีม (ใช้เมื่อไม่มีลิเวอรีของทีมนั้น) */
+export type Livery = { team: string; colour: string; ink: string; num: number };
 
 /** หน้าตัดของตัวถัง: z, กึ่งกลาง x/y, ครึ่งกว้าง, ครึ่งสูง */
 type Section = [z: number, xc: number, yc: number, w: number, h: number];
 
-// ลำตัว: จมูก → ห้องนักขับ → ฝาครอบเครื่องสูงหลังหัว → ท้ายเรียว
+// ลำตัว: จมูกยาวเรียวลงไปแตะปีกหน้า → ห้องนักขับ → ฝาครอบเครื่องสูงหลังหัว → ท้ายเรียว
 const TUB: Section[] = [
-  [2.92, 0, 0.21, 0.05, 0.045],
-  [2.6, 0, 0.24, 0.11, 0.075],
-  [2.15, 0, 0.3, 0.16, 0.115],
-  [1.6, 0, 0.37, 0.21, 0.16],
-  [1.05, 0, 0.43, 0.26, 0.2],
-  [0.6, 0, 0.46, 0.29, 0.22],
-  [0.2, 0, 0.47, 0.3, 0.23],
-  [-0.1, 0, 0.55, 0.28, 0.33],
-  [-0.45, 0, 0.56, 0.25, 0.33],
-  [-0.95, 0, 0.5, 0.2, 0.26],
-  [-1.45, 0, 0.41, 0.14, 0.18],
-  [-1.9, 0, 0.34, 0.09, 0.12],
+  [3.06, 0, 0.16, 0.05, 0.035],
+  [2.8, 0, 0.2, 0.09, 0.06],
+  [2.35, 0, 0.27, 0.13, 0.1],
+  [1.85, 0, 0.35, 0.18, 0.145],
+  [1.35, 0, 0.42, 0.23, 0.185],
+  [0.9, 0, 0.46, 0.27, 0.215],
+  [0.45, 0, 0.47, 0.29, 0.225],
+  [0.08, 0, 0.53, 0.28, 0.3],
+  [-0.35, 0, 0.55, 0.27, 0.32],
+  [-0.9, 0, 0.5, 0.22, 0.27],
+  [-1.4, 0, 0.42, 0.16, 0.19],
+  [-1.85, 0, 0.35, 0.1, 0.13],
   [-2.2, 0, 0.31, 0.05, 0.07],
 ];
-// sidepod ขวา (ซ้ายสะท้อน): ปากรับลมกว้าง แล้วเรียวลงหาท้าย ใต้ sidepod ยกสูงจากพื้นรถ (undercut)
+// sidepod ขวา (ซ้ายสะท้อน): ปากรับลมแบนกว้างอยู่สูง ด้านบนลาดลงหาท้าย (downwash) ใต้ sidepod ยกสูงจากพื้นรถมาก
 const POD: Section[] = [
-  [0.98, 0.42, 0.43, 0.17, 0.12],
-  [0.75, 0.45, 0.43, 0.22, 0.14],
-  [0.3, 0.44, 0.41, 0.23, 0.15],
-  [-0.3, 0.37, 0.36, 0.2, 0.13],
-  [-0.85, 0.27, 0.3, 0.15, 0.1],
-  [-1.35, 0.18, 0.25, 0.09, 0.06],
+  [1.02, 0.43, 0.45, 0.17, 0.085],
+  [0.8, 0.47, 0.44, 0.23, 0.13],
+  [0.4, 0.48, 0.41, 0.25, 0.155],
+  [-0.1, 0.43, 0.36, 0.23, 0.15],
+  [-0.6, 0.34, 0.3, 0.18, 0.12],
+  [-1.05, 0.25, 0.25, 0.12, 0.085],
+  [-1.45, 0.16, 0.22, 0.06, 0.05],
 ];
 
 /** ค่าแบบโค้งเรียบผ่านทุกจุด (Catmull-Rom) */
@@ -48,10 +52,14 @@ function catmull(a: number, b: number, c: number, d: number, t: number) {
   const t3 = t2 * t;
   return 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
 }
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 
 /**
  * ลากผิวผ่านหน้าตัด (ทรง superellipse — เหลี่ยมมนแบบตัวถังรถ) · ปิดหัวท้ายเป็นกลุ่มวัสดุที่ 1
- * UV: u = ตามความยาว (หน้า 0 → ท้าย 1), v = รอบตัว (ใต้ท้อง 0 → ข้างขวา → หลังคา 0.5 → ข้างซ้าย → 1)
+ * UV: u = ตามความยาว (หน้า 0 → ท้าย 1), v = รอบตัว (ใต้ท้อง 0 → ข้าง +x → หลังคา 0.5 → ข้าง −x → 1)
  */
 function loft(THREE: Three, secs: Section[], along: number, around: number, exp: number, mirror = false): Geo {
   const pos: number[] = [];
@@ -86,7 +94,6 @@ function loft(THREE: Three, secs: Section[], along: number, around: number, exp:
     }
   }
   const sideCount = idx.length;
-  // ฝาปิดหัว/ท้าย (พัดจากจุดกลาง)
   for (const [k, flip] of [[0, true], [along, false]] as const) {
     const s = rings[k];
     const centre = pos.length / 3;
@@ -94,8 +101,7 @@ function loft(THREE: Three, secs: Section[], along: number, around: number, exp:
     uv.push(k / along, 0.5);
     for (let a = 0; a < around; a++) {
       const p = k * ring + a;
-      const f = flip === mirror;
-      if (f) idx.push(centre, p + 1, p);
+      if (flip === mirror) idx.push(centre, p + 1, p);
       else idx.push(centre, p, p + 1);
     }
   }
@@ -109,20 +115,52 @@ function loft(THREE: Three, secs: Section[], along: number, around: number, exp:
   return g;
 }
 
-/** แผ่นปีกหน้าตัดแอร์ฟอยล์ ยาวตามแกน x · chord ตามแกน z (ขอบหน้าที่ z0) เงยหัว angle เรเดียน */
-function wing(THREE: Three, span: number, chord: number, thick: number, z0: number, y: number, angle: number): Geo {
-  const sh = new THREE.Shape();
-  const N = 12;
-  const camber = (t: number) => Math.sqrt(t) * (1 - t) * 2.6 * thick;
-  sh.moveTo(0, 0);
-  for (let i = 1; i <= N; i++) sh.lineTo((i / N) * chord, camber(i / N));
-  for (let i = N - 1; i >= 1; i--) sh.lineTo((i / N) * chord, -camber(i / N) * 0.3);
-  const g = new THREE.ExtrudeGeometry(sh, { depth: span, bevelEnabled: false, curveSegments: 4 });
-  // shape อยู่บนระนาบ xy (x = chord) → หมุนให้ chord ชี้ถอยหลัง (-z) ความยาวปีกตามแกน x · ขอบท้ายเชิดขึ้น
-  g.rotateY(Math.PI / 2);
-  g.translate(-span / 2, 0, 0);
-  g.rotateX(angle);
-  g.translate(0, y, z0);
+/** จุดตามความยาวปีก: ขอบหน้า (x, y, z) · ความยาวคอร์ด · มุมเงย · ความหนา · แนวตั้งฉากกับปีกในระนาบ x-y (ปลายปีกโค้งลงได้) */
+type Station = { x: number; y: number; z: number; chord: number; angle: number; thick: number; nx: number; ny: number };
+
+/**
+ * ปีกแบบแอร์ฟอยล์ลากตามจุด Station (ปีกโค้ง/บิด/ปลายม้วนลงได้)
+ * UV: u = ตามความยาวปีก (จุดแรก 0 → จุดสุดท้าย 1) · v = รอบแอร์ฟอยล์ (0–0.5 ผิวบนจากขอบท้ายถึงขอบหน้า, 0.5–1 ผิวล่าง)
+ */
+function wingLoft(THREE: Three, st: Station[], N = 8): Geo {
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const ring = 2 * N + 1;
+  st.forEach((s, k) => {
+    const ca = Math.cos(s.angle);
+    const sa = Math.sin(s.angle);
+    // ทิศคอร์ด: ถอยหลัง (−z) แล้วเงยขึ้นตามแนวตั้งฉากปีก · ทิศความหนา: ตั้งฉากกับคอร์ด
+    const dir: V3 = [s.nx * sa, s.ny * sa, -ca];
+    const perp: V3 = [s.nx * ca, s.ny * ca, sa];
+    const camber = (t: number) => Math.sqrt(t) * (1 - t) * 2.6 * s.thick;
+    for (let j = 0; j <= 2 * N; j++) {
+      const upper = j <= N;
+      const t = upper ? 1 - j / N : (j - N) / N;
+      const off = upper ? camber(t) : -camber(t) * 0.3;
+      pos.push(s.x + dir[0] * t * s.chord + perp[0] * off, s.y + dir[1] * t * s.chord + perp[1] * off, s.z + dir[2] * t * s.chord + perp[2] * off);
+      uv.push(k / (st.length - 1), j / (2 * N));
+    }
+  });
+  for (let k = 0; k < st.length - 1; k++)
+    for (let j = 0; j < 2 * N; j++) {
+      const p = k * ring + j;
+      const q = p + ring;
+      idx.push(p, q, p + 1, q, q + 1, p + 1);
+    }
+  // ฝาปิดปลายปีก
+  for (const k of [0, st.length - 1]) {
+    const c = pos.length / 3;
+    const s = st[k];
+    pos.push(s.x + (s.chord / 2) * Math.sin(s.angle) * s.nx, s.y + (s.chord / 2) * Math.sin(s.angle) * s.ny, s.z - (s.chord / 2) * Math.cos(s.angle));
+    uv.push(k / (st.length - 1), 0.5);
+    for (let j = 0; j < 2 * N; j++) idx.push(c, k * ring + j, k * ring + j + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
   return g;
 }
 
@@ -136,96 +174,123 @@ function plate(THREE: Three, pts: [number, number][], x: number, thick: number):
 }
 
 /** แท่งกลมจาก a ไป b */
-function rod(THREE: Three, a: [number, number, number], b: [number, number, number], r: number): Geo {
+function rod(THREE: Three, a: V3, b: V3, r: number): Geo {
   const va = new THREE.Vector3(...a);
   const vb = new THREE.Vector3(...b);
   const len = va.distanceTo(vb);
   const g = new THREE.CylinderGeometry(r, r, len, 6, 1);
   g.translate(0, len / 2, 0);
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), vb.clone().sub(va).normalize());
-  g.applyQuaternion(q);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), vb.clone().sub(va).normalize()));
   g.translate(va.x, va.y, va.z);
   return g;
 }
 
-/** ปีกนก (suspension arm) จาก a ไป b */
-const arm = (THREE: Three, a: [number, number, number], b: [number, number, number]) => rod(THREE, a, b, 0.016);
+/** แผ่นสี่เหลี่ยม (UV 0..1) ตั้งฉากแกน x ที่ x · กรอบ z0..z1 / y0..y1 · facing = +1 หันออก +x */
+function sign(THREE: Three, x: number, z0: number, z1: number, y0: number, y1: number, facing: 1 | -1): Geo {
+  const g = new THREE.PlaneGeometry(Math.abs(z1 - z0), y1 - y0);
+  g.rotateY((facing * Math.PI) / 2);
+  g.translate(x, (y0 + y1) / 2, (z0 + z1) / 2);
+  return g;
+}
 
-/** ลายตัวถัง: สีทีมด้านบน คาร์บอนใต้ท้อง เส้นสปีดสีตัดตามข้าง เลขรถบนฝาครอบเครื่อง */
-function liveryTexture(THREE: Three, l: Livery) {
+/* ---------- ลิเวอรี ---------- */
+
+const canvas = (w: number, h: number) => {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  return [c, c.getContext("2d")!] as const;
+};
+
+/** พื้นผิวตัวถัง: ลวดลาย + สปอนเซอร์หลักข้างฝาครอบเครื่อง + รอง 2 ข้างจมูก + เลขรถบนจมูก/ข้างฝาครอบ */
+function tubTexture(d: Design, num: number) {
+  const W = 2048;
+  const H = 1024;
+  const [c, g] = canvas(W, H);
+  paintBody(g, W, H, d, "tub");
+  // u (แกน x) = หน้า → ท้าย ตามความยาวลำตัว z 3.06 → −2.2
+  const U = (z: number) => ((3.06 - z) / 5.26) * W;
+  // ข้าง +x อยู่ครึ่งล่าง (อ่านตรง) · ข้าง −x ครึ่งบน (หมุน 180° ให้อ่านตรง)
+  const both = (z: number, v: number, draw: () => void) => {
+    for (const [y, rot] of [[H * (1 - v), 0], [H * v, Math.PI]] as const) {
+      g.save();
+      g.translate(U(z), y);
+      g.rotate(rot);
+      draw();
+      g.restore();
+    }
+  };
+  both(-0.75, 0.3, () => drawLogo(g, d.sponsors[0], 440, 120, d.styles[0], d.ink, d.base));
+  both(2.05, 0.3, () => drawLogo(g, d.sponsors[2], 300, 70, d.styles[2], d.ink, d.base));
+  both(0.0, 0.32, () => drawNumber(g, num, 90, d.ink, d.base));
+  // เลขรถบนจมูก หันให้อ่านได้จากกล้องหลังนักขับ
+  g.save();
+  g.translate(U(2.55), H * 0.5);
+  g.rotate(-Math.PI / 2);
+  drawNumber(g, num, 110, d.ink, d.base);
+  g.restore();
+  return c;
+}
+
+/** พื้นผิว sidepod: สปอนเซอร์รอง 1 ตัวใหญ่ด้านนอก · flip = sidepod ฝั่ง −x (เรขาคณิตสะท้อน ตัวอักษรต้องกลับซ้ายขวา) */
+function podTexture(d: Design, flip: boolean) {
   const W = 1024;
   const H = 512;
-  const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
-  const g = c.getContext("2d")!;
-  // แกน x ของ canvas = u (หน้า → ท้าย) · แกน y: ล่างสุด = v 0 (ใต้ท้อง), กลาง = หลังคา, บนสุด = ใต้ท้องอีกรอบ
-  g.fillStyle = l.colour;
+  const [c, g] = canvas(W, H);
+  paintBody(g, W, H, d, "pod");
+  g.save();
+  g.translate(W * 0.42, H * 0.72);
+  if (flip) g.scale(-1, 1);
+  drawLogo(g, d.sponsors[1], 520, 120, d.styles[1], d.ink, d.base);
+  g.restore();
+  return c;
+}
+
+/** พื้นผิวปีก: สีหลัก + ขอบท้ายสีเน้น + สปอนเซอร์ตามความยาวปีกบนผิวบน (ซ้าย/ขวา หรือกลางปีก) */
+function wingTexture(d: Design, name: string, layout: "centre" | "pair") {
+  const W = 1024;
+  const H = 256;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = d.base;
   g.fillRect(0, 0, W, H);
-  const dark = "#121316";
-  // ใต้ท้องและครึ่งล่างของด้านข้างเป็นคาร์บอน
-  g.fillStyle = dark;
-  g.fillRect(0, H * 0.86, W, H * 0.14);
-  g.fillRect(0, 0, W, H * 0.14);
-  // แถบคาร์บอนเฉียงขึ้นที่ท้ายรถ
-  const sweep = (yBottom: number, dir: 1 | -1) => {
-    g.beginPath();
-    g.moveTo(W * 0.42, yBottom);
-    g.bezierCurveTo(W * 0.6, yBottom, W * 0.75, yBottom - dir * H * 0.2, W, yBottom - dir * H * 0.26);
-    g.lineTo(W, yBottom + dir * H * 0.2);
-    g.lineTo(W * 0.42, yBottom + dir * H * 0.2);
-    g.closePath();
-    g.fill();
-  };
-  sweep(H * 0.86, 1);
-  sweep(H * 0.14, -1);
-  // เส้นสปีด (สีตัด) ตามข้างตัวรถ — ลวดลายของเว็บเอง
-  g.fillStyle = l.ink;
-  for (const [y0, dir] of [[H * 0.7, 1], [H * 0.3, -1]] as const) {
-    for (let i = 0; i < 3; i++) {
-      const y = y0 + dir * i * 9;
-      g.globalAlpha = 0.9 - i * 0.25;
-      g.beginPath();
-      g.moveTo(W * (0.08 + i * 0.05), y);
-      g.lineTo(W * 0.58, y - dir * 2);
-      g.lineTo(W * 0.56, y + dir * 5);
-      g.lineTo(W * (0.1 + i * 0.05), y + dir * 4);
-      g.closePath();
-      g.fill();
-    }
-  }
-  g.globalAlpha = 1;
-  // แถบสีตัดกลางหลังคา (กระดูกงู) ช่วงจมูก
-  g.fillRect(0, H * 0.5 - 6, W * 0.38, 12);
-  // เลขรถ (เลขสมมติ) ข้างฝาครอบเครื่อง: สองฝั่งหมุนต่างกัน 180° ให้อ่านตรงทั้งคู่
-  g.font = "italic 900 110px Archivo, 'Arial Black', sans-serif";
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  const label = String(l.num);
-  const drawNum = (x: number, y: number, rot: number) => {
+  // ขอบท้ายปีก (v ≈ 0 และ 1) สีเน้น
+  g.fillStyle = d.accent;
+  g.fillRect(0, H - 14, W, 14);
+  g.fillRect(0, 0, W, 10);
+  // ผิวล่างสีเข้ม
+  g.fillStyle = d.second;
+  g.fillRect(0, 0, W, H * 0.48);
+  // ผิวบน: v 0..0.5 → แถว canvas H..H/2 · กลับซ้ายขวาให้อ่านตรงเมื่อมองจากด้านหลังรถ
+  const at = layout === "centre" ? [0.5] : [0.25, 0.75];
+  for (const u of at) {
     g.save();
-    g.translate(x, y);
-    g.rotate(rot);
-    g.lineWidth = 8;
-    g.strokeStyle = l.colour;
-    g.strokeText(label, 0, 0);
-    g.fillStyle = l.ink;
-    g.fillText(label, 0, 0);
+    g.translate(W * u, H * 0.74);
+    g.scale(-1, 1);
+    drawLogo(g, name, layout === "centre" ? W * 0.5 : W * 0.3, H * 0.34, "box", d.ink, d.base);
     g.restore();
-  };
-  drawNum(W * 0.66, H * 0.33, Math.PI);
-  drawNum(W * 0.66, H * 0.67, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
+  }
+  return c;
+}
+
+/** แผ่นป้ายข้างปีกหลัง (สปอนเซอร์หลักแนวตั้ง) */
+function endplateTexture(d: Design, flip: boolean) {
+  const [c, g] = canvas(256, 512);
+  g.fillStyle = d.base;
+  g.fillRect(0, 0, 256, 512);
+  g.fillStyle = d.second;
+  g.fillRect(0, 380, 256, 132);
+  g.save();
+  g.translate(128, 210);
+  if (flip) g.scale(-1, 1);
+  g.rotate(-Math.PI / 2);
+  drawLogo(g, d.sponsors[0], 380, 110, d.styles[0], d.ink, d.base);
+  g.restore();
+  return c;
 }
 
 /** ลายคาร์บอนเล็ก ๆ (สานไขว้) */
-function carbonTexture(THREE: Three) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 64;
-  const g = c.getContext("2d")!;
+function carbonTexture() {
+  const [c, g] = canvas(64, 64);
   g.fillStyle = "#16171a";
   g.fillRect(0, 0, 64, 64);
   for (let y = 0; y < 8; y++)
@@ -233,11 +298,7 @@ function carbonTexture(THREE: Three) {
       g.fillStyle = (x + y) % 2 ? "#1f2024" : "#121316";
       g.fillRect(x * 8, y * 8, 8, 8);
     }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(6, 6);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return c;
 }
 
 export type CarModel = { obj: THREE_NS.Group; dispose(): void };
@@ -246,6 +307,7 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
   const own: { dispose(): void }[] = [];
   const keep = <T extends { dispose(): void }>(x: T) => (own.push(x), x);
   const ghost = !!opts.ghost;
+  const d = designOf(l.team, l.colour, l.ink);
   const fade = <T extends Mat>(m: T) => {
     if (ghost) {
       m.transparent = true;
@@ -254,37 +316,46 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
     }
     return keep(m);
   };
+  const tex = (c: HTMLCanvasElement, repeat = false) => {
+    const t = keep(new THREE.CanvasTexture(c));
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    if (repeat) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(6, 6);
+    }
+    return t;
+  };
+  /** สีกึ่งด้าน + เคลือบใส (ลิเวอรีสมัยใหม่) */
+  const paintMat = (map: THREE_NS.Texture | null, colour = 0xffffff, side: THREE_NS.Side = THREE.FrontSide, coat = 0.7) =>
+    fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : colour, map: ghost ? null : map, roughness: 0.42, metalness: 0.1, clearcoat: coat, clearcoatRoughness: 0.2, side }));
 
-  const paintTex = ghost ? null : keep(liveryTexture(THREE, l));
-  const paint = fade(
-    new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      map: paintTex,
-      roughness: 0.32,
-      metalness: 0.15,
-      clearcoat: 1,
-      clearcoatRoughness: 0.08,
-    }),
-  );
-  const accent = fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : l.colour, roughness: 0.3, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.1 }));
-  const carbonTex = ghost ? null : keep(carbonTexture(THREE));
-  const carbon = fade(new THREE.MeshStandardMaterial({ color: ghost ? 0xdddddd : 0x707070, map: carbonTex, roughness: 0.38, metalness: 0.25 }));
-  const black = fade(new THREE.MeshStandardMaterial({ color: 0x060607, roughness: 0.7 }));
+  const tubMat = paintMat(ghost ? null : tex(tubTexture(d, l.num)));
+  const podR = paintMat(ghost ? null : tex(podTexture(d, false)));
+  const podL = paintMat(ghost ? null : tex(podTexture(d, true)));
+  // ปีกเคลือบน้อยกว่า (มุมแคบสะท้อนฟ้าจนขาว)
+  const rwMat = paintMat(ghost ? null : tex(wingTexture(d, d.sponsors[0], "centre")), 0xffffff, THREE.DoubleSide, 0.2);
+  const fwMat = paintMat(ghost ? null : tex(wingTexture(d, d.sponsors[2], "pair")), 0xffffff, THREE.DoubleSide, 0.2);
+  const accent = paintMat(null, ghost ? 0xffffff : new THREE.Color(d.base).getHex(), THREE.DoubleSide);
+  const second = paintMat(null, ghost ? 0xffffff : new THREE.Color(d.second).getHex(), THREE.DoubleSide);
+  const carbon = fade(new THREE.MeshStandardMaterial({ color: ghost ? 0xdddddd : 0x6a6a6a, map: ghost ? null : tex(carbonTexture(), true), roughness: 0.38, metalness: 0.25, side: THREE.DoubleSide }));
+  const black = fade(new THREE.MeshStandardMaterial({ color: 0x060607, roughness: 0.7, side: THREE.DoubleSide }));
   const metal = fade(new THREE.MeshStandardMaterial({ color: 0x9da3ab, roughness: 0.25, metalness: 0.9 }));
-  const helmetMat = fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : l.ink === "#ffffff" ? 0xf4f4f4 : l.colour, roughness: 0.2, clearcoat: 1 }));
+  const helmetMat = fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : new THREE.Color(d.accent).getHex(), roughness: 0.2, clearcoat: 1 }));
   const visor = fade(new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.05, metalness: 0.9 }));
 
   const obj = new THREE.Group();
   const add = (g: Geo, m: Mat | Mat[]) => {
     keep(g);
-    const mesh = new THREE.Mesh(g, m);
-    obj.add(mesh);
-    return mesh;
+    obj.add(new THREE.Mesh(g, m));
   };
   const merged = (list: Geo[]) => {
     const flat = list.map((g) => (g.index ? g.toNonIndexed() : g));
-    // ExtrudeGeometry มี uv/normal ครบ · ล้าง group ก่อนรวม
-    flat.forEach((g) => g.clearGroups());
+    flat.forEach((g) => {
+      g.clearGroups();
+      if (!g.getAttribute("uv")) g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute("position").count * 2), 2));
+      if (!g.getAttribute("normal")) g.computeVertexNormals();
+    });
     const m = merge(flat);
     list.forEach((g) => g.dispose());
     flat.forEach((g) => g.dispose());
@@ -292,89 +363,160 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
     return m;
   };
 
-  // ลำตัว + sidepods (ปากรับลมสีดำ)
-  add(loft(THREE, TUB, 72, 40, 2.6), [paint, black]);
-  add(loft(THREE, POD, 36, 28, 3.4), [accent, black]);
-  add(loft(THREE, POD, 36, 28, 3.4, true), [accent, black]);
+  /* ลำตัว + sidepods (ปากรับลมสีดำ) */
+  add(loft(THREE, TUB, 80, 44, 2.6), [tubMat, black]);
+  add(loft(THREE, POD, 40, 32, 3.6), [podR, black]);
+  add(loft(THREE, POD, 40, 32, 3.6, true), [podL, black]);
 
-  // ห้องนักขับ: ขอบดำเว้า + หมวกนักขับ
+  /* ห้องนักขับ หมวก */
   const cockpit = new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-  cockpit.scale(0.21, 0.06, 0.42);
-  cockpit.translate(0, 0.66, 0.5);
+  cockpit.scale(0.2, 0.06, 0.42);
+  cockpit.translate(0, 0.66, 0.52);
   add(cockpit, black);
   const helmet = new THREE.SphereGeometry(0.15, 20, 14);
   helmet.scale(1, 1.05, 1.15);
-  helmet.translate(0, 0.79, 0.38);
+  helmet.translate(0, 0.79, 0.4);
   add(helmet, helmetMat);
   const visorGeo = new THREE.SphereGeometry(0.152, 20, 6, Math.PI * 0.18, Math.PI * 0.64, Math.PI * 0.38, Math.PI * 0.16);
   visorGeo.scale(1, 1.05, 1.15);
-  visorGeo.translate(0, 0.79, 0.38);
+  visorGeo.translate(0, 0.79, 0.4);
   add(visorGeo, visor);
 
-  // ช่องรับอากาศเหนือหัว (airbox) + ครีบหลัง
-  const airbox = new THREE.CylinderGeometry(0.1, 0.12, 0.36, 18, 1);
-  airbox.rotateX(Math.PI / 2);
-  airbox.scale(1, 0.8, 1);
-  airbox.translate(0, 0.86, -0.2);
-  add(airbox, accent);
-  const inlet = new THREE.CircleGeometry(0.085, 18);
-  inlet.scale(1, 0.8, 1);
-  inlet.translate(0, 0.86, -0.015);
-  add(inlet, black);
-  add(plate(THREE, [[-0.45, 0.84], [-1.5, 0.56], [-1.72, 0.6], [-1.3, 0.78], [-0.55, 0.92]], 0, 0.012), accent);
+  /* ช่องรับอากาศเหนือหัว (ทรงหยดน้ำ) + ช่องข้าง + กล้องบนหลังคา + ครีบเล็ก */
+  {
+    const box = new THREE.CylinderGeometry(0.085, 0.12, 0.42, 18, 1);
+    box.rotateX(Math.PI / 2);
+    box.scale(1, 1.15, 1);
+    box.translate(0, 0.87, -0.2);
+    add(box, accent);
+    const inlet = new THREE.CircleGeometry(0.075, 18);
+    inlet.scale(1, 1.2, 1);
+    inlet.translate(0, 0.875, 0.012);
+    add(inlet, black);
+    const ears: Geo[] = [];
+    for (const s of [1, -1]) {
+      const e = new THREE.CircleGeometry(0.035, 12);
+      e.translate(s * 0.13, 0.78, -0.12);
+      ears.push(e);
+    }
+    const cam = new THREE.BoxGeometry(0.12, 0.04, 0.07);
+    cam.translate(0, 1.03, -0.2);
+    ears.push(cam);
+    add(merged(ears), black);
+    add(plate(THREE, [[-0.45, 0.86], [-1.2, 0.66], [-1.35, 0.7], [-0.9, 0.82], [-0.5, 0.9]], 0, 0.008), second);
+  }
 
   const carbonParts: Geo[] = [];
-  // พื้นรถ (มองจากด้านบน): แคบที่หน้า กว้างช่วงกลาง เรียวเข้าหาดิฟฟิวเซอร์
+  /* พื้นรถ: ขอบหน้ามีครีบ (floor fences) · ปีกขอบพื้น · ดิฟฟิวเซอร์ใหญ่ */
   {
     const pts: [number, number][] = [
-      [0.18, 1.45], [0.36, 1.25], [0.66, 0.95], [0.78, 0.55], [0.8, -0.9], [0.66, -1.35], [0.5, -1.55], [0.5, -2.05],
+      [0.2, 1.42], [0.42, 1.22], [0.7, 0.98], [0.82, 0.6], [0.84, -0.8], [0.72, -1.3], [0.52, -1.55], [0.5, -2.05],
     ];
     const outline = [...pts, ...pts.slice().reverse().map(([x, z]) => [-x, z] as [number, number])];
-    const sh = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)));
-    const floor = new THREE.ExtrudeGeometry(sh, { depth: 0.035, bevelEnabled: false });
+    const floor = new THREE.ExtrudeGeometry(new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z))), { depth: 0.03, bevelEnabled: false });
     floor.rotateX(-Math.PI / 2);
     floor.translate(0, 0.045, 0);
     carbonParts.push(floor);
-    // ขอบพื้นรถม้วนขึ้น
-    for (const s of [1, -1]) carbonParts.push(plate(THREE, [[0.55, 0.08], [-0.9, 0.08], [-0.9, 0.13], [0.55, 0.1]], s * 0.79, 0.012));
-    // ดิฟฟิวเซอร์เชิดขึ้นท้าย
-    const diff = new THREE.BoxGeometry(0.98, 0.02, 0.55);
-    diff.rotateX(-0.28);
-    diff.translate(0, 0.14, -2.0);
+    for (const s of [1, -1]) {
+      // ขอบพื้นม้วนขึ้น + ปีกขอบพื้น
+      carbonParts.push(plate(THREE, [[0.62, 0.075], [-0.95, 0.075], [-0.95, 0.12], [0.62, 0.15]], s * 0.835, 0.012));
+      const ew = new THREE.BoxGeometry(0.16, 0.012, 0.42);
+      ew.rotateX(-0.12);
+      ew.translate(s * 0.78, 0.17, 0.72);
+      carbonParts.push(ew);
+      // ครีบพื้นรถด้านหน้า 4 แผ่น
+      for (let k = 0; k < 4; k++) {
+        const fx = s * (0.2 + k * 0.11);
+        carbonParts.push(plate(THREE, [[1.38 - k * 0.06, 0.05], [0.95 - k * 0.04, 0.05], [0.98 - k * 0.04, 0.2 - k * 0.015], [1.3 - k * 0.06, 0.16]], fx, 0.01));
+      }
+    }
+    const diff = new THREE.BoxGeometry(1.0, 0.02, 0.6);
+    diff.rotateX(-0.3);
+    diff.translate(0, 0.15, -1.98);
     carbonParts.push(diff);
-    for (const s of [-1, 0, 1]) carbonParts.push(plate(THREE, [[-1.75, 0.07], [-2.27, 0.07], [-2.27, 0.27]], s * 0.3, 0.012));
+    for (const s of [-1, -0.4, 0.4, 1]) carbonParts.push(plate(THREE, [[-1.72, 0.07], [-2.28, 0.07], [-2.28, 0.3]], s * 0.45, 0.012));
   }
 
-  // ปีกหน้า 3 ชั้น (ปีกแคบลงตามกฎ 2026) + แผ่นปิดข้าง + เสายึดจมูก
-  const FW = 1.84;
-  const frontWing = [
-    wing(THREE, FW, 0.34, 0.03, 3.02, 0.075, 0.04),
-    wing(THREE, FW - 0.12, 0.2, 0.022, 2.78, 0.14, 0.32),
-    wing(THREE, FW - 0.22, 0.14, 0.018, 2.63, 0.21, 0.6),
-  ];
-  for (const s of [1, -1]) {
-    frontWing.push(plate(THREE, [[3.06, 0.04], [2.5, 0.04], [2.48, 0.3], [2.72, 0.32], [3.02, 0.16]], s * (FW / 2 + 0.008), 0.016));
-    frontWing.push(rod(THREE, [s * 0.05, 0.2, 2.82], [s * 0.05, 0.09, 2.84], 0.012));
+  /* ปีกหน้า 4 ชั้น: กลางต่ำแนบจมูก ด้านนอกยกสูงและกวาดถอยหลัง */
+  {
+    const HALF = 0.95;
+    const els = [
+      { y: 0.07, rise: 0.025, z: 3.2, sweep: 0.06, chord: 0.34, angle: 0.04, thick: 0.028 },
+      { y: 0.098, rise: 0.06, z: 2.93, sweep: 0.11, chord: 0.2, angle: 0.28, thick: 0.02 },
+      { y: 0.124, rise: 0.095, z: 2.8, sweep: 0.15, chord: 0.15, angle: 0.5, thick: 0.017 },
+      { y: 0.15, rise: 0.13, z: 2.7, sweep: 0.19, chord: 0.12, angle: 0.72, thick: 0.015 },
+    ];
+    const main: Geo[] = [];
+    const xs: number[] = [];
+    for (let k = -14; k <= 14; k++) xs.push((k / 14) * HALF);
+    const wings: Geo[] = [];
+    els.forEach((e, k) => {
+      (k === 0 ? main : wings).push(
+        wingLoft(
+          THREE,
+          xs.map((x) => {
+            const a = Math.abs(x) / HALF;
+            const out = smooth(0.25, 1, a);
+            return { x, y: e.y + e.rise * out, z: e.z - e.sweep * a * a, chord: e.chord * (1 - 0.3 * a), angle: e.angle + 0.25 * out, thick: e.thick, nx: 0, ny: 1 };
+          }),
+        ),
+      );
+    });
+    // แผ่นหลัก = มีชื่อสปอนเซอร์ · แผ่นบน = สีทีมเรียบ
+    add(merged(main), fwMat);
+    add(merged(wings), accent);
+    const ends: Geo[] = [];
+    for (const s of [1, -1]) {
+      ends.push(plate(THREE, [[3.24, 0.03], [2.6, 0.03], [2.56, 0.18], [2.66, 0.3], [2.86, 0.27], [3.14, 0.11]], s * (HALF + 0.008), 0.014));
+      // เสายึดจมูก
+      ends.push(rod(THREE, [s * 0.04, 0.15, 2.98], [s * 0.04, 0.08, 3.0], 0.012));
+    }
+    add(merged(ends), second);
   }
-  add(merged(frontWing), accent);
 
-  // ปีกหลัง 2 ชั้น + แผ่นปิดข้าง + เสายึดแบบคอห่าน
-  const RW = 1.0;
-  const rearWing = [wing(THREE, RW, 0.3, 0.035, -2.18, 0.8, 0.12), wing(THREE, RW, 0.2, 0.025, -2.36, 0.93, 0.38)];
-  add(merged(rearWing), accent);
-  const plates: Geo[] = [];
-  for (const s of [1, -1]) {
-    plates.push(plate(THREE, [[-2.14, 0.5], [-2.6, 0.42], [-2.62, 1.0], [-2.12, 1.0], [-2.06, 0.78]], s * (RW / 2 + 0.008), 0.016));
+  /* ปีกหลัง: ปลายโค้งมนม้วนลงหาแผ่นข้าง · beam wing ด้านล่าง · เสาคอห่านกลาง */
+  {
+    const FLAT = 0.36;
+    const RX = 0.105;
+    const tipWing = (y0: number, ry: number, z: number, chord: number, angle: number, thick: number) => {
+      const st: Station[] = [];
+      const steps = 10;
+      const push = (sgn: number, x: number, y: number, nx: number, ny: number) => st.push({ x: sgn * x, y, z, chord, angle, thick, nx: sgn * nx, ny });
+      // ปลายซ้าย → กลาง → ปลายขวา
+      for (let k = steps; k >= 1; k--) {
+        const f = ((k / steps) * Math.PI) / 2;
+        const tx = RX * Math.cos(f);
+        const ty = -ry * Math.sin(f);
+        const len = Math.hypot(tx, ty) || 1;
+        push(-1, FLAT + RX * Math.sin(f), y0 - ry * (1 - Math.cos(f)), -ty / len, tx / len);
+      }
+      for (let k = -6; k <= 6; k++) push(1, (k / 6) * FLAT, y0, 0, 1);
+      for (let k = 1; k <= steps; k++) {
+        const f = ((k / steps) * Math.PI) / 2;
+        const tx = RX * Math.cos(f);
+        const ty = -ry * Math.sin(f);
+        const len = Math.hypot(tx, ty) || 1;
+        push(1, FLAT + RX * Math.sin(f), y0 - ry * (1 - Math.cos(f)), -ty / len, tx / len);
+      }
+      return wingLoft(THREE, st);
+    };
+    add(merged([tipWing(0.83, 0.12, -2.18, 0.34, 0.14, 0.034), tipWing(0.96, 0.25, -2.42, 0.2, 0.48, 0.024)]), rwMat);
+    // แผ่นข้างปีกหลัง (สปอนเซอร์ด้านนอก)
+    const EP = FLAT + RX + 0.006;
+    for (const s of [1, -1] as const) {
+      const m = paintMat(ghost ? null : tex(endplateTexture(d, s < 0)), 0xffffff);
+      add(sign(THREE, s * (EP + 0.004), -2.18, -2.6, 0.4, 0.72, s), m);
+      add(sign(THREE, s * (EP - 0.004), -2.18, -2.6, 0.4, 0.72, s === 1 ? -1 : 1), second);
+    }
+    // beam wing 2 ชั้น
+    const beam = (y: number, z: number, chord: number, angle: number) =>
+      wingLoft(THREE, [-1, -0.5, 0, 0.5, 1].map((f) => ({ x: f * (EP - 0.02), y, z, chord, angle, thick: 0.02, nx: 0, ny: 1 })));
+    add(merged([beam(0.4, -2.16, 0.2, 0.2), beam(0.5, -2.3, 0.16, 0.45)]), second);
+    carbonParts.push(rod(THREE, [0, 0.38, -1.95], [0, 0.82, -2.24], 0.02));
+    carbonParts.push(rod(THREE, [0, 0.82, -2.24], [0, 0.98, -2.44], 0.015));
   }
-  add(merged(plates), accent);
-  // ไฟท้าย (ไฟฝน) สีแดง
-  const rain = new THREE.BoxGeometry(0.12, 0.05, 0.03);
-  rain.translate(0, 0.38, -2.22);
-  add(rain, fade(new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0xff1a10, emissiveIntensity: 1.6 })));
-  carbonParts.push(rod(THREE, [0, 0.38, -1.95], [0, 0.82, -2.26], 0.02));
-  carbonParts.push(rod(THREE, [0, 0.82, -2.26], [0, 0.97, -2.4], 0.016));
 
-  // halo: ห่วงเหนือหัว + เสากลางด้านหน้า
+  /* halo + ครอบ */
   {
     const curve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-0.27, 0.66, 0.06),
@@ -385,47 +527,51 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
       new THREE.Vector3(0.25, 0.86, 0.2),
       new THREE.Vector3(0.27, 0.66, 0.06),
     ]);
-    carbonParts.push(new THREE.TubeGeometry(curve, 40, 0.028, 8, false));
-    const pillar = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.62, 1.02), new THREE.Vector3(0, 0.78, 0.92), new THREE.Vector3(0, 0.9, 0.78)]);
-    carbonParts.push(new THREE.TubeGeometry(pillar, 10, 0.026, 8, false));
+    carbonParts.push(new THREE.TubeGeometry(curve, 40, 0.03, 8, false));
+    const pillar = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.62, 1.04), new THREE.Vector3(0, 0.78, 0.94), new THREE.Vector3(0, 0.9, 0.78)]);
+    carbonParts.push(new THREE.TubeGeometry(pillar, 10, 0.028, 8, false));
   }
 
-  // กระจกมองข้าง
+  /* กระจกมองข้าง (บนขอบ sidepod) มีครีบเล็ก */
   for (const s of [1, -1]) {
-    carbonParts.push(rod(THREE, [s * 0.24, 0.62, 0.78], [s * 0.42, 0.72, 0.72], 0.01));
-    const m = new THREE.BoxGeometry(0.15, 0.055, 0.04);
-    m.translate(s * 0.45, 0.73, 0.72);
+    carbonParts.push(rod(THREE, [s * 0.3, 0.56, 0.86], [s * 0.46, 0.68, 0.82], 0.01));
+    carbonParts.push(rod(THREE, [s * 0.42, 0.56, 0.7], [s * 0.47, 0.67, 0.8], 0.008));
+    const m = new THREE.BoxGeometry(0.16, 0.06, 0.05);
+    m.translate(s * 0.5, 0.69, 0.82);
     carbonParts.push(m);
   }
 
-  // ปีกนก (suspension) ไปถึงดุมล้อ — หน้า x 0.8 · หลัง x 0.76 · ดุม y 0.36
+  /* ปีกนก (suspension) ถึงดุมล้อ — หน้า x 0.8 · หลัง x 0.76 · ดุม y 0.36 */
   for (const s of [1, -1]) {
     for (const [z, hub] of [[1.8, 0.64], [-1.8, 0.55]] as const) {
       const zf = z + 0.22;
       const zb = z - 0.22;
       const top = z > 0 ? 0.47 : 0.42;
       carbonParts.push(
-        arm(THREE, [s * 0.16, top, zf], [s * hub, 0.48, z]),
-        arm(THREE, [s * 0.16, top, zb], [s * hub, 0.48, z]),
-        arm(THREE, [s * 0.14, 0.24, zf], [s * hub, 0.24, z]),
-        arm(THREE, [s * 0.14, 0.24, zb], [s * hub, 0.24, z]),
-        arm(THREE, [s * 0.15, 0.27, z + 0.06], [s * hub, 0.4, z + 0.08]),
+        rod(THREE, [s * 0.16, top, zf], [s * hub, 0.48, z], 0.016),
+        rod(THREE, [s * 0.16, top, zb], [s * hub, 0.48, z], 0.016),
+        rod(THREE, [s * 0.14, 0.24, zf], [s * hub, 0.24, z], 0.016),
+        rod(THREE, [s * 0.14, 0.24, zb], [s * hub, 0.24, z], 0.016),
+        rod(THREE, [s * 0.15, 0.27, z + 0.06], [s * hub, 0.4, z + 0.08], 0.016),
       );
     }
   }
-
   add(merged(carbonParts), carbon);
 
-  // ตัวยึดล้อ (upright) สีเงินเล็ก ๆ ที่ปลายปีกนก
+  // ตัวยึดล้อ (upright)
   const uprights: Geo[] = [];
-  for (const s of [1, -1]) {
+  for (const s of [1, -1])
     for (const [z, hub] of [[1.8, 0.64], [-1.8, 0.55]] as const) {
       const u = new THREE.BoxGeometry(0.04, 0.28, 0.08);
       u.translate(s * hub, 0.36, z);
       uprights.push(u);
     }
-  }
   add(merged(uprights), metal);
+
+  // ไฟท้าย (ไฟฝน)
+  const rain = new THREE.BoxGeometry(0.12, 0.05, 0.03);
+  rain.translate(0, 0.38, -2.22);
+  add(rain, fade(new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0xff1a10, emissiveIntensity: 1.6 })));
 
   obj.traverse((o) => {
     o.castShadow = !ghost;
@@ -435,7 +581,7 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
   return {
     obj,
     dispose() {
-      own.forEach((d) => d.dispose());
+      own.forEach((x) => x.dispose());
     },
   };
 }

@@ -341,7 +341,7 @@ function DriveSession({ settings, track, onExit }: { settings: Settings; track: 
       if (disposed) return;
       const auto = matchMedia("(pointer: coarse)").matches || el.clientWidth < 700 || (navigator.hardwareConcurrency ?? 8) <= 4;
       const gfx: Gfx = settings.gfx === "auto" ? (auto ? "low" : "high") : settings.gfx;
-      const livery = { colour: team.color, ink: team.ink, num: driver.num };
+      const livery = { team: team.id, colour: team.color, ink: team.ink, num: driver.num };
       const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment }, merge: mergeGeometries, body, el, track, livery, gfx });
       sceneRef.current = scene;
       scene.setCamera(camera);
