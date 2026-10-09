@@ -14,3 +14,6 @@ export const NAV_ITEMS = [
  * หน้าเกมเข้าได้จาก header บนจอใหญ่ และจากการ์ดในหน้าแรกบนมือถือ
  */
 export const BOTTOM_NAV_ITEMS = NAV_ITEMS.slice(0, 4);
+
+/** หน้าที่ไม่แสดงแถบล่าง — หน้าเกมมีปุ่มของตัวเองและแถบลอยจะทับเนื้อหา */
+export const BOTTOM_NAV_HIDDEN = ["/pitwall"];

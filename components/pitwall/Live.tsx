@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FastForward, LogOut, Radio as RadioIcon, Timer, Volume2, VolumeX } from "lucide-react";
 import Car from "@/components/pitwall/Car";
@@ -155,17 +155,6 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
         <div className="relative min-h-[34vh] flex-1">
           <PitMap board={board} track={track} cars={mapCars} focus={focus} neutral={r?.neutral?.kind ?? null} zoomed={zoomed} onToggle={() => setZoomed((z) => !z)} interval={interval} />
           <RadioTicker snap={snap} team={myTeam} />
-          {launchCar && (
-            <LaunchScreen
-              key={launchCar.id}
-              car={launchCar}
-              team={teamOf(launchCar).name}
-              onDone={(kind) => {
-                setLaunched((l) => ({ ...l, [launchCar.id]: true }));
-                send({ t: "launch", car: launchCar.id, kind });
-              }}
-            />
-          )}
           {r && !r.started && !launchCar && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
               <p className="poster text-lg text-white/80">รอรถคันอื่นพร้อมออกตัว… {snap.timer > 0 ? Math.ceil(snap.timer) : ""}</p>
@@ -205,6 +194,18 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           </div>
         </div>
       </section>
+      {/* ออกตัว: เต็มจอ ไม่ให้ถูกบีบอยู่ในกรอบแผนที่บนมือถือ */}
+      {launchCar && (
+        <LaunchScreen
+          key={launchCar.id}
+          car={launchCar}
+          team={teamOf(launchCar).name}
+          onDone={(kind) => {
+            setLaunched((l) => ({ ...l, [launchCar.id]: true }));
+            send({ t: "launch", car: launchCar.id, kind });
+          }}
+        />
+      )}
 
       {driving !== null && (
         <DriveLap
@@ -268,7 +269,8 @@ function QualiCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsh
   const order = segOrder(q);
   const rank = order.indexOf(car.id) + 1;
   const cut = order.length - q.segs[q.seg].out;
-  const danger = q.segs[q.seg].out > 0 && (rank > cut || car.best === null);
+  const noTime = car.best === null;
+  const danger = q.segs[q.seg].out > 0 && (rank > cut || noTime);
   const status: Record<QCar["status"], string> = {
     garage: "อยู่ในพิท",
     out: "รอบอุ่นยาง",
@@ -285,12 +287,12 @@ function QualiCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsh
           <span className="block text-[11px] text-white/60">{status[car.status]}</span>
         </span>
         <span className="text-right">
-          <b className={`poster block text-lg tabular-nums ${danger ? "text-(--color-f1-text)" : "text-white"}`}>{car.status === "eliminated" ? "—" : `P${rank}`}</b>
+          <b className={`poster block text-lg tabular-nums ${noTime ? "text-white/60" : danger ? "text-(--color-f1-text)" : "text-white"}`}>{car.status === "eliminated" ? "—" : noTime ? "" : `P${rank}`}</b>
           <span className="block text-[11px] tabular-nums text-white/70">{fmtLap(car.best)}</span>
         </span>
       </button>
       {car.status !== "eliminated" && q.segs[q.seg].out > 0 && (
-        <p className={`text-[11px] ${danger ? "text-(--color-f1-text)" : "text-white/60"}`}>{danger ? `อยู่ในโซนตกรอบ (ต้องติด ${cut} อันดับแรก)` : `ปลอดภัย · เส้นตัด P${cut}`}</p>
+        <p className={`text-[11px] ${danger ? "text-(--color-f1-text)" : "text-white/60"}`}>{noTime ? `ยังไม่มีเวลา · ส่งรถออกทำเวลาให้ติด ${cut} อันดับแรก` : danger ? `อยู่ในโซนตกรอบ (ต้องติด ${cut} อันดับแรก)` : `ปลอดภัย · เส้นตัด P${cut}`}</p>
       )}
       {(car.status === "push" || car.status === "out") && (
         <div className="flex items-center gap-1.5 text-[11px]">
@@ -350,6 +352,12 @@ function QualiCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsh
           </Btn>
         </div>
       )}
+      {car.status !== "eliminated" && (
+        <label className="flex items-center gap-1.5 text-[11px] text-white/70">
+          <input type="checkbox" checked={car.auto} onChange={(e) => send({ t: "auto", car: car.id, v: e.target.checked })} className="h-4 w-4 accent-[#E10600]" />
+          {car.auto && car.status === "garage" ? "AI จะส่งรถออกเองเมื่อถึงจังหวะ (เอาติ๊กออกเพื่อสั่งเอง)" : "ให้ AI ส่งรถออกแทน (เลือกยางและจังหวะเอง)"}
+        </label>
+      )}
     </div>
   );
 }
@@ -374,7 +382,7 @@ function QualiTower({ snap, mine, onPick }: { snap: Snapshot; mine: CarSpec[]; o
             <li key={id}>
               {i === cut && q.segs[q.seg].out > 0 && <div className="my-1 h-0.5 bg-(--color-f1)" aria-label="เส้นตัดรอบ" />}
               <button type="button" onClick={() => onPick(id)} className={`flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left ${mine.some((m) => m.id === id) ? "bg-(--color-f1)/20" : "bg-white/[0.03]"}`}>
-                <span className="poster w-6 tabular-nums">{i + 1}</span>
+                <span className="poster w-6 tabular-nums">{c.best === null ? "—" : i + 1}</span>
                 <span className="h-3 w-1 rounded-full" style={{ background: t.color }} />
                 <span className="w-7 font-bold tabular-nums">#{spec.num}</span>
                 <span className="flex gap-0.5">
@@ -422,6 +430,33 @@ function TeamOrders({ snap, team, send }: { snap: Snapshot; team: number; send: 
   );
 }
 
+/** คำอธิบายสั้นของตัวเลือกที่เลือกอยู่ (ให้รู้ว่าได้อะไร เสียอะไร) */
+const MODE_HINT: Record<DriveMode, string> = {
+  save: "ช้าลงเล็กน้อย ยางสึกช้า เสี่ยงพลาดน้อย",
+  normal: "สมดุลระหว่างความเร็วกับยาง",
+  push: "เร็วขึ้น แต่ยางสึกเร็วและเสี่ยงพลาด",
+};
+const ERS_HINT: Record<ErsMode, string> = {
+  harvest: "ชาร์จแบต เสียความเร็วบนทางตรง",
+  auto: "ใช้และชาร์จแบตให้อัตโนมัติ",
+  boost: "เร็วขึ้นบนทางตรง แบตหมดไว",
+};
+const FIGHT_HINT: Record<Fight, string> = {
+  defend: "ปิดไลน์ คันหลังแซงยาก แต่ช้าลงนิดหน่อย",
+  none: "ขับตามปกติ",
+  attack: "พยายามแซงคันหน้า ใช้แบตและยางมากขึ้น",
+};
+
+function Control({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-[11px] font-bold text-white/70">{label}</p>
+      {children}
+      <p className="text-[11px] leading-snug text-white/60">{hint}</p>
+    </div>
+  );
+}
+
 function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapshot; spec: CarSpec; car: RaceCar; focus: boolean; onFocus: () => void; send: (m: Msg) => void }) {
   const r = snap.race!;
   const t = teamOf(spec);
@@ -455,33 +490,39 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
       </div>
       {!done && (
         <>
-          <Seg<DriveMode>
-            size="sm"
-            value={car.mode}
-            onChange={(v) => send({ t: "mode", car: car.id, mode: v })}
-            options={(["save", "normal", "push"] as DriveMode[]).map((v) => ({ v, label: MODE[v].label, tone: v === "push" ? "#fb923c" : v === "save" ? "#86efac" : undefined }))}
-          />
+          <Control label="การขับ" hint={MODE_HINT[car.mode]}>
+            <Seg<DriveMode>
+              size="sm"
+              value={car.mode}
+              onChange={(v) => send({ t: "mode", car: car.id, mode: v })}
+              options={(["save", "normal", "push"] as DriveMode[]).map((v) => ({ v, label: MODE[v].label, tone: v === "push" ? "#fb923c" : v === "save" ? "#86efac" : undefined }))}
+            />
+          </Control>
           <div className="grid grid-cols-2 gap-1.5">
-            <Seg<ErsMode>
-              size="sm"
-              value={car.ersMode}
-              onChange={(v) => send({ t: "ers", car: car.id, ers: v })}
-              options={(["harvest", "auto", "boost"] as ErsMode[]).map((v) => ({ v, label: ERS[v].label, tone: v === "boost" ? "#38bdf8" : undefined }))}
-            />
-            <Seg<Fight>
-              size="sm"
-              value={car.fight}
-              onChange={(v) => send({ t: "fight", car: car.id, fight: v })}
-              options={[
-                { v: "defend", label: "ป้องกัน" },
-                { v: "none", label: "—" },
-                { v: "attack", label: "บุก", tone: "#fb923c" },
-              ]}
-            />
+            <Control label="แบตเตอรี่ (ERS)" hint={ERS_HINT[car.ersMode]}>
+              <Seg<ErsMode>
+                size="sm"
+                value={car.ersMode}
+                onChange={(v) => send({ t: "ers", car: car.id, ers: v })}
+                options={(["harvest", "auto", "boost"] as ErsMode[]).map((v) => ({ v, label: ERS[v].label, tone: v === "boost" ? "#38bdf8" : undefined }))}
+              />
+            </Control>
+            <Control label="ต่อสู้" hint={FIGHT_HINT[car.fight]}>
+              <Seg<Fight>
+                size="sm"
+                value={car.fight}
+                onChange={(v) => send({ t: "fight", car: car.id, fight: v })}
+                options={[
+                  { v: "defend", label: "ป้องกัน" },
+                  { v: "none", label: "ปกติ" },
+                  { v: "attack", label: "บุก", tone: "#fb923c" },
+                ]}
+              />
+            </Control>
           </div>
           <div className="space-y-1">
             <p className="text-[11px] font-bold text-white/60">
-              {car.pitReq ? `เข้าพิทรอบนี้ → ${COMPOUND_INFO[car.pitReq].label}` : car.pit ? "กำลังเปลี่ยนยาง…" : `สั่งเข้าพิท (เหลือ ${lapsLeft} รอบ · ${car.stops ? `เข้าแล้ว ${car.stops} ครั้ง` : "ยังไม่เข้า · บังคับ 1 ครั้ง"})`}
+              {car.pitReq ? `เข้าพิทรอบนี้ → ${COMPOUND_INFO[car.pitReq].label}` : car.pit ? "กำลังเปลี่ยนยาง…" : `สั่งเข้าพิท · เลือกยางที่จะใส่ (เหลือ ${lapsLeft} รอบ · ${car.stops ? `เข้าแล้ว ${car.stops} ครั้ง` : "ยังไม่เข้า · บังคับ 1 ครั้ง"})`}
             </p>
             <div className="grid grid-cols-4 gap-1.5">
               {COMPOUNDS.map((k) => {
@@ -495,7 +536,7 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
                     onClick={() => send({ t: "pit", car: car.id, compound: car.pitReq === k ? null : k })}
                     className={`flex items-center justify-center gap-1 rounded-lg border-2 py-1.5 text-[11px] font-bold disabled:opacity-40 ${car.pitReq === k ? "border-white bg-white/15" : "border-white/10"}`}
                   >
-                    <TyreDot c={k} size={16} /> {freshSets(spec, k)}
+                    <TyreDot c={k} size={16} /> ใหม่ {freshSets(spec, k)}
                   </button>
                 );
               })}
