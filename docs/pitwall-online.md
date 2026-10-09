@@ -22,7 +22,8 @@
    | ช่อง | ใส่ |
    |---|---|
    | Project name | `pitwall-room` |
-   | Production branch | `claude/boardgame-grand-prix-tour` (ไว้ทดสอบก่อน · หลัง merge แล้วเปลี่ยนเป็น `main`) |
+   | Production branch | `main` |
+   | Builds for non-production branches | ปิด (เซิร์ฟเวอร์ deploy จาก `main` อย่างเดียว) |
    | Root directory / Path | `cloudflare/pitwall` |
    | Build command | (เว้นว่าง) |
    | Deploy command | `npx wrangler deploy` |
@@ -54,7 +55,8 @@
 | หน้าเกมเขียนว่า "ยังไม่ได้เชื่อมเซิร์ฟเวอร์" | ยังไม่ได้ใส่ `NEXT_PUBLIC_PITWALL_SERVER` หรือยังไม่ได้ Redeploy |
 | กดสร้างห้องแล้วขึ้นข้อผิดพลาด | เปิดที่อยู่ Worker ดูว่ายังทำงานอยู่ไหม (ขั้นที่ 2 ข้อ 6) |
 | เข้าห้องไม่ได้ "ไม่พบห้องนี้" | รหัสผิด หรือทุกคนออกจากห้องนานจนห้องหายไป ให้สร้างห้องใหม่ |
-| Deploy บน Cloudflare ล้มเหลว | ตรวจว่า Root directory เป็น `cloudflare/pitwall` และ Deploy command เป็น `npx wrangler deploy` |
+| Deploy บน Cloudflare ล้มเหลว | ตรวจว่า Root directory เป็น `cloudflare/pitwall`, Build command ว่าง และ Deploy command เป็น `npx wrangler deploy` |
+| log ขึ้น `next build` หรือ `wrangler preview` | Cloudflare กำลัง build เว็บแทนเซิร์ฟเวอร์ หรือ build branch อื่น: แก้ Root directory / Build command ตามตารางขั้นที่ 2 และปิด build ของ branch อื่น |
 
 ## สำหรับคนที่ใช้เครื่องตัวเอง (ไม่บังคับ)
 ```bash
