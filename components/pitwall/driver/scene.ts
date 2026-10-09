@@ -8,7 +8,7 @@
  */
 import type * as THREE_NS from "three";
 import { DS, HALF_WIDTH, VMAX, poseAt, sample, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
-import type { CarFactory } from "@/lib/three-car";
+import { buildCar, type Livery } from "./carModel";
 
 type Three = typeof THREE_NS;
 type Obj = THREE_NS.Object3D;
@@ -61,14 +61,14 @@ export type DriveScene = {
 export function createDriveScene(opts: {
   THREE: Three;
   addons: { Sky: new () => THREE_NS.Mesh; RoomEnvironment: new () => THREE_NS.Scene };
-  factory: CarFactory;
+  merge: (g: THREE_NS.BufferGeometry[]) => THREE_NS.BufferGeometry | null;
   body: BodyModel | null;
   el: HTMLElement;
   track: DriveTrack;
-  colour: string;
+  livery: Livery;
   gfx: Gfx;
 }): DriveScene {
-  const { THREE, addons, factory, el, track: t, colour, gfx } = opts;
+  const { THREE, addons, merge, el, track: t, livery, gfx } = opts;
   const high = gfx === "high";
   const renderer = new THREE.WebGLRenderer({ antialias: high, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(devicePixelRatio, high ? 1.75 : 1));
@@ -474,9 +474,16 @@ export function createDriveScene(opts: {
   const rimMat = keep(new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.3, metalness: 0.85 }));
   const stripeMat = keep(new THREE.MeshStandardMaterial({ color: 0xe10600, roughness: 0.6 }));
   const wheelGeos = (w: number) => {
-    const tyre = keep(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, w, 28, 1));
+    // ยางขอบมน (หมุนโครงหน้าตัดรอบแกน) ไม่ใช่ทรงกระบอกเหลี่ยม
+    const h = w / 2;
+    const R = WHEEL_R;
+    const profile = [
+      [0.22, -h + 0.01], [R - 0.035, -h], [R - 0.008, -h + 0.03], [R, -h + 0.07],
+      [R, h - 0.07], [R - 0.008, h - 0.03], [R - 0.035, h], [0.22, h - 0.01],
+    ].map(([r, y]) => new THREE.Vector2(r, y));
+    const tyre = keep(new THREE.LatheGeometry(profile, 36));
     tyre.rotateZ(Math.PI / 2);
-    const rim = keep(new THREE.CylinderGeometry(0.2, 0.2, w + 0.012, 18, 1));
+    const rim = keep(new THREE.CylinderGeometry(0.225, 0.225, w - 0.01, 24, 1));
     rim.rotateZ(Math.PI / 2);
     // ซี่ล้อ 2 แท่งไขว้ ให้เห็นล้อหมุน
     const spoke = keep(new THREE.BoxGeometry(w + 0.02, 0.36, 0.05));
@@ -487,14 +494,14 @@ export function createDriveScene(opts: {
   const geoF = wheelGeos(0.3);
   const geoR = wheelGeos(0.4);
 
-  const makeRig = (colourHex: string, isGhost: boolean): Rig => {
+  const makeRig = (l: Livery, isGhost: boolean): Rig => {
     const root = new THREE.Group();
     const bodyGroup = new THREE.Group();
     root.add(bodyGroup);
     if (opts.body && !isGhost) {
       const clone = opts.body.scene.clone(true);
       if (opts.body.tint) {
-        const c = new THREE.Color(colourHex);
+        const c = new THREE.Color(l.colour);
         clone.traverse((o) => {
           const mesh = o as THREE_NS.Mesh;
           if (!mesh.isMesh) return;
@@ -508,15 +515,8 @@ export function createDriveScene(opts: {
       }
       bodyGroup.add(clone);
     } else {
-      const made = factory.make(colourHex);
-      // ล้อของรถสำเร็จรูปติดกับตัวถัง — ซ่อนไว้ ใช้ล้อแยกชิ้นข้างล่างแทน
-      made.obj.children.forEach((ch, k) => {
-        if (k === 2 || k === 3) ch.visible = false;
-      });
-      made.body.roughness = 0.25;
-      made.body.metalness = 0.45;
+      const made = keep(buildCar(THREE, merge, l, { ghost: isGhost }));
       bodyGroup.add(made.obj);
-      if (isGhost) made.setOpacity(0.3);
     }
     const steer: THREE_NS.Group[] = [];
     const spin: THREE_NS.Group[] = [];
@@ -556,9 +556,9 @@ export function createDriveScene(opts: {
     return { root, body: bodyGroup, steer, spin };
   };
 
-  const car = makeRig(colour, false);
+  const car = makeRig(livery, false);
   scene.add(car.root);
-  const ghost = makeRig("#ffffff", true);
+  const ghost = makeRig({ colour: "#ffffff", ink: "#ffffff", num: 0 }, true);
   ghost.root.visible = false;
   scene.add(ghost.root);
 
@@ -567,6 +567,7 @@ export function createDriveScene(opts: {
   const camLook = new THREE.Vector3();
   const tmp = new THREE.Vector3();
   const fwd = new THREE.Vector3();
+  const chaseDir = new THREE.Vector3();
   // การเคลื่อนไหวของตัวรถ (เกลี่ยให้นุ่ม)
   const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0 };
   let baseFov = 66;
@@ -644,10 +645,11 @@ export function createDriveScene(opts: {
         camera.lookAt(camLook);
         camera.rotateZ(-motion.roll * 0.6);
       } else {
-        // ตามหลังแบบหน่วงนิด ๆ ให้เห็นรถเลี้ยว
+        // ตามหลังระยะคงที่ หน่วงแค่ทิศ (ไม่หน่วงตำแหน่ง — ไม่งั้นรถยิ่งเร็ว/เครื่องยิ่งช้า กล้องยิ่งหลุดห่าง) ให้เห็นรถเลี้ยว
         const back = Math.min(9.5, 7 + speed * 0.03);
-        tmp.copy(car.root.position).addScaledVector(fwd, -back).setY(2.7);
-        camPos.lerp(tmp, camPos.lengthSq() === 0 ? 1 : 0.18);
+        if (chaseDir.lengthSq() === 0) chaseDir.copy(fwd);
+        else chaseDir.lerp(fwd, 1 - Math.exp(-dt * 5)).normalize();
+        camPos.copy(car.root.position).addScaledVector(chaseDir, -back).setY(2.7);
         camLook.copy(car.root.position).addScaledVector(fwd, 6).setY(0.9);
         camera.position.copy(camPos);
         camera.position.y += sy;
@@ -663,7 +665,7 @@ export function createDriveScene(opts: {
     },
     setCamera(m) {
       mode = m;
-      camPos.set(0, 0, 0);
+      chaseDir.set(0, 0, 0);
     },
     setLine(on) {
       lineMesh.visible = on;

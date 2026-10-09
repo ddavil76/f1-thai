@@ -279,7 +279,6 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
       }
       const THREE = await import("three");
       const { mergeGeometries } = await import("three/addons/utils/BufferGeometryUtils.js");
-      const { carFactory } = await import("@/lib/three-car");
       const { Sky } = await import("three/addons/objects/Sky.js");
       const { RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js");
       const { createDriveScene, normaliseBody } = await import("./scene");
@@ -301,8 +300,8 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
       if (disposed) return;
       const auto = matchMedia("(pointer: coarse)").matches || el.clientWidth < 700 || (navigator.hardwareConcurrency ?? 8) <= 4;
       const gfx: Gfx = settings.gfx === "auto" ? (auto ? "low" : "high") : settings.gfx;
-      const factory = carFactory(THREE, mergeGeometries, 5.6);
-      const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment }, factory, body, el, track, colour: team.color, gfx });
+      const livery = { colour: team.color, ink: team.ink, num: driver.num };
+      const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment }, merge: mergeGeometries, body, el, track, livery, gfx });
       sceneRef.current = scene;
       scene.setCamera(camera);
       scene.setLine(line);
@@ -443,7 +442,6 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
       cleanup = () => {
         window.removeEventListener("resize", onResize);
         scene.dispose();
-        factory.dispose();
         sceneRef.current = null;
         audio?.ctx.close().catch(() => {});
       };
