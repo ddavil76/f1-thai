@@ -181,6 +181,29 @@ describe("Pit Wall: ควอลิฟาย", () => {
   });
 });
 
+describe("Pit Wall: ช่วยผู้เล่นในควอลิฟาย", () => {
+  it("รถผู้เล่นยังไม่มีเวลาตอนใกล้หมดเวลา = วิทยุเตือนครั้งเดียว", () => {
+    const ctx = ctxOf(10, (id) => id < 2);
+    const st = newQuali(ctx, "single");
+    for (let i = 0; i < 20000 && st.clock > 0; i++) stepQuali(ctx, st, 0.5, 0.1);
+    const warns = ctx.log.filter((x) => x.includes("ยังไม่มีเวลา"));
+    expect(warns).toHaveLength(2);
+  });
+
+  it("เปิดให้ AI ส่งรถออกแทน แล้วรถผู้เล่นได้เวลา", () => {
+    const r = new Room({ online: false, seed: 4 });
+    r.join("me", "ทดสอบ");
+    r.handle("me", { t: "start" });
+    r.handle("me", { t: "ready", v: true });
+    expect(r.phase).toBe("quali");
+    const mine = r.cars.filter((c) => c.team === r.players[0].team).map((c) => c.id);
+    for (const id of mine) expect(r.handle("me", { t: "auto", car: id, v: true })).toBeNull();
+    // วิ่งจนนาฬิกาช่วงแรกเกือบหมด (ก่อนช่วงถัดไปล้างเวลา)
+    for (let i = 0; i < 20000 && r.quali!.seg === 0 && r.quali!.clock > 1; i++) r.tick(200);
+    for (const id of mine) expect(r.quali!.cars[id].best).not.toBeNull();
+  });
+});
+
 describe("Pit Wall: ห้องแข่ง", () => {
   it("สั่งรถทีมอื่นไม่ได้ และเริ่มได้เฉพาะเจ้าของห้อง", () => {
     const r = new Room({ online: true, seed: 1 });

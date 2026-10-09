@@ -31,6 +31,8 @@ export type QCar = {
   plan: number[];
   grid: number | null;
   auto: boolean;
+  /** เตือนแล้วว่ายังไม่มีเวลาในช่วงนี้ */
+  nudged: boolean;
 };
 
 export type QSeg = { name: string; len: number; out: number };
@@ -110,6 +112,7 @@ export function newQuali(ctx: QualiCtx, format: QualiFormat): QualiState {
       plan: [],
       grid: null,
       auto: !ctx.human(c.id),
+      nudged: false,
     })),
     results: [],
     done: false,
@@ -261,13 +264,16 @@ function finishPush(ctx: QualiCtx, st: QualiState, q: QCar) {
 
 /** AI วางแผน: ส่งออกช่วงต้นถึงกลาง (ใช้ 2 รอบเร่งถ้าเวลาพอ) หรือออกช่วงท้ายรอบเดียวตอนสนามเร็วสุด */
 function planAI(ctx: QualiCtx, st: QualiState) {
+  for (const q of st.cars) if (q.auto && inSession(q)) planCar(ctx, st, q);
+}
+
+/** วางแผนให้คันเดียว (ใช้ตอนผู้เล่นเปิดให้ AI ส่งรถออกกลางช่วงด้วย) · ไม่เกินเวลาที่เหลือ */
+export function planCar(ctx: QualiCtx, st: QualiState, q: QCar) {
   const lap = ctx.track.baseLap;
-  for (const q of st.cars) {
-    if (!q.auto || !inSession(q)) continue;
-    const late = rand(ctx.seed) < 0.4;
-    q.plan = [late ? lap * (2.3 + rand(ctx.seed) * 0.3) : lap * (3.25 + rand(ctx.seed) * 0.25)];
-    if (late) q.plan.push(lap * 1.0);
-  }
+  const late = rand(ctx.seed) < 0.4;
+  const plan = [late ? lap * (2.3 + rand(ctx.seed) * 0.3) : lap * (3.25 + rand(ctx.seed) * 0.25)];
+  if (late) plan.push(lap * 1.0);
+  q.plan = plan.map((x) => Math.min(x, st.clock));
 }
 
 function aiRun(ctx: QualiCtx, st: QualiState, q: QCar): Omit<Run, "set"> {
@@ -320,6 +326,7 @@ function endSegment(ctx: QualiCtx, st: QualiState) {
     q.status = "garage";
     q.pos = boxPos(ctx.track);
     q.run = null;
+    q.nudged = false;
   }
   planAI(ctx, st);
   ctx.say(null, null, `เริ่ม ${st.segs[st.seg].name} อีกสักครู่`, "info");
@@ -389,6 +396,15 @@ export function stepQuali(ctx: QualiCtx, st: QualiState, dt: number, realDt: num
       if (q.best !== null && st.seg < st.segs.length - 1 && rank < cut - 2) continue;
       if (st.clock < t.baseLap * 2.1) continue;
       sendOut(ctx, st, q.id, aiRun(ctx, st, q));
+    }
+  }
+
+  // เตือนผู้เล่น: ใกล้หมดเวลาแต่รถยังไม่ได้ทำเวลา (ต้องใช้ราว 2 รอบ: อุ่นยาง + รอบเร่ง)
+  for (const q of st.cars) {
+    if (q.auto || q.nudged || q.status !== "garage" || q.best !== null || !ctx.human(q.id)) continue;
+    if (st.clock > 0 && st.clock <= t.baseLap * 2.8) {
+      q.nudged = true;
+      ctx.say(ctx.cars[q.id].team, q.id, `${label(ctx, q.id)} ยังไม่มีเวลา — ส่งรถออกตอนนี้ ไม่งั้นจะทำรอบไม่ทัน`, "bad");
     }
   }
 

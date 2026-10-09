@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BOTTOM_NAV_ITEMS } from "@/lib/nav";
+import { BOTTOM_NAV_HIDDEN, BOTTOM_NAV_ITEMS } from "@/lib/nav";
 import { useSlidingPill } from "./useSlidingPill";
 
 export default function BottomNav() {
   const pathname = usePathname();
   const { ref, style } = useSlidingPill<HTMLDivElement>(pathname);
+
+  if (BOTTOM_NAV_HIDDEN.includes(pathname)) return null;
 
   return (
     <nav

@@ -4,7 +4,7 @@
  * ผู้ที่ถือห้องเรียก tick(ms) เป็นระยะ แล้วส่ง snapshot() ให้หน้าจอ
  */
 import { classify, newRace, applyLaunches, stepRace, SIM_DT, type RaceCtx, type RaceState } from "./race";
-import { callIn, driveResult, expireDrive, newQuali, sendOut, stepQuali, type QualiCtx, type QualiState, type Risk } from "./quali";
+import { callIn, driveResult, expireDrive, newQuali, planCar, sendOut, stepQuali, type QualiCtx, type QualiState, type Risk } from "./quali";
 import { rand, type Seed } from "./rng";
 import { CIRCUITS, TEAMS } from "./teams";
 import { buildTrack, type TrackModel } from "./track";
@@ -324,11 +324,21 @@ export class Room {
         this.launch[m.car] = m.kind;
         if (this.humanCars().every((id) => this.launch[id])) this.startLights();
         return null;
+      case "auto":
+        // ควอลิฟาย: ให้ AI ส่งรถออกแทน
+        if (this.phase === "quali" && this.quali) {
+          if (!this.carOf(p, m.car)) return "ไม่ใช่รถของคุณ";
+          const q = this.quali.cars[m.car];
+          q.auto = m.v;
+          q.plan = [];
+          if (m.v) planCar(this.ctx(), this.quali, q);
+          return null;
+        }
+      // falls through
       case "mode":
       case "ers":
       case "fight":
-      case "pit":
-      case "auto": {
+      case "pit": {
         if (!r || !this.carOf(p, m.car)) return "ไม่ใช่รถของคุณ";
         const c = r.cars[m.car];
         if (m.t === "mode") c.mode = m.mode;

@@ -241,7 +241,7 @@ export function Prep({ snap, me, send }: Props) {
           {COMPOUNDS.map((k) => (
             <div key={k} className="flex flex-col items-center gap-1 rounded-xl bg-[#08080A] p-2">
               <TyreDot c={k} size={28} />
-              <b className="text-white">{COMPOUND_INFO[k].label} ×{mine[0]?.sets.filter((s) => s.compound === k).length ?? 0}</b>
+              <b className="text-white">{COMPOUND_INFO[k].label} · {mine[0]?.sets.filter((s) => s.compound === k).length ?? 0} ชุด</b>
               <span className="text-white/60">ทนราว {Math.round(tyreLife(k, "normal", raceWear(snap.laps)))} รอบ</span>
             </div>
           ))}
