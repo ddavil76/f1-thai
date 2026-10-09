@@ -1,5 +1,5 @@
 # เซิร์ฟเวอร์ห้องออนไลน์ของเกม Pit Wall (Cloudflare Workers + Durable Objects แพ็กเกจฟรี)
-name = "pitwall-room"
+name = "pitwallroom"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
 
@@ -11,3 +11,6 @@ class_name = "PitRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PitRoom"]
+
+# build ของ branch อื่นที่ไม่ใช่ main ใช้ wrangler preview ซึ่งต้องมีบล็อกนี้ (ว่างได้)
+[previews]
