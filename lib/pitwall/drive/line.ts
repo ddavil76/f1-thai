@@ -40,6 +40,19 @@ export const brakeAt = (v: number) => 24 + 26 * (v / VMAX) ** 2;
 /** ปล่อยคันเร่ง (ประคอง) — เสียความเร็วนิดหน่อย ใช้ผ่านโค้งยาวโดยไม่ต้องเบรก */
 export const coastAt = (v: number) => 0.6 + 2.4 * (v / VMAX) ** 2;
 
+/**
+ * Straight Mode (ปีกพับราบบนทางตรง แบบกฎรถปี 2026): แรงต้านอากาศน้อยลง → ความเร็วสูงสุดสูงขึ้น ~6% และเร่งช่วงความเร็วสูงได้ดีขึ้น
+ * เปิดได้เฉพาะในโซนทางตรงที่กำหนด (smZone) · ปิดเองเมื่อเบรกหรือพ้นโซน
+ */
+export const VSM = VMAX * 1.06;
+export const accelSM = (v: number) => 14 * (1 - (v / VSM) ** 2) + 0.4;
+export const coastSM = (v: number) => 0.6 + 1.6 * (v / VMAX) ** 2;
+/** ความเร็วที่ลดลงเองเมื่อพับปีกกลับขณะเร็วกว่าความเร็วสูงสุดปกติ (ม./วิ²) */
+export const SM_BLEED = 3;
+/** ทางตรงที่ยาวพอจะเป็นโซน Straight Mode (เมตร) และความโค้งสูงสุดที่ยังนับว่าตรง */
+const SM_MIN_LEN = 320;
+const SM_MAX_CURVE = 0.0022;
+
 export type Zone = "throttle" | "lift" | "brake";
 
 export type DriveTrack = {
@@ -76,6 +89,8 @@ export type DriveTrack = {
   grade: Float64Array;
   /** ถนนเอียงข้าง (เรเดียน): ความสูงที่ระยะเยื้อง lat = y + lat·tan(bank) */
   bank: Float64Array;
+  /** 1 = เปิด Straight Mode ได้ที่จุดนี้ */
+  smZone: Uint8Array;
   /** เวลาต่อรอบเมื่อขับตามเส้นเป๊ะ (วินาที) */
   refLap: number;
 };
@@ -296,8 +311,34 @@ export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): Drive
   for (let i = 0; i < n; i++) {
     const den = Math.abs(curve[i]) - DOWNFORCE / VMAX ** 2 - (ALAT * vcurve[i]) / G;
     const cap = ALAT + G * Math.sin(Math.abs(bank[i]));
-    vlat[i] = den <= 1e-6 ? VMAX : Math.min(VMAX, Math.sqrt(cap / den));
+    // เพดานเป็นความเร็วสูงสุดของ Straight Mode — ความเร็วสูงสุดจริงของแต่ละจุดคุมด้วยแรงเร่ง/แรงต้าน
+    vlat[i] = den <= 1e-6 ? VSM : Math.min(VSM, Math.sqrt(cap / den));
   }
+  // โซน Straight Mode: ทางตรงยาว (ความโค้งของ racing line น้อย) เริ่มหลังออกจากโค้ง 40 ม. จบก่อนถึงโค้ง 80 ม.
+  const smZone = new Uint8Array(n);
+  {
+    const straight = (i: number) => Math.abs(curve[i]) < SM_MAX_CURVE;
+    let s0 = 0;
+    while (s0 < n && straight(s0)) s0++;
+    if (s0 < n) {
+      for (let c = 0; c < n; ) {
+        const i = (s0 + c) % n;
+        if (!straight(i)) {
+          c++;
+          continue;
+        }
+        let len = 0;
+        while (len < n && straight((i + len) % n)) len++;
+        if (len * DS >= SM_MIN_LEN) {
+          const a = Math.round(40 / DS);
+          const b = len - Math.round(80 / DS);
+          for (let k = a; k < b; k++) smZone[(i + k) % n] = 1;
+        }
+        c += len;
+      }
+    }
+  }
+
   // ความเร็วอ้างอิงใช้ค่าต่ำสุดของช่วงข้างหน้า — โค้งต่อเนื่องจะได้เบรกครั้งเดียวแล้วประคองผ่าน ไม่เบรกถี่ ๆ
   const vplan = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -317,7 +358,13 @@ export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): Drive
     for (let k = 0; k < 2 * n; k++) {
       const i = k % n;
       const j = (i + 1) % n;
-      vref[j] = Math.min(vref[j], Math.sqrt(vref[i] ** 2 + 2 * Math.max(0.3, accelAt(vref[i]) - G * grade[i]) * DS * stretch[i]));
+      // ในโซนใช้ Straight Mode (แรงต้านน้อย) · พ้นโซนแล้วถ้ายังเร็วกว่าปกติ ความเร็วค่อย ๆ ลดลงเอง
+      const sm = smZone[i] === 1;
+      const acc = sm ? accelSM(vref[i]) : accelAt(vref[i]);
+      let v = Math.sqrt(Math.max(0, vref[i] ** 2 + 2 * Math.max(0.3, acc - G * grade[i]) * DS * stretch[i]));
+      const cap = sm ? VSM : VMAX;
+      if (v > cap) v = Math.max(cap, Math.sqrt(Math.max(0, vref[i] ** 2 - 2 * SM_BLEED * DS * stretch[i])));
+      vref[j] = Math.min(vref[j], v);
     }
   }
 
@@ -341,7 +388,7 @@ export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): Drive
   let refLap = 0;
   for (let i = 0; i < n; i++) refLap += (DS * stretch[i]) / Math.max(1, (vref[i] + vref[(i + 1) % n]) / 2);
 
-  return { circuitId, length: n * DS, n, x, z, heading, curve, vlat, vref, zone, wl, wr, runoff, lineOffset, stretch, y, grade, bank, refLap };
+  return { circuitId, length: n * DS, n, x, z, heading, curve, vlat, vref, zone, wl, wr, runoff, lineOffset, stretch, y, grade, bank, smZone, refLap };
 }
 
 /** ค่าที่ระยะ s (เมตร, นับข้ามรอบได้) แบบเชิงเส้นระหว่างจุด */

@@ -3,7 +3,7 @@
  * — เร็วเกินที่โค้งรับไหว = ไถลออกนอกไลน์ เสียความเร็ว และถ้าเกินมากรอบนั้นไม่นับ
  * จำลองแบบขั้นเวลาคงที่ (ผลเหมือนเดิมทุกเครื่อง ไม่ขึ้นกับเฟรมเรต)
  */
-import { accelAt, brakeAt, coastAt, DS, G, sample, VMAX, type DriveTrack } from "./line";
+import { accelAt, accelSM, brakeAt, coastAt, coastSM, DS, G, sample, SM_BLEED, VMAX, VSM, type DriveTrack } from "./line";
 
 export const STEP = 1 / 120;
 /** ระยะเริ่มก่อนเส้นสตาร์ท (เมตร) — วิ่งเข้าเส้นแบบมีความเร็วแล้ว */
@@ -15,7 +15,8 @@ const OFF_AT = 0.1;
 /** ระยะบันทึกรถเงา (เมตร) */
 export const GHOST_DS = 10;
 
-export type Input = { throttle: boolean; brake: boolean };
+/** sm = ขอเปิด Straight Mode (เปิดจริงเฉพาะในโซนและไม่ได้เบรก) */
+export type Input = { throttle: boolean; brake: boolean; sm?: boolean };
 export type Perf = { accel: number; grip: number; top: number };
 
 export type CarState = {
@@ -33,6 +34,8 @@ export type CarState = {
   /** เวลาสะสมของรอบนี้ที่จุดทุก GHOST_DS เมตร (ไว้ทำรถเงา/ดูเร็วช้ากว่ารอบดีสุด) */
   trace: number[];
   lap: number;
+  /** Straight Mode เปิดอยู่ (ปีกพับราบ) */
+  sm: boolean;
 };
 
 export type LapResult = { lap: number; time: number; valid: boolean; trace: number[] };
@@ -40,16 +43,22 @@ export type StepEvent = { kind: "slide"; amount: number } | { kind: "off" } | { 
 
 export function newCar(t: DriveTrack): CarState {
   const s = -RUN_UP;
-  return { s, v: sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0 };
+  return { s, v: sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false };
 }
 
 /** เดินหน้าหนึ่งขั้น STEP · คืนเหตุการณ์ที่เกิด (ไถล, หลุดโค้ง, จบรอบ) */
 export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, events: StepEvent[] = []): StepEvent[] {
   const dt = STEP;
   const v = c.v;
+  // Straight Mode: เปิดได้เฉพาะในโซน ปิดเองเมื่อเบรกหรือพ้นโซน
+  c.sm = !!input.sm && !input.brake && t.smZone[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)] === 1;
   // ขึ้นเนิน = แรงโน้มถ่วงดึงถอยหลัง · ลงเนิน = ไหลเร็วขึ้น
-  const a = (input.brake ? -brakeAt(v) : input.throttle ? accelAt(v) * perf.accel : -coastAt(v)) - G * sample(t, t.grade, c.s);
-  c.v = Math.max(0, Math.min(VMAX * perf.top, v + a * dt));
+  const drive = c.sm ? accelSM(v) : accelAt(v);
+  const a = (input.brake ? -brakeAt(v) : input.throttle ? drive * perf.accel : -(c.sm ? coastSM(v) : coastAt(v))) - G * sample(t, t.grade, c.s);
+  // ความเร็วสูงสุด: พับปีกกลับขณะเร็วกว่าปกติ → ลดลงเองทีละน้อย (ไม่ชนกำแพงความเร็ว)
+  const top = (c.sm ? VSM : VMAX) * perf.top;
+  const next = v + a * dt;
+  c.v = Math.max(0, next > top ? Math.max(top, Math.min(next, v - SM_BLEED * dt)) : next);
 
   // เร็วเกินโค้ง → ไถลออกนอกไลน์และเสียความเร็ว
   const limit = sample(t, t.vlat, c.s) * perf.grip;
@@ -131,6 +140,10 @@ export function ghostDistance(best: number[], tLap: number): number {
  * — เบรกเฉพาะตอนยังเร็วกว่าความเร็วอ้างอิง ไม่เบรกจนรถหยุดกลางโซนแดง
  */
 export function idealInput(t: DriveTrack, c: CarState): Input {
+  return { ...idealPedals(t, c), sm: true };
+}
+
+function idealPedals(t: DriveTrack, c: CarState): Input {
   const z = t.zone[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)];
   const ref = sample(t, t.vref, c.s);
   if (c.v > ref + 0.3) return { throttle: false, brake: z === "brake" || c.v > ref + 3 };

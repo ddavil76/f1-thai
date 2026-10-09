@@ -12,7 +12,17 @@ import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/dri
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
 import type { BodyModel, CameraMode, DriveScene, Gfx } from "./scene";
 
-type Settings = { team: number; driver: number; circuit: string; line: boolean; autoBrake: boolean; camera: CameraMode; gfx: "auto" | Gfx };
+type Settings = {
+  team: number;
+  driver: number;
+  circuit: string;
+  line: boolean;
+  autoBrake: boolean;
+  camera: CameraMode;
+  gfx: "auto" | Gfx;
+  /** Straight Mode: auto = เปิดเองทุกครั้งที่อยู่ในโซน · manual = กดเปิดเอง (E / Shift / ปุ่มบนจอ) */
+  sm: "auto" | "manual";
+};
 type Best = { time: number; trace: number[] };
 
 const SETTINGS_KEY = "pitwall-drive-settings";
@@ -82,7 +92,7 @@ const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 export default function DriverMode({ onExit }: { onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = typeof window === "undefined" ? null : readJson<Partial<Settings>>(SETTINGS_KEY);
-    return { team: 0, driver: 0, circuit: "monza", line: true, autoBrake: false, camera: "tv", gfx: "auto", ...saved };
+    return { team: 0, driver: 0, circuit: "monza", line: true, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", ...saved };
   });
   const [driving, setDriving] = useState(false);
   const set = (p: Partial<Settings>) =>
@@ -132,7 +142,7 @@ function Setup({
           </p>
         </div>
         <p className="text-xs text-white/60">
-          คอม: <b>↑</b> หรือ <b>W</b> = คันเร่ง · <b>↓</b> <b>S</b> หรือ <b>Space</b> = เบรก · <b>C</b> = สลับกล้อง · <b>Esc</b> = ออก · มือถือ: ปุ่มเบรกซ้าย คันเร่งขวา
+          คอม: <b>↑</b> หรือ <b>W</b> = คันเร่ง · <b>↓</b> <b>S</b> หรือ <b>Space</b> = เบรก · <b>E</b> หรือ <b>Shift</b> = Straight Mode · <b>C</b> = สลับกล้อง · <b>Esc</b> = ออก · มือถือ: ปุ่มเบรกซ้าย คันเร่งขวา
         </p>
       </Card>
 
@@ -194,6 +204,10 @@ function Setup({
             <Seg value={settings.autoBrake ? 1 : 0} onChange={(v) => set({ autoBrake: v === 1 })} options={[{ v: 0, label: "ปิด" }, { v: 1, label: "เปิด" }]} />
           </label>
           <label className="space-y-1">
+            <span className="text-xs font-bold text-white/70">Straight Mode (พับปีกบนทางตรง)</span>
+            <Seg<Settings["sm"]> value={settings.sm} onChange={(v) => set({ sm: v })} options={[{ v: "auto", label: "อัตโนมัติ" }, { v: "manual", label: "กดเอง" }]} />
+          </label>
+          <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">กล้อง</span>
             <Seg<CameraMode> value={settings.camera} onChange={(v) => set({ camera: v })} options={[{ v: "tv", label: "TV Pod" }, { v: "chase", label: "ตามหลัง" }]} />
           </label>
@@ -210,7 +224,7 @@ function Setup({
             />
           </label>
         </div>
-        <p className="text-[11px] text-white/60">เบรกอัตโนมัติ: รถเบรกให้เองในเส้นแดง กดแค่คันเร่ง เหมาะกับมือใหม่ · กราฟิกต่ำ: ไม่มีเงา ต้นไม้น้อยลง ลื่นกว่าบนมือถือ</p>
+        <p className="text-[11px] text-white/60">Straight Mode: บนทางตรงที่กำหนด ปีกหน้า/หลังพับราบ แรงต้านน้อยลง วิ่งได้เร็วขึ้น — ปิดเองเมื่อเบรกหรือพ้นทางตรง (แบบกฎรถปี 2026) · เบรกอัตโนมัติ: รถเบรกให้เองในเส้นแดง กดแค่คันเร่ง เหมาะกับมือใหม่ · กราฟิกต่ำ: ไม่มีเงา ต้นไม้น้อยลง ลื่นกว่าบนมือถือ</p>
       </Card>
 
       <Btn className="w-full" onClick={onStart} disabled={!track}>
@@ -233,14 +247,15 @@ type Hud = {
   dot: SVGCircleElement | null;
   lap: HTMLSpanElement | null;
   corner: HTMLParagraphElement | null;
+  sm: HTMLSpanElement | null;
 };
 
 function DriveSession({ settings, track, onExit }: { settings: Settings; track: DriveTrack; onExit: () => void }) {
   const team = TEAMS[settings.team] ?? TEAMS[0];
   const driver = team.drivers[settings.driver] ?? team.drivers[0];
   const host = useRef<HTMLDivElement>(null);
-  const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false });
-  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, hint: null, dot: null, lap: null, corner: null });
+  const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false, smArm: false });
+  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, hint: null, dot: null, lap: null, corner: null, sm: null });
   const sceneRef = useRef<DriveScene | null>(null);
   const [camera, setCamera] = useState<CameraMode>(settings.camera);
   const [line, setLine] = useState(settings.line);
@@ -287,6 +302,10 @@ function DriveSession({ settings, track, onExit }: { settings: Settings; track: 
       if (k === "ArrowUp" || k === "w" || k === "W") input.current.throttle = down;
       else if (k === "ArrowDown" || k === "s" || k === "S" || k === " ") input.current.brake = down;
       else if (down && (k === "c" || k === "C")) setCamera((m) => (m === "tv" ? "chase" : "tv"));
+      else if (k === "e" || k === "E" || k === "Shift") {
+        // กดหนึ่งครั้ง = เตรียมเปิด/ปิด Straight Mode (โหมดกดเอง)
+        if (down && !e.repeat) input.current.smArm = !input.current.smArm;
+      }
       else if (down && k === "Escape") onExit();
       else return;
       e.preventDefault();
@@ -391,14 +410,17 @@ function DriveSession({ settings, track, onExit }: { settings: Settings; track: 
           const i = input.current;
           while (acc >= STEP) {
             acc -= STEP;
-            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB };
+            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB, sm: settings.sm === "auto" || i.smArm };
             if (settings.autoBrake) {
               const ideal = idealInput(track, car);
               want.brake = want.brake || ideal.brake;
               if (ideal.brake) want.throttle = false;
             }
             events.length = 0;
+            const smWas = car.sm;
             stepCar(track, car, want, perf, events);
+            // ปีกพับกลับแล้ว (เบรก/พ้นโซน) → ต้องกดเปิดใหม่ในทางตรงถัดไป
+            if (smWas && !car.sm) i.smArm = false;
             for (const e of events) {
               if (e.kind === "off") setMsg({ id: now, text: "หลุดโค้ง! รอบนี้ไม่นับ", tone: "bad" });
               if (e.kind === "lap") {
@@ -429,7 +451,7 @@ function DriveSession({ settings, track, onExit }: { settings: Settings; track: 
         const ghost = b && car.lapStart !== null ? ghostDistance(b.trace, car.t - car.lapStart) + car.lap * track.length : null;
         const accel = dt > 0 ? (car.v - prevV) / dt : 0;
         prevV = car.v;
-        scene.update({ s: car.s, lateral, ghost, speed: car.v, accel, dt });
+        scene.update({ s: car.s, lateral, ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0 });
         scene.render();
 
         const kmh = car.v * 3.6;
@@ -471,6 +493,18 @@ function DriveSession({ settings, track, onExit }: { settings: Settings; track: 
             // ช้าพอแล้ว (ไม่เร็วกว่าความเร็วอ้างอิงตรงนั้น) ไม่ต้องเตือน
             const fast = dist !== null && car.v > sample(track, track.vref, car.s + dist) + 2;
             h.hint.textContent = !fast || dist === null ? "" : dist < 8 ? "เบรก!" : `เบรกใน ${Math.round(dist)} ม.`;
+          }
+          // สถานะ Straight Mode
+          if (h.sm) {
+            const inZone = track.smZone[Math.floor((((car.s / DS) % track.n) + track.n) % track.n)] === 1;
+            const st = car.sm ? "on" : inZone && settings.sm === "manual" ? (i.smArm ? "arm" : "ready") : "off";
+            if (h.sm.dataset.st !== st) {
+              h.sm.dataset.st = st;
+              h.sm.textContent = st === "on" ? "STRAIGHT MODE" : st === "ready" ? "STRAIGHT MODE · กด E" : st === "arm" ? "STRAIGHT MODE · ยกเท้าเบรก" : "";
+              h.sm.style.opacity = st === "off" ? "0" : "1";
+              h.sm.style.background = st === "on" ? "#16a34a" : "rgba(0,0,0,0.55)";
+              h.sm.style.borderColor = st === "on" ? "#4ade80" : "#4ade80";
+            }
           }
           // ชื่อโค้งดังที่กำลังจะถึง (เช่น EAU ROUGE)
           if (h.corner) {
@@ -565,6 +599,14 @@ function DriveSession({ settings, track, onExit }: { settings: Settings; track: 
         </div>
       </div>
 
+      {/* Straight Mode */}
+      <span
+        ref={(n) => void (hud.current.sm = n)}
+        data-st="off"
+        aria-live="polite"
+        className="poster pointer-events-none absolute right-3 top-28 rounded-lg border-2 px-3 py-1 text-sm tracking-wide opacity-0 transition-opacity duration-200 sm:right-auto sm:left-1/2 sm:top-24 sm:-translate-x-1/2 sm:text-base"
+      />
+
       {/* ชื่อโค้ง */}
       <p
         ref={(n) => void (hud.current.corner = n)}
@@ -600,6 +642,21 @@ function DriveSession({ settings, track, onExit }: { settings: Settings; track: 
           <div ref={(n) => void (hud.current.thr = n)} className="h-10 w-2.5 rounded-full bg-[#22c55e]" aria-hidden />
         </div>
       </div>
+
+      {/* ปุ่ม Straight Mode (โหมดกดเอง) */}
+      {settings.sm === "manual" && (
+        <button
+          type="button"
+          aria-label="เปิด/ปิด Straight Mode"
+          onPointerDown={() => {
+            input.current.smArm = !input.current.smArm;
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          className={`${pad} absolute bottom-30 right-3 h-14 w-28 border-[#4ade80] bg-black/40 text-xs active:bg-[#16a34a]/60 sm:bottom-64 sm:w-24`}
+        >
+          SM
+        </button>
+      )}
 
       {/* ปุ่มสัมผัส: ซ้ายเบรก ขวาคันเร่ง (คอมก็คลิกค้างได้) */}
       <button

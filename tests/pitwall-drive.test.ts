@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { buildDriveTrack, DS, VMAX, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { buildDriveTrack, DS, VSM, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { loadRawTrack, hasRealTrack } from "@/lib/pitwall/drive/tracks";
 import { cornersOf } from "@/lib/pitwall/drive/corners";
 import { CIRCUITS as ALL } from "@/lib/pitwall/teams";
@@ -38,7 +38,7 @@ describe("โหมดนักขับ: สนาม", () => {
       expect(t.n * DS).toBe(t.length);
       expect(t.refLap).toBeGreaterThan(55);
       expect(t.refLap).toBeLessThan(140);
-      expect(Math.max(...t.vref)).toBeLessThanOrEqual(VMAX);
+      expect(Math.max(...t.vref)).toBeLessThanOrEqual(VSM + 1e-9);
       for (const z of ["throttle", "lift", "brake"] as const) expect(t.zone.includes(z)).toBe(true);
     }
   });
@@ -144,3 +144,50 @@ describe("โหมดนักขับ: รถ", () => {
     expect(deltaTo(trace, fake, 500)).toBeCloseTo(0, 3);
   });
 });
+
+describe("โหมดนักขับ: Straight Mode", () => {
+  const zones = (t: DriveTrack) => {
+    let k = 0;
+    for (let i = 0; i < t.n; i++) if (t.smZone[i] === 1 && t.smZone[(i - 1 + t.n) % t.n] !== 1) k++;
+    return k;
+  };
+  it("มีโซนทางตรงในทุกสนาม (มอนซาหลายโซน · โมนาโกไม่มีทางตรงยาวพอ) และไม่อยู่ในโค้ง", () => {
+    for (const id of CIRCUITS) if (id !== "monaco") expect(zones(TRACKS[id])).toBeGreaterThan(0);
+    expect(zones(TRACKS.monza)).toBeGreaterThanOrEqual(3);
+    for (const id of CIRCUITS) {
+      const t = TRACKS[id];
+      for (let i = 0; i < t.n; i++) if (t.smZone[i]) expect(Math.abs(t.curve[i])).toBeLessThan(0.0025);
+    }
+  });
+
+  it("ใช้ Straight Mode แล้วรอบเร็วกว่า และความเร็วสูงสุดสูงกว่าเดิม", () => {
+    let top = { on: 0, off: 0 };
+    const lap = (sm: boolean) => {
+      const { results, c } = drive("monza", 2, (car, tr) => {
+        top = sm ? { ...top, on: Math.max(top.on, car.v) } : { ...top, off: Math.max(top.off, car.v) };
+        return { ...idealInput(tr, car), sm };
+      });
+      void c;
+      return results[1].time;
+    };
+    const withSm = lap(true);
+    const without = lap(false);
+    expect(withSm).toBeLessThan(without - 0.5);
+    expect(top.on).toBeGreaterThan(top.off + 2);
+  });
+
+  it("เบรกแล้ว Straight Mode ปิดทันที · นอกโซนเปิดไม่ได้", () => {
+    const t = TRACKS.monza;
+    const i = t.smZone.findIndex((z) => z === 1);
+    const c = { ...newCar(t), s: i * DS + 20, v: 80 };
+    stepCar(t, c, { throttle: true, brake: false, sm: true }, perfOf(0));
+    expect(c.sm).toBe(true);
+    stepCar(t, c, { throttle: false, brake: true, sm: true }, perfOf(0));
+    expect(c.sm).toBe(false);
+    const out = t.smZone.findIndex((z) => z === 0);
+    const c2 = { ...newCar(t), s: out * DS, v: 50 };
+    stepCar(t, c2, { throttle: true, brake: false, sm: true }, perfOf(0));
+    expect(c2.sm).toBe(false);
+  });
+});
+

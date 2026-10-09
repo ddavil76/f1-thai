@@ -48,7 +48,8 @@ const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCo
 export type BodyModel = { scene: Obj; tint: boolean };
 
 export type DriveScene = {
-  update(p: { s: number; lateral: number; ghost: number | null; speed: number; accel: number; dt: number }): void;
+  /** aero: 0 = ปีกปกติ · 1 = Straight Mode (ปีกพับราบ) */
+  update(p: { s: number; lateral: number; ghost: number | null; speed: number; accel: number; dt: number; aero?: number }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
   resize(): void;
@@ -370,6 +371,44 @@ export function createDriveScene(opts: {
     }
   }
 
+  /* ---------- จุดเริ่มโซน Straight Mode: เส้นขวางถนน + ป้ายสองข้าง ---------- */
+  {
+    const smTex = canvasTex(256, 96, (g) => {
+      g.fillStyle = "#0b3d22";
+      g.fillRect(0, 0, 256, 96);
+      g.fillStyle = "#4ade80";
+      g.fillRect(0, 0, 256, 10);
+      g.fillStyle = "#ffffff";
+      g.font = "italic 900 34px sans-serif";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText("STRAIGHT", 128, 40);
+      g.fillText("MODE", 128, 74);
+    }, false);
+    const boardMat = keep(new THREE.MeshLambertMaterial({ map: smTex }));
+    const boardGeo = keep(new THREE.BoxGeometry(2.4, 0.9, 0.1));
+    const lineMat = keep(new THREE.MeshBasicMaterial({ color: 0x4ade80, polygonOffset: true, polygonOffsetFactor: -3 }));
+    for (let i = 0; i < t.n; i++) {
+      if (t.smZone[i] !== 1 || t.smZone[(i - 1 + t.n) % t.n] === 1) continue;
+      const p = poseAt(t, i * DS, (R(i) - L(i)) / 2);
+      const ln = new THREE.Mesh(keep(new THREE.PlaneGeometry(L(i) + R(i), 0.5)), lineMat);
+      ln.rotation.x = -Math.PI / 2;
+      const holder = new THREE.Group();
+      holder.rotation.y = -p.heading - Math.PI / 2;
+      holder.position.set(p.x, t.y[i] + 0.035, p.z);
+      holder.add(ln);
+      scene.add(holder);
+      for (const side of [-1, 1]) {
+        const off = side * ((side > 0 ? R(i) : L(i)) + Math.min(3, RUN));
+        const q = poseAt(t, i * DS, off);
+        const m = new THREE.Mesh(boardGeo, boardMat);
+        m.position.set(q.x, surfaceAt(t, i * DS, off) + 1.4, q.z);
+        m.rotation.y = Math.atan2(-Math.cos(q.heading), -Math.sin(q.heading));
+        scene.add(m);
+      }
+    }
+  }
+
   /* ---------- ฉากรอบสนาม: ต้นไม้ อัฒจันทร์ ---------- */
   // ตารางค้นหาจุดสนามใกล้ ๆ (กันวางของทับถนน)
   const CELL = 40;
@@ -614,7 +653,7 @@ export function createDriveScene(opts: {
   }
 
   /* ---------- รถ ---------- */
-  type Rig = { root: THREE_NS.Group; body: THREE_NS.Group; steer: THREE_NS.Group[]; spin: THREE_NS.Group[] };
+  type Rig = { root: THREE_NS.Group; body: THREE_NS.Group; steer: THREE_NS.Group[]; spin: THREE_NS.Group[]; setAero?: (open: number) => void };
   const tyreMat = keep(new THREE.MeshStandardMaterial({ color: 0x111113, roughness: 0.85 }));
   const rimMat = keep(new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.3, metalness: 0.85 }));
   const stripeMat = keep(new THREE.MeshStandardMaterial({ color: 0xe10600, roughness: 0.6 }));
@@ -672,6 +711,7 @@ export function createDriveScene(opts: {
   const makeRig = (l: Livery, isGhost: boolean): Rig => {
     const root = new THREE.Group();
     const bodyGroup = new THREE.Group();
+    let setAero: ((open: number) => void) | undefined;
     root.add(bodyGroup);
     if (opts.body && !isGhost) {
       const clone = opts.body.scene.clone(true);
@@ -692,6 +732,7 @@ export function createDriveScene(opts: {
     } else {
       const made = keep(buildCar(THREE, merge, l, { ghost: isGhost }));
       bodyGroup.add(made.obj);
+      setAero = made.setAero;
     }
     const steer: THREE_NS.Group[] = [];
     const spin: THREE_NS.Group[] = [];
@@ -735,7 +776,7 @@ export function createDriveScene(opts: {
       spin.push(sp);
     }
     bodyGroup.traverse((o) => (o.castShadow = high && !isGhost));
-    return { root, body: bodyGroup, steer, spin };
+    return { root, body: bodyGroup, steer, spin, setAero };
   };
 
   const car = makeRig(livery, false);
@@ -751,7 +792,7 @@ export function createDriveScene(opts: {
   const fwd = new THREE.Vector3();
   const chaseDir = new THREE.Vector3();
   // การเคลื่อนไหวของตัวรถ (เกลี่ยให้นุ่ม)
-  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0 };
+  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0 };
   let baseFov = 66;
 
   /** วางรถ: หันหัวตามทิศของ racing line (ไม่ใช่เส้นกลางถนน) — ระยะเยื้องจากไลน์ (ไถล) คงที่ตลอดช่วงที่ดูทิศ */
@@ -782,7 +823,13 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0 }) {
+      // ปีกพับ/กาง ใช้เวลาราว 0.3 วินาที
+      const ka = Math.min(1, dt * 7);
+      if (Math.abs(aero - motion.aero) > 0.001) {
+        motion.aero += (aero - motion.aero) * ka;
+        car.setAero?.(motion.aero);
+      }
       const curve = sample(t, t.curve, s);
       const k = Math.min(1, dt * 8);
       // ไถล: ท้ายปัดตามความเร็วที่หลุดออกด้านข้าง
