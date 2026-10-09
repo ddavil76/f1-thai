@@ -41,7 +41,7 @@ export default function PitWallApp() {
 
   if (mode?.kind === "solo") return <SoloGame name={nick} onExit={() => setMode(null)} />;
   if (mode?.kind === "online") return <OnlineGame code={mode.code} name={nick} onExit={() => setMode(null)} />;
-  if (mode?.kind === "driver") return <DriverMode onExit={() => setMode(null)} />;
+  if (mode?.kind === "driver") return <DriverMode name={nick} onExit={() => setMode(null)} />;
 
   return (
     <div className="space-y-4">

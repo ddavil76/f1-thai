@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { buildDriveTrack, DS, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
-import { CAR_LEN, createRace, stepRace, type Entrant, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { advanceRemote, CAR_LEN, createRace, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
 import { TEAMS } from "@/lib/pitwall/teams";
 
 let monza: DriveTrack;
@@ -152,5 +153,75 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
     expect(me.penalty).toBe(5);
     expect(ev.some((e) => e.kind === "contact")).toBe(true);
     expect(DS).toBeGreaterThan(0);
+  });
+});
+
+describe("โหมดนักขับ: แข่งออนไลน์", () => {
+  it("ห้อง: เข้าห้อง เลือกรถไม่ซ้ำ หัวห้องตั้งค่าและเริ่ม ผลเรียงตามเวลารวมโทษ", () => {
+    const room = new DriveRoom();
+    expect(room.join("a", "เอ")).toBeNull();
+    expect(room.join("b", "บี")).toBeNull();
+    const [a, b] = room.players;
+    expect(a.host).toBe(true);
+    expect(b.host).toBe(false);
+    expect([a.team, a.driver]).not.toEqual([b.team, b.driver]);
+    expect(room.handle("b", { t: "pick", team: a.team, driver: a.driver }, 0)).not.toBeNull();
+    // คนที่ไม่ใช่หัวห้องตั้งค่า/เริ่มไม่ได้
+    room.handle("b", { t: "config", config: { laps: 10 } }, 0);
+    expect(room.config.laps).toBe(5);
+    expect(room.handle("b", { t: "start" }, 0)).not.toBeNull();
+    room.handle("a", { t: "config", config: { circuit: "spa", laps: 3 } }, 0);
+    expect(room.config).toEqual({ circuit: "spa", laps: 3 });
+    room.handle("a", { t: "start" }, 1000);
+    expect(room.phase).toBe("race");
+    expect(room.startAt).toBe(1000 + DRIVE_START_DELAY);
+    expect([...room.grid].sort()).toEqual(["a", "b"]);
+    // เข้าห้องระหว่างแข่งไม่ได้ · ข้อมูลเสียถูกทิ้ง
+    expect(room.join("c", "ซี")).not.toBeNull();
+    room.handle("a", { t: "state", st: [1, 2, 3] as unknown as NetState }, 2000);
+    expect(room.states.a).toBeUndefined();
+    // a จบเร็วกว่าแต่โดนโทษ 5 วิ → b ชนะ
+    room.handle("a", { t: "state", st: [0, 0, 0, 0, 0, 0, 3, 5, 100] }, 20000);
+    room.tick(20100);
+    expect(room.phase).toBe("race");
+    room.handle("b", { t: "state", st: [0, 0, 0, 0, 0, 0, 3, 0, 102] }, 21000);
+    room.tick(21100);
+    expect(room.phase).toBe("results");
+    expect(room.results!.map((r) => r.id)).toEqual(["b", "a"]);
+    room.handle("a", { t: "lobby" }, 22000);
+    expect(room.phase).toBe("lobby");
+  });
+
+  it("หัวห้องออก → คนถัดไปเป็นหัวห้อง · คนหลุดระหว่างแข่งไม่ต้องรอ", () => {
+    const room = new DriveRoom();
+    room.join("a", "เอ");
+    room.join("b", "บี");
+    room.handle("a", { t: "start" }, 0);
+    room.leave("a");
+    expect(room.players.find((p) => p.id === "b")!.host).toBe(true);
+    room.handle("b", { t: "state", st: [0, 0, 0, 0, 0, 0, 5, 0, 90] }, 1000);
+    room.tick(1100);
+    expect(room.phase).toBe("results");
+    expect(room.results!.map((r) => r.time)).toEqual([90, null]);
+  });
+
+  it("รถเพื่อน: ตั้งจากข้อมูลเครือข่าย ไม่ถูกจำลองในเครื่อง และวิ่งต่อระหว่างรอข้อมูล", () => {
+    const es = field(2, 0).map((e, k) => ({ ...e, remote: k === 1 }));
+    const race = createRace(monza, es, { laps: 1, difficulty: "normal" });
+    race.lights = 0;
+    const [me, friend] = race.cars;
+    const st = packState(me);
+    st[0] = 300;
+    st[1] = 50;
+    setRemote(race, friend.id, st, 0);
+    expect(friend.car.s).toBe(300);
+    stepRace(race, { throttle: true, brake: false });
+    expect(friend.car.s).toBe(300);
+    advanceRemote(race, 0.1);
+    expect(friend.car.s).toBeCloseTo(305, 5);
+    // ข้อมูลใหม่ใกล้ ๆ = ค่อย ๆ ดึงเข้าหา ไม่กระโดด
+    setRemote(race, friend.id, [310, 50, 0, 0, 0, 0, 0, 0, -1], 0);
+    expect(friend.car.s).toBeGreaterThan(305);
+    expect(friend.car.s).toBeLessThan(310);
   });
 });

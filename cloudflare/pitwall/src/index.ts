@@ -2,9 +2,11 @@
  * เซิร์ฟเวอร์ห้องออนไลน์ของ Pit Wall
  * - POST /new            → สร้างห้องใหม่ ได้รหัส 4 ตัว
  * - GET  /room/:code/ws  → ต่อ WebSocket เข้าห้อง (?id=ผู้เล่น&name=ชื่อ)
+ * - POST /new?kind=drive → ห้องแข่งโหมดนักขับ (lib/pitwall/drive/room.ts)
  * แต่ละห้องคือ Durable Object หนึ่งตัว รันการจำลองเดียวกับที่เล่นคนเดียวในเบราว์เซอร์ (lib/pitwall/room.ts)
  */
 import { Room, liveOnly, packJson, type Msg } from "../../../lib/pitwall/room";
+import { DriveRoom, type DriveMsg } from "../../../lib/pitwall/drive/room";
 
 type Env = { ROOMS: DurableObjectNamespace };
 
@@ -35,7 +37,8 @@ export default {
       for (let i = 0; i < 5; i++) {
         const code = newCode();
         const stub = env.ROOMS.get(env.ROOMS.idFromName(code));
-        const res = await stub.fetch("https://room/init", { method: "POST" });
+        const kind = url.searchParams.get("kind") === "drive" ? "?kind=drive" : "";
+        const res = await stub.fetch(`https://room/init${kind}`, { method: "POST" });
         if (res.ok) return json({ code });
       }
       return json({ error: "สร้างห้องไม่สำเร็จ ลองใหม่" }, 503);
@@ -49,6 +52,8 @@ export default {
 /** ห้องหนึ่งห้อง: ถือสถานะเกมในหน่วยความจำ เดินนาฬิกาทุก 0.1 วิ ส่งภาพให้ทุกคนราว 4 ครั้ง/วิ */
 export class PitRoom {
   room: Room | null = null;
+  /** ห้องโหมดนักขับ (ใช้แทน room) */
+  drive: DriveRoom | null = null;
   sockets = new Map<CfWebSocket, string>();
   timer: ReturnType<typeof setInterval> | null = null;
   lastTick = 0;
@@ -64,8 +69,9 @@ export class PitRoom {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/init") {
-      if (this.room) return new Response("exists", { status: 409 });
-      this.room = new Room({ online: true });
+      if (this.room || this.drive) return new Response("exists", { status: 409 });
+      if (url.searchParams.get("kind") === "drive") this.drive = new DriveRoom();
+      else this.room = new Room({ online: true });
       return new Response("ok");
     }
     if (req.headers.get("Upgrade") !== "websocket") return new Response("ต้องต่อแบบ WebSocket", { status: 426 });
@@ -80,11 +86,24 @@ export class PitRoom {
       server.close(1008, "rejected");
       return new Response(null, { status: 101, webSocket: client } as ResponseInit);
     };
-    if (!this.room) return fail("ไม่พบห้องนี้ (รหัสผิด หรือห้องหมดอายุแล้ว)");
-    const err = this.room.join(id, name);
+    const want = url.searchParams.get("kind") === "drive";
+    if ((want ? !this.drive : !this.room)) return fail("ไม่พบห้องนี้ (รหัสผิด หรือห้องหมดอายุแล้ว)");
+    const err = this.drive ? this.drive.join(id, name) : this.room!.join(id, name);
     if (err) return fail(err);
     this.sockets.set(server, id);
     server.addEventListener("message", (e: MessageEvent) => {
+      if (this.drive) {
+        try {
+          const msg = JSON.parse(String(e.data)) as DriveMsg;
+          const res = this.drive.handle(id, msg, Date.now());
+          if (res) server.send(JSON.stringify({ t: "err", msg: res }));
+          // สถานะรถส่งถี่ — ไม่ต้องกระจายทันที รอรอบ tick
+          if (msg.t !== "state") this.broadcast(true);
+        } catch {
+          server.send(JSON.stringify({ t: "err", msg: "คำสั่งไม่ถูกต้อง" }));
+        }
+        return;
+      }
       if (!this.room) return;
       try {
         const msg = JSON.parse(String(e.data)) as Msg;
@@ -98,7 +117,10 @@ export class PitRoom {
     const gone = () => {
       if (!this.sockets.has(server)) return;
       this.sockets.delete(server);
-      if (![...this.sockets.values()].includes(id)) this.room?.leave(id);
+      if (![...this.sockets.values()].includes(id)) {
+        this.room?.leave(id);
+        this.drive?.leave(id);
+      }
       this.broadcast(true);
       if (this.sockets.size === 0 && this.timer) {
         clearInterval(this.timer);
@@ -116,8 +138,17 @@ export class PitRoom {
     if (this.timer) return;
     this.lastTick = Date.now();
     this.timer = setInterval(() => {
-      if (!this.room) return;
       const now = Date.now();
+      if (this.drive) {
+        this.drive.tick(now);
+        // ระหว่างแข่งส่ง 10 ครั้ง/วิ · ในล็อบบี้ 1 ครั้ง/วิ พอ
+        if (this.drive.phase === "race" || now - this.lastLive >= 1000) {
+          this.lastLive = now;
+          this.broadcast(true);
+        }
+        return;
+      }
+      if (!this.room) return;
       this.room.tick(now - this.lastTick);
       this.lastTick = now;
       this.broadcast(false);
@@ -126,14 +157,22 @@ export class PitRoom {
 
   /** ส่งชุดเต็มเมื่อเปลี่ยนช่วง/ทุก 2 วิ ที่เหลือส่งชุดเล็ก */
   broadcast(force: boolean) {
-    if (!this.room) return;
     const now = Date.now();
+    if (this.drive) {
+      // ห้องนักขับ: ส่งทุกรอบ tick (10 ครั้ง/วิ) ข้อมูลเล็ก
+      this.send(JSON.stringify({ t: "snap", s: this.drive.snapshot(now) }));
+      return;
+    }
+    if (!this.room) return;
     if (!force && now - this.lastLive < 250) return;
     this.lastLive = now;
     const snap = this.room.snapshot();
     const full = force || now - this.lastFull > 2000;
     if (full) this.lastFull = now;
-    const text = packJson(full ? { t: "snap", s: snap } : { t: "live", s: liveOnly(snap) });
+    this.send(packJson(full ? { t: "snap", s: snap } : { t: "live", s: liveOnly(snap) }));
+  }
+
+  send(text: string) {
     for (const ws of this.sockets.keys()) {
       try {
         ws.send(text);

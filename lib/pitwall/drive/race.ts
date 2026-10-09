@@ -25,7 +25,8 @@ const CONTACT_SPEED = 4;
 
 export type Difficulty = "easy" | "normal" | "hard";
 
-export type Entrant = { id: string; name: string; team: string; num: number; colour: string; ink: string; pace: number; skill: number; player?: boolean };
+/** remote = รถของผู้เล่นคนอื่นในห้องออนไลน์ (ตำแหน่งมาจากเครือข่าย ไม่จำลองในเครื่องนี้) */
+export type Entrant = { id: string; name: string; team: string; num: number; colour: string; ink: string; pace: number; skill: number; player?: boolean; remote?: boolean };
 
 export type RaceCar = Entrant & {
   car: CarState;
@@ -196,6 +197,8 @@ export function stepRace(race: Race, player: Input, events: RaceEvent[] = []): R
 
   const stepEv: StepEvent[] = [];
   cars.forEach((rc, i) => {
+    // รถผู้เล่นคนอื่น (ออนไลน์): ตำแหน่งตั้งจากเครือข่ายด้วย setRemote
+    if (rc.remote) return;
     if (rc.finish !== null && !rc.player) {
       // จบแล้ว: วิ่งช้า ๆ ต่อ (cool-down lap)
       rc.car.v = Math.min(rc.car.v, 45);
@@ -250,13 +253,15 @@ export function stepRace(race: Race, player: Input, events: RaceEvent[] = []): R
       if (a === b) continue;
       const back = cars[a];
       const front = cars[b];
+      // ออนไลน์: รถผ่านกันได้ (กันแลค) แต่ชนท้ายแรงยังโดนโทษ — ผลักเฉพาะรถที่จำลองในเครื่องนี้
+      if (back.remote) continue;
       const d = front.car.s - back.car.s;
       if (d <= 0 || d >= CAR_LEN) continue;
       if (Math.abs(latM(t, front.car) - latM(t, back.car)) >= CAR_W) continue;
       const rel = back.car.v - front.car.v;
-      back.car.s = front.car.s - CAR_LEN;
+      if (!front.remote) back.car.s = front.car.s - CAR_LEN;
       if (rel > 0) {
-        back.car.v = front.car.v;
+        if (!front.remote) back.car.v = front.car.v;
         if (rel > CONTACT_SPEED && back.contactCool <= 0 && back.finish === null) {
           back.penalty += CONTACT_PENALTY;
           back.contactCool = 3;
@@ -278,6 +283,7 @@ export function stepRace(race: Race, player: Input, events: RaceEvent[] = []): R
       const aInside = (latM(t, A.car) - latM(t, B.car)) * Math.sign(curve) > 0;
       const outer = aInside ? B : A;
       const inner = aInside ? A : B;
+      if (outer.remote) continue;
       if (outer.car.s - inner.car.s < CAR_LEN / 2 && outer.car.v > inner.car.v - 0.5) {
         outer.car.v = Math.max(0, inner.car.v - 0.5);
         events.push({ kind: "yield", id: outer.id });
@@ -339,3 +345,45 @@ export function sideBySide(race: Race, idx: number) {
 }
 
 export { STEP };
+
+/** สถานะรถที่ส่งผ่านเครือข่าย: [ระยะ, ความเร็ว, เลน, ไถล, ปีกพับ, Overtake, รอบที่จบ, โทษ, เวลาจบ (−1 = ยังไม่จบ)] */
+export type NetState = [s: number, v: number, lat: number, slide: number, sm: 0 | 1, ot: 0 | 1, lap: number, pen: number, fin: number];
+
+export const packState = (rc: RaceCar): NetState => [
+  Math.round(rc.car.s * 100) / 100,
+  Math.round(rc.car.v * 100) / 100,
+  Math.round(rc.car.lat * 100) / 100,
+  Math.round(rc.car.slide * 100) / 100,
+  rc.car.sm ? 1 : 0,
+  rc.car.ot ? 1 : 0,
+  rc.car.lap,
+  rc.penalty,
+  rc.finish ?? -1,
+];
+
+/** ตั้งตำแหน่งรถผู้เล่นคนอื่นจากเครือข่าย (ประมาณล่วงหน้าตามเวลาที่ข้อมูลเดินทางมา ageSec) */
+export function setRemote(race: Race, id: string, st: NetState, ageSec: number) {
+  const rc = race.cars.find((c) => c.id === id);
+  if (!rc || !rc.remote) return;
+  const [s, v, lat, slide, sm, ot, lap, pen, fin] = st;
+  const ahead = s + v * Math.min(0.4, Math.max(0, ageSec));
+  // เกลี่ยตำแหน่ง: ต่างมาก = กระโดดไปเลย · ต่างน้อย = ค่อย ๆ ดึงเข้าหา
+  rc.car.s = Math.abs(ahead - rc.car.s) > 25 ? ahead : rc.car.s + (ahead - rc.car.s) * 0.35;
+  rc.car.v = v;
+  rc.car.lat = lat;
+  rc.car.slide = slide;
+  rc.car.sm = sm === 1;
+  rc.car.ot = ot === 1;
+  rc.car.lap = lap;
+  rc.penalty = pen;
+  if (fin >= 0 && rc.finish === null) {
+    rc.finish = fin;
+    race.finished = true;
+  }
+}
+
+/** ระหว่างเฟรม: รถผู้เล่นคนอื่นวิ่งต่อด้วยความเร็วล่าสุด (ไม่ให้กระตุกระหว่างรอข้อมูล) */
+export function advanceRemote(race: Race, dt: number) {
+  for (const rc of race.cars) if (rc.remote && rc.finish === null && race.lights <= 0) rc.car.s += rc.car.v * dt;
+}
+
