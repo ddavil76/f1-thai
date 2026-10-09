@@ -76,6 +76,60 @@ function perimeter(pts: Pt[]) {
   return total;
 }
 
+/** ระยะห่างของ racing line จากขอบถนน (เมตร) — ครึ่งความกว้างรถ + เผื่อ */
+const LINE_MARGIN = 1.5;
+
+/** ความโค้งแบบมีเครื่องหมายของวงกลมผ่าน 3 จุด */
+function curv3(ax: number, az: number, bx: number, bz: number, cx: number, cz: number) {
+  // sqrt แทน hypot (เร็วกว่ามาก — เรียกหลายล้านครั้งตอนหาเส้น)
+  const ab2 = (bx - ax) ** 2 + (bz - az) ** 2;
+  const bc2 = (cx - bx) ** 2 + (cz - bz) ** 2;
+  const ca2 = (ax - cx) ** 2 + (az - cz) ** 2;
+  const cross = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+  return (2 * cross) / Math.max(1e-9, Math.sqrt(ab2 * bc2 * ca2));
+}
+
+/**
+ * racing line แบบเกลี่ยความโค้ง (แนวเดียวกับ AI เกมแข่งรถ): ขยับแต่ละจุดในแนวขวาง
+ * ให้ความโค้งตรงนั้นเท่ากับค่าเฉลี่ยของความโค้งจุดก่อน/หลัง ซ้ำจนนิ่ง ห้ามออกนอกขอบถนน
+ * — ได้โค้งที่เปลี่ยนความโค้งอย่างต่อเนื่อง: เข้าจากด้านนอก แตะ apex ด้านใน แล้วออกกว้าง ไม่หักเลี้ยวกะทันหัน
+ * เริ่มจากระยะห่างกว้าง (ภาพรวม) ไปแคบ (รายละเอียด) ให้ลู่เข้าเร็ว
+ */
+function racingLine(x: Float64Array, z: Float64Array, heading: Float64Array) {
+  const n = x.length;
+  const lim = HALF_WIDTH - LINE_MARGIN;
+  let off: Float64Array = new Float64Array(n);
+  const nx = Float64Array.from(heading, (h) => -Math.sin(h));
+  const nz = Float64Array.from(heading, (h) => Math.cos(h));
+  // ตำแหน่งปัจจุบันของเส้น (อัปเดตทีละจุดเมื่อขยับ)
+  const lx = Float64Array.from(x);
+  const lz = Float64Array.from(z);
+  const at = (i: number) => ((i % n) + n) % n;
+  for (const [k, iters] of [[16, 25], [8, 35], [4, 50], [2, 70], [1, 100]] as const) {
+    for (let it = 0; it < iters; it++) {
+      for (let i = 0; i < n; i++) {
+        const a2 = at(i - 2 * k);
+        const a = at(i - k);
+        const b = at(i + k);
+        const b2 = at(i + 2 * k);
+        const target = (curv3(lx[a2], lz[a2], lx[a], lz[a], lx[i], lz[i]) + curv3(lx[i], lz[i], lx[b], lz[b], lx[b2], lz[b2])) / 2;
+        const now = curv3(lx[a], lz[a], lx[i], lz[i], lx[b], lz[b]);
+        // อนุพันธ์ของความโค้งต่อการขยับจุดนี้ (คำนวณเชิงตัวเลข)
+        const eps = 0.05;
+        const moved = curv3(lx[a], lz[a], lx[i] + nx[i] * eps, lz[i] + nz[i] * eps, lx[b], lz[b]);
+        const d = (moved - now) / eps;
+        if (Math.abs(d) < 1e-9) continue;
+        const next = off[i] + ((target - now) / d) * 0.6;
+        off[i] = Math.max(-lim, Math.min(lim, next));
+        lx[i] = x[i] + nx[i] * off[i];
+        lz[i] = z[i] + nz[i] * off[i];
+      }
+    }
+  }
+  off = smoothLoop(off, 4);
+  return off;
+}
+
 export function buildDriveTrack(circuitId: string): DriveTrack | null {
   const path = circuitTrack(circuitId);
   if (!path) return null;
@@ -107,9 +161,22 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
     const b = (i + 1) % n;
     heading[i] = Math.atan2(z[b] - z[a], x[b] - x[a]);
   }
+  // racing line: เส้นโค้งน้อยที่สุดภายในขอบถนน (นอก → ใน → นอก) แล้วใช้ความโค้งของเส้นนี้คำนวณความเร็ว
+  const lineOffset = racingLine(x, z, heading);
+  const lx = new Float64Array(n);
+  const lz = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    lx[i] = x[i] - Math.sin(heading[i]) * lineOffset[i];
+    lz[i] = z[i] + Math.cos(heading[i]) * lineOffset[i];
+  }
   let curve: Float64Array = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    curve[i] = wrap(heading[(i + 1) % n] - heading[(i - 1 + n) % n]) / (2 * DS);
+    const a = (i - 3 + n) % n;
+    const b = (i + 3) % n;
+    const ha = Math.atan2(lz[i] - lz[a], lx[i] - lx[a]);
+    const hb = Math.atan2(lz[b] - lz[i], lx[b] - lx[i]);
+    const len = Math.hypot(lx[b] - lx[a], lz[b] - lz[a]) / 2 || DS * 3;
+    curve[i] = wrap(hb - ha) / len;
   }
   curve = smoothLoop(curve, 4);
 
@@ -154,11 +221,6 @@ export function buildDriveTrack(circuitId: string): DriveTrack | null {
     while (len < 8 && zone[(i + len) % n] === "brake") len++;
     if (len < 5 && zone[(i - 1 + n) % n] === "throttle") for (let k = 0; k < len; k++) zone[(i + k) % n] = "lift";
   }
-
-  // racing line: ชิดในโค้ง (ตามความโค้งแบบเกลี่ยกว้าง) ไม่เกินขอบถนน
-  const wide = smoothLoop(curve, 40);
-  const lineOffset = new Float64Array(n);
-  for (let i = 0; i < n; i++) lineOffset[i] = Math.max(-(HALF_WIDTH - 1.6), Math.min(HALF_WIDTH - 1.6, wide[i] * 1500));
 
   let refLap = 0;
   for (let i = 0; i < n; i++) refLap += DS / Math.max(1, (vref[i] + vref[(i + 1) % n]) / 2);

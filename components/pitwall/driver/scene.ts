@@ -572,10 +572,15 @@ export function createDriveScene(opts: {
   const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0 };
   let baseFov = 66;
 
+  /** วางรถ: หันหัวตามทิศของ racing line (ไม่ใช่เส้นกลางถนน) — ระยะเยื้องจากไลน์ (ไถล) คงที่ตลอดช่วงที่ดูทิศ */
   const place = (obj: Obj, s: number, lateral: number, yaw = 0) => {
     const p = poseAt(t, s, lateral);
+    const rel = lateral - sample(t, t.lineOffset, s);
+    const a = poseAt(t, s - 3, sample(t, t.lineOffset, s - 3) + rel);
+    const b = poseAt(t, s + 3, sample(t, t.lineOffset, s + 3) + rel);
+    const h = Math.atan2(b.z - a.z, b.x - a.x);
     obj.position.set(p.x, 0, p.z);
-    tmp.set(p.x + Math.cos(p.heading + yaw), 0, p.z + Math.sin(p.heading + yaw));
+    tmp.set(p.x + Math.cos(h + yaw), 0, p.z + Math.sin(h + yaw));
     obj.lookAt(tmp);
   };
 
@@ -619,7 +624,7 @@ export function createDriveScene(opts: {
       if (g === null) ghost.root.visible = false;
       else {
         ghost.root.visible = true;
-        place(ghost.root, g, t.lineOffset[Math.floor((((g / DS) % t.n) + t.n) % t.n)]);
+        place(ghost.root, g, sample(t, t.lineOffset, g));
         for (const sp of ghost.spin) sp.rotation.x = motion.spin;
       }
 

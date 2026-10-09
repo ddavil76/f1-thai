@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDriveTrack, DS, VMAX } from "@/lib/pitwall/drive/line";
+import { buildDriveTrack, DS, HALF_WIDTH, VMAX } from "@/lib/pitwall/drive/line";
 import { deltaTo, ghostDistance, idealInput, newCar, perfOf, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 
 const CIRCUITS = ["monza", "spa", "monaco", "silverstone", "suzuka", "bahrain"];
@@ -32,6 +32,26 @@ describe("โหมดนักขับ: สนาม", () => {
       expect(t.refLap).toBeLessThan(140);
       expect(Math.max(...t.vref)).toBeLessThanOrEqual(VMAX);
       for (const z of ["throttle", "lift", "brake"] as const) expect(t.zone.includes(z)).toBe(true);
+    }
+  });
+
+  it("racing line อยู่ในถนน ใช้ความกว้างถนน (นอก-ใน-นอก) และไม่หักเลี้ยวกะทันหัน", () => {
+    for (const id of CIRCUITS) {
+      const t = buildDriveTrack(id)!;
+      let slope = 0;
+      let jump = 0;
+      for (let i = 0; i < t.n; i++) {
+        const j = (i + 1) % t.n;
+        slope = Math.max(slope, Math.abs(t.lineOffset[j] - t.lineOffset[i]) / DS);
+        jump = Math.max(jump, Math.abs(t.curve[j] - t.curve[i]));
+      }
+      expect(Math.max(...t.lineOffset.map(Math.abs))).toBeLessThanOrEqual(HALF_WIDTH);
+      expect(Math.max(...t.lineOffset)).toBeGreaterThan(3);
+      expect(Math.min(...t.lineOffset)).toBeLessThan(-3);
+      // เดิมเส้นเยื้องข้าง ~1.5–2 ม. ต่อ 1 ม. ที่วิ่ง (เลี้ยวหักเกือบ 60°) — ต้องไม่เกิน ~0.5
+      expect(slope).toBeLessThan(0.5);
+      // ความโค้งเปลี่ยนต่อเนื่อง ไม่กระโดด
+      expect(jump).toBeLessThan(0.02);
     }
   });
 });
