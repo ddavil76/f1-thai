@@ -49,9 +49,21 @@ export type BodyModel = { scene: Obj; tint: boolean };
 
 export type DriveScene = {
   /** aero: 0 = ปีกปกติ · 1 = Straight Mode (ปีกพับราบ) */
-  update(p: { s: number; lateral: number; ghost: number | null; speed: number; accel: number; dt: number; aero?: number }): void;
+  update(p: {
+    s: number;
+    lateral: number;
+    ghost: number | null;
+    speed: number;
+    accel: number;
+    dt: number;
+    aero?: number;
+    /** รถคู่แข่ง (ลำดับเดียวกับ opts.rivals) · s = ระยะสะสม · lateral = ระยะเยื้องจากเส้นกลาง (ม.) */
+    rivals?: { s: number; lateral: number; speed: number; aero: number }[];
+  }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
+  /** เส้นช่วยของเลนไหน (−1 ซ้าย · 0 racing line · 1 ขวา) */
+  setLane(lane: number): void;
   resize(): void;
   render(): void;
   dispose(): void;
@@ -66,6 +78,8 @@ export function createDriveScene(opts: {
   track: DriveTrack;
   livery: Livery;
   gfx: Gfx;
+  /** ลิเวอรีของรถคู่แข่ง (โหมดแข่ง) */
+  rivals?: Livery[];
 }): DriveScene {
   const { THREE, addons, merge, el, track: t, livery, gfx } = opts;
   const high = gfx === "high";
@@ -256,12 +270,17 @@ export function createDriveScene(opts: {
     addFlat(new THREE.Mesh(strip((i) => -L(i) - SD, (i) => -L(i) - KW, 0.002, (i) => (corner(i) ? 0xcdb68d : null)), lit()));
   }
 
-  // เส้นช่วยสามสี (racing line)
-  const lineMesh = new THREE.Mesh(
-    strip((i) => t.lineOffset[i] - LINE_W / 2, (i) => t.lineOffset[i] + LINE_W / 2, 0.02, (i) => ZONE_COLOR[t.zone[i]]),
-    flat(-2, 0.9),
-  );
-  scene.add(lineMesh);
+  // เส้นช่วยสามสีของแต่ละเลน (แสดงเฉพาะเลนที่รถอยู่) — เลนกลาง = racing line
+  const lineMat = flat(-2, 0.9);
+  const laneMeshes = t.lanes.map((ln) => {
+    const m = new THREE.Mesh(strip((i) => ln.offset[i] - LINE_W / 2, (i) => ln.offset[i] + LINE_W / 2, 0.02, (i) => ZONE_COLOR[ln.zone[i]]), lineMat);
+    scene.add(m);
+    return m;
+  });
+  let lineOn = true;
+  let laneShown = 1;
+  const showLines = () => laneMeshes.forEach((m, k) => (m.visible = lineOn && k === laneShown));
+  showLines();
 
   // เส้นสตาร์ท/เส้นชัยลายตาหมากรุก
   {
@@ -708,7 +727,7 @@ export function createDriveScene(opts: {
   const deflector = keep(new THREE.CylinderGeometry(WHEEL_R + 0.05, WHEEL_R + 0.05, 0.16, 16, 1, true, -Math.PI * 0.3, Math.PI * 0.45));
   deflector.rotateZ(Math.PI / 2);
 
-  const makeRig = (l: Livery, isGhost: boolean): Rig => {
+  const makeRig = (l: Livery, isGhost: boolean, quality = 1): Rig => {
     const root = new THREE.Group();
     const bodyGroup = new THREE.Group();
     let setAero: ((open: number) => void) | undefined;
@@ -730,7 +749,7 @@ export function createDriveScene(opts: {
       }
       bodyGroup.add(clone);
     } else {
-      const made = keep(buildCar(THREE, merge, l, { ghost: isGhost }));
+      const made = keep(buildCar(THREE, merge, l, { ghost: isGhost, quality }));
       bodyGroup.add(made.obj);
       setAero = made.setAero;
     }
@@ -784,6 +803,13 @@ export function createDriveScene(opts: {
   const ghost = makeRig({ team: "", colour: "#ffffff", ink: "#ffffff", num: 0 }, true);
   ghost.root.visible = false;
   scene.add(ghost.root);
+  // รถคู่แข่ง: ลายความละเอียดครึ่งหนึ่ง (หลายคัน) · กราฟิกต่ำไม่ทอดเงา
+  const rivals = (opts.rivals ?? []).map((l) => {
+    const rig = makeRig(l, false, high ? 0.5 : 0.35);
+    if (!high) rig.root.traverse((o) => (o.castShadow = false));
+    scene.add(rig.root);
+    return { rig, aero: 0, spin: 0, steer: 0 };
+  });
 
   let mode: CameraMode = "tv";
   const camPos = new THREE.Vector3();
@@ -823,7 +849,7 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0 }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates }) {
       // ปีกพับ/กาง ใช้เวลาราว 0.3 วินาที
       const ka = Math.min(1, dt * 7);
       if (Math.abs(aero - motion.aero) > 0.001) {
@@ -856,6 +882,23 @@ export function createDriveScene(opts: {
       car.body.rotation.set(motion.pitch, 0, motion.roll + bankRoll);
       for (const st of car.steer) st.rotation.y = motion.steer;
       for (const sp of car.spin) sp.rotation.x = motion.spin;
+
+      // รถคู่แข่ง: วางตามตำแหน่ง ล้อหมุน/เลี้ยว ปีกพับ ตัวเอียงตามโค้ง
+      rivalStates?.forEach((r, k) => {
+        const rv = rivals[k];
+        if (!rv) return;
+        place(rv.rig.root, r.s, r.lateral);
+        const cv = sample(t, t.curve, r.s);
+        rv.rig.body.rotation.set(0, 0, Math.max(-0.05, Math.min(0.05, -r.speed * r.speed * cv * 0.0016)) - sample(t, t.bank, r.s));
+        rv.spin += (r.speed / WHEEL_R) * dt;
+        for (const sp of rv.rig.spin) sp.rotation.x = rv.spin;
+        rv.steer += (Math.max(-0.5, Math.min(0.5, -Math.atan(WHEELBASE * cv) * 1.6)) - rv.steer) * Math.min(1, dt * 12);
+        for (const st of rv.rig.steer) st.rotation.y = rv.steer;
+        if (Math.abs(r.aero - rv.aero) > 0.001) {
+          rv.aero += (r.aero - rv.aero) * Math.min(1, dt * 7);
+          rv.rig.setAero?.(rv.aero);
+        }
+      });
 
       if (g === null) ghost.root.visible = false;
       else {
@@ -910,7 +953,14 @@ export function createDriveScene(opts: {
       chaseDir.set(0, 0, 0);
     },
     setLine(on) {
-      lineMesh.visible = on;
+      lineOn = on;
+      showLines();
+    },
+    setLane(lane) {
+      const k = Math.max(0, Math.min(2, Math.round(lane + 1)));
+      if (k === laneShown) return;
+      laneShown = k;
+      showLines();
     },
     resize,
     render() {
