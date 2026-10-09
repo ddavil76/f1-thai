@@ -21,7 +21,7 @@
 3. ตั้งค่าตามนี้
    | ช่อง | ใส่ |
    |---|---|
-   | Project name | `pitwall-room` |
+   | Project name | `pitwallroom` |
    | Production branch | `main` |
    | Builds for non-production branches | ปิด (เซิร์ฟเวอร์ deploy จาก `main` อย่างเดียว) |
    | Build watch paths → Include paths | `cloudflare/pitwall/*` (build เฉพาะตอนแก้โค้ดเซิร์ฟเวอร์) |
@@ -29,19 +29,19 @@
    | Build command | (เว้นว่าง) |
    | Deploy command | `npx wrangler deploy` |
 4. กด **Deploy** รอสักครู่จนขึ้นว่าสำเร็จ
-5. คัดลอก **ที่อยู่ของ Worker** หน้าตาประมาณ `https://pitwall-room.<ชื่อบัญชี>.workers.dev`
+5. คัดลอก **ที่อยู่ของ Worker** หน้าตาประมาณ `https://pitwallroom.<ชื่อบัญชี>.workers.dev`
 6. ทดสอบ: เปิดที่อยู่นั้นในเบราว์เซอร์ ต้องเห็น `{"ok":true,"service":"pitwall-room"}`
 
 หลังจากนี้ทุกครั้งที่มีการ push ขึ้น branch ที่ตั้งไว้ Cloudflare จะ deploy ให้เอง
 
-**สั่ง build ใหม่เอง:** เข้า Worker `pitwall-room` → แท็บ **Deployments** → ที่รายการ build ล่าสุดกด **View build** (หรือ "…") → **Retry build**
+**สั่ง build ใหม่เอง:** เข้า Worker `pitwallroom` → แท็บ **Deployments** → ที่รายการ build ล่าสุดกด **View build** (หรือ "…") → **Retry build**
 ถ้าไม่เจอปุ่ม ให้ push อะไรก็ได้ขึ้น branch นั้น ระบบจะ build ใหม่ให้เอง
 
 ## ขั้นที่ 3: บอก Vercel ว่าเซิร์ฟเวอร์อยู่ไหน
 1. เข้า Vercel → โปรเจกต์ **f1-thai** → **Settings** → **Environment Variables**
 2. เพิ่มตัวแปร
    - Name: `NEXT_PUBLIC_PITWALL_SERVER`
-   - Value: ที่อยู่ Worker จากขั้นที่ 2 เช่น `https://pitwall-room.xxxx.workers.dev` (ไม่ต้องมี `/` ท้าย)
+   - Value: ที่อยู่ Worker จากขั้นที่ 2 เช่น `https://pitwallroom.xxxx.workers.dev` (ไม่ต้องมี `/` ท้าย)
    - Environments: ติ๊กทั้ง **Production** และ **Preview**
 3. ไปที่ **Deployments** → deploy ล่าสุด → **Redeploy** ต้อง deploy ใหม่ ค่านี้จึงจะมีผล
 
@@ -72,4 +72,4 @@ npx wrangler deploy
 ## เกี่ยวกับโควตาฟรี
 - ห้องแข่งหนึ่งห้องใช้ Durable Object หนึ่งตัว ทำงานเฉพาะตอนมีคนอยู่ในห้อง
 - เล่นกับกลุ่มเพื่อนวันละหลายเรซยังไม่เต็มโควตาฟรี
-- เช็กการใช้งานได้ในหน้า Workers & Pages → `pitwall-room` → Metrics
+- เช็กการใช้งานได้ในหน้า Workers & Pages → `pitwallroom` → Metrics
