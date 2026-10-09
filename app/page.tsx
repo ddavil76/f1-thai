@@ -6,6 +6,7 @@ import Standings from "@/components/Standings";
 import WeatherBadge from "@/components/WeatherBadge";
 import ReactionPromo from "@/components/ReactionPromo";
 import WidgetPromo from "@/components/WidgetPromo";
+import PitWallPromo from "@/components/PitWallPromo";
 import ResultsPending from "@/components/ResultsPending";
 import ResultsRefresher from "@/components/ResultsRefresher";
 import LocalTime from "@/components/tz/LocalTime";
@@ -193,6 +194,8 @@ export default async function Home() {
               href="/standings"
             />
           )}
+
+          <PitWallPromo />
 
           {following.length > 0 && (
             <section className="card card-poster p-5">
