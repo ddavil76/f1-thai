@@ -8,12 +8,24 @@ import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { deltaTo, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { buildDriveTrack, DS, poseAt, sample, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
-import type { CameraMode, DriveScene } from "./scene";
+import type { BodyModel, CameraMode, DriveScene, Gfx } from "./scene";
 
-type Settings = { team: number; driver: number; circuit: string; line: boolean; autoBrake: boolean; camera: CameraMode };
+type Settings = { team: number; driver: number; circuit: string; line: boolean; autoBrake: boolean; camera: CameraMode; gfx: "auto" | Gfx };
 type Best = { time: number; trace: number[] };
 
 const SETTINGS_KEY = "pitwall-drive-settings";
+/** ไฟล์โมเดลรถที่มีอยู่ใน public/pitwall/cars/ (ไม่มี .glb) — เพิ่มชื่อเมื่ออัปโหลดไฟล์ใหม่ ไม่ต้องยิงขอไฟล์ที่ไม่มี */
+const MODELS_AVAILABLE: readonly string[] = [];
+/** ไฟล์โมเดลรถของแต่ละทีม — ไม่มีไฟล์ทีมใช้ base.glb (ย้อมสีทีม) ไม่มีอีกใช้รถที่สร้างในโค้ด */
+const MODEL_FILE: Record<string, string> = {
+  papaya: "papaya",
+  bull: "bullrun",
+  silver: "silverstar",
+  rosso: "rosso",
+  green: "britishgreen",
+  grove: "grove",
+  stripe: "starstripe",
+};
 const bestKey = (circuit: string) => `pitwall-drive-best:${circuit}`;
 
 function readJson<T>(key: string): T | null {
@@ -47,7 +59,7 @@ const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 export default function DriverMode({ onExit }: { onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = typeof window === "undefined" ? null : readJson<Partial<Settings>>(SETTINGS_KEY);
-    return { team: 0, driver: 0, circuit: "monza", line: true, autoBrake: false, camera: "tv", ...saved };
+    return { team: 0, driver: 0, circuit: "monza", line: true, autoBrake: false, camera: "tv", gfx: "auto", ...saved };
   });
   const [driving, setDriving] = useState(false);
   const set = (p: Partial<Settings>) =>
@@ -131,7 +143,7 @@ function Setup({ settings, set, onStart, onExit }: { settings: Settings; set: (p
 
       <Card>
         <Head kicker="ตัวช่วย" title="ตั้งค่าการขับ" />
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">เส้นช่วย</span>
             <Seg value={settings.line ? 1 : 0} onChange={(v) => set({ line: v === 1 })} options={[{ v: 1, label: "แสดง" }, { v: 0, label: "ซ่อน" }]} />
@@ -144,8 +156,20 @@ function Setup({ settings, set, onStart, onExit }: { settings: Settings; set: (p
             <span className="text-xs font-bold text-white/70">กล้อง</span>
             <Seg<CameraMode> value={settings.camera} onChange={(v) => set({ camera: v })} options={[{ v: "tv", label: "TV Pod" }, { v: "chase", label: "ตามหลัง" }]} />
           </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold text-white/70">กราฟิก</span>
+            <Seg<Settings["gfx"]>
+              value={settings.gfx}
+              onChange={(v) => set({ gfx: v })}
+              options={[
+                { v: "auto", label: "อัตโนมัติ" },
+                { v: "high", label: "สูง" },
+                { v: "low", label: "ต่ำ" },
+              ]}
+            />
+          </label>
         </div>
-        <p className="text-[11px] text-white/60">เบรกอัตโนมัติ: รถเบรกให้เองในเส้นแดง กดแค่คันเร่ง เหมาะกับมือใหม่</p>
+        <p className="text-[11px] text-white/60">เบรกอัตโนมัติ: รถเบรกให้เองในเส้นแดง กดแค่คันเร่ง เหมาะกับมือใหม่ · กราฟิกต่ำ: ไม่มีเงา ต้นไม้น้อยลง ลื่นกว่าบนมือถือ</p>
       </Card>
 
       <Btn className="w-full" onClick={onStart} disabled={!track}>
@@ -187,6 +211,7 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
   const [sound, setSound] = useState(soundOn());
   const soundRef = useRef(sound);
   const [failed, setFailed] = useState(false);
+  const [credit, setCredit] = useState(false);
 
   // แผนที่ย่อ (จุดละ ~40 ม.)
   const mini = useMemo(() => {
@@ -255,11 +280,29 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
       const THREE = await import("three");
       const { mergeGeometries } = await import("three/addons/utils/BufferGeometryUtils.js");
       const { carFactory } = await import("@/lib/three-car");
-      const { createDriveScene } = await import("./scene");
+      const { Sky } = await import("three/addons/objects/Sky.js");
+      const { RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js");
+      const { createDriveScene, normaliseBody } = await import("./scene");
+      // โมเดลรถจากไฟล์ (ถ้ามี): ของทีม → base (ย้อมสี) → รถที่สร้างในโค้ด
+      let body: BodyModel | null = null;
+      for (const [file, tint] of [[MODEL_FILE[team.id], false], ["base", true]] as const) {
+        if (!file || !MODELS_AVAILABLE.includes(file)) continue;
+        const url = `/pitwall/cars/${file}.glb`;
+        try {
+          const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
+          const gltf = await new GLTFLoader().loadAsync(url);
+          body = { scene: normaliseBody(THREE, gltf.scene), tint };
+          setCredit(true);
+          break;
+        } catch {
+          // ไฟล์เสีย/โหลดไม่ได้ ลองตัวถัดไป
+        }
+      }
       if (disposed) return;
-      const low = matchMedia("(pointer: coarse)").matches || el.clientWidth < 700;
+      const auto = matchMedia("(pointer: coarse)").matches || el.clientWidth < 700 || (navigator.hardwareConcurrency ?? 8) <= 4;
+      const gfx: Gfx = settings.gfx === "auto" ? (auto ? "low" : "high") : settings.gfx;
       const factory = carFactory(THREE, mergeGeometries, 5.6);
-      const scene = createDriveScene({ THREE, factory, el, track, colour: team.color, low });
+      const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment }, factory, body, el, track, colour: team.color, gfx });
       sceneRef.current = scene;
       scene.setCamera(camera);
       scene.setLine(line);
@@ -291,6 +334,7 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
       let acc = 0;
       let hudAt = 0;
       let wasInvalid = false;
+      let prevV = car.v;
       // นับถอยหลังสั้น ๆ ก่อนออกตัว
       let wait = 1.6;
       setMsg({ id: Date.now(), text: "พร้อม…", tone: "info" });
@@ -343,7 +387,9 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
         const lateral = sample(track, track.lineOffset, car.s) + car.slide;
         const b = bestRef.current;
         const ghost = b && car.lapStart !== null ? ghostDistance(b.trace, car.t - car.lapStart) + car.lap * track.length : null;
-        scene.update({ s: car.s, lateral, ghost, speed: car.v });
+        const accel = dt > 0 ? (car.v - prevV) / dt : 0;
+        prevV = car.v;
+        scene.update({ s: car.s, lateral, ghost, speed: car.v, accel, dt });
         scene.render();
 
         const kmh = car.v * 3.6;
@@ -462,6 +508,7 @@ function DriveSession({ settings, onExit }: { settings: Settings; onExit: () => 
               ดีสุด <b className="text-white">{fmtTime(best?.time ?? null)}</b>
             </p>
             <p>เป้าหมาย {fmtTime(track.refLap)}</p>
+            {credit && <p className="text-[10px] text-white/50">โมเดลรถ: Meshy (CC BY 4.0)</p>}
             {laps.slice(0, 4).map((l) => (
               <p key={l.lap} className={l.valid ? "" : "text-(--color-f1-text) line-through"}>
                 รอบ {l.lap} {fmtTime(l.time)}
