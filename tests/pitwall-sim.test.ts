@@ -41,6 +41,8 @@ describe("Pit Wall: เรซ", () => {
     const res = classify(st, track.lapCells);
     expect(res).toHaveLength(ctx.cars.length);
     expect(res[0].points).toBe(25);
+    // ผลบอกตำแหน่งออกสตาร์ท ไว้โชว์ขึ้น/ลงอันดับ
+    expect(res.map((r) => r.grid).sort((x, y) => x - y)).toEqual(ctx.cars.map((_, i) => i + 1));
     const finished = res.filter((r) => r.time !== null);
     for (let i = 1; i < finished.length; i++)
       if (finished[i].laps === finished[i - 1].laps) expect(finished[i].time!).toBeGreaterThanOrEqual(finished[i - 1].time!);

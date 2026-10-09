@@ -636,6 +636,11 @@ html[data-intro="seen"] .launch-intro {
   to { transform: none; opacity: 1; }
 }
 .bg-pop { animation: bg-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* วิทยุบนแผนที่: เด้งขึ้นแล้วจางหายเอง ไม่ค้างข้อความเก่า (ดูย้อนหลังได้ในแท็บวิทยุ) */
+@keyframes radio-fade {
+  to { opacity: 0; visibility: hidden; }
+}
+.radio-toast { animation: bg-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both, radio-fade 0.6s ease 6s forwards; }
 
 @media (prefers-reduced-motion: reduce) {
   /* intro เป็นการเคลื่อนไหวล้วน ไม่มีข้อมูล — ข้ามไปเลย */
@@ -669,6 +674,10 @@ html[data-intro="seen"] .launch-intro {
   .animate-spin,
   .animate-pulse {
     animation: none;
+  }
+  /* ไม่เด้ง แต่ยังซ่อนเองเมื่อครบเวลา */
+  .radio-toast {
+    animation: radio-fade 0s linear 6s forwards;
   }
   .track-draw {
     stroke-dashoffset: 0;

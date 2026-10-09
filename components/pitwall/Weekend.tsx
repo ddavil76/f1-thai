@@ -58,7 +58,7 @@ export function Lobby({ snap, me, send, code }: Props & { code: string | null })
       )}
 
       <Card>
-        <Head kicker="ทีม" title="เลือกทีมของคุณ" sub="คุมรถ 2 คันของทีม ทีมที่ไม่มีคนเลือกเป็นทีม AI" />
+        <Head kicker="ทีม" title="เลือกทีมของคุณ" sub="คุมรถ 2 คันของทีม ทีมที่ไม่มีคนเลือกเป็นทีม AI · ★ คือความเร็วรถ ดาวเยอะ = รถเร็ว เล่นง่าย ดาวน้อย = ท้าทาย" />
         <div className="grid gap-2 sm:grid-cols-2">
           {TEAMS.map((t, i) => {
             const owner = snap.players.find((x) => x.team === i);
@@ -78,7 +78,11 @@ export function Lobby({ snap, me, send, code }: Props & { code: string | null })
                   <span className="block truncate text-[11px] text-white/60">{t.drivers.map((d) => d.name).join(" · ")}</span>
                 </span>
                 <span className="flex-none text-right text-[10px] text-white/60">
-                  {owner ? (mine ? "ทีมคุณ" : owner.name) : `รถ ${"★".repeat(Math.max(1, 4 - Math.round(t.pace * 3)))}`}
+                  <span className="block text-[11px] tracking-wider text-[#facc15]" aria-label={`ความเร็วรถ ${speedStars(t.pace)} จาก 4 ดาว`}>
+                    {"★".repeat(speedStars(t.pace))}
+                    <span className="text-white/25">{"★".repeat(4 - speedStars(t.pace))}</span>
+                  </span>
+                  {owner && <span className={`block font-bold ${mine ? "text-white" : ""}`}>{mine ? "ทีมคุณ" : owner.name}</span>}
                 </span>
               </button>
             );
@@ -317,6 +321,48 @@ export function Grid({ snap, me, send }: Props) {
   );
 }
 
+/** สรุปผลของทีมเรา: แต้มที่ได้ และแต่ละคันขยับจากกริดกี่อันดับ */
+function TeamSummary({ snap, mine }: { snap: Snapshot; mine: Set<number> }) {
+  const rows = snap.results?.filter((r) => mine.has(r.id)) ?? [];
+  if (!rows.length) return null;
+  const pts = rows.reduce((a, r) => a + r.points, 0);
+  return (
+    <div className="mb-3 space-y-1.5 rounded-xl border border-white/10 bg-[#08080A] p-3">
+      <p className="text-sm text-white">
+        ทีมคุณได้ <b className="poster text-lg tabular-nums text-(--color-f1-text)">{pts}</b> คะแนนจากสนามนี้
+      </p>
+      <ul className="space-y-1 text-xs text-white/75">
+        {rows.map((r) => {
+          const c = snap.cars[r.id];
+          return (
+            <li key={r.id} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">
+                #{c.num} {c.name}
+              </span>
+              <span className="tabular-nums">{r.out ? `ออกสตาร์ท P${r.grid} → ออกจากเรซ` : `ออกสตาร์ท P${r.grid} → จบ P${r.pos}`}</span>
+              <Gained grid={r.grid} pos={r.pos} out={!!r.out} />
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** ลูกศรขึ้น/ลงอันดับเทียบกับกริด */
+function Gained({ grid, pos, out }: { grid: number; pos: number; out: boolean }) {
+  const d = grid - pos;
+  if (out || d === 0) return <span className="w-8 flex-none text-center text-[11px] text-white/40">–</span>;
+  return (
+    <span className={`w-8 flex-none text-center text-[11px] font-bold tabular-nums ${d > 0 ? "text-[#4ade80]" : "text-(--color-f1-text)"}`} aria-label={d > 0 ? `ขึ้น ${d} อันดับจากกริด` : `ลง ${-d} อันดับจากกริด`}>
+      {d > 0 ? `▲${d}` : `▼${-d}`}
+    </span>
+  );
+}
+
+/** ความเร็วรถเป็นดาว 1–4 (ทีมเร็วสุด pace 0 = 4 ดาว) */
+const speedStars = (pace: number) => Math.max(1, Math.min(4, 4 - Math.round(pace * 3)));
+
 /* ---------- ผลการแข่ง / ตารางคะแนน ---------- */
 
 export function Results({ snap, me, send }: Props) {
@@ -328,6 +374,7 @@ export function Results({ snap, me, send }: Props) {
     <div className="space-y-4">
       <Card>
         <Head kicker="ผลการแข่ง" title={circuitName(snap.circuit)} sub={fastest ? `รอบเร็วสุด #${snap.cars[fastest.car].num} ${fmtLap(fastest.time)}` : undefined} />
+        <TeamSummary snap={snap} mine={mine} />
         <ol className="space-y-1">
           {snap.results?.map((r) => {
             const c = snap.cars[r.id];
@@ -335,8 +382,12 @@ export function Results({ snap, me, send }: Props) {
             return (
               <li key={r.id} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${mine.has(r.id) ? "bg-(--color-f1)/20" : "bg-white/[0.03]"}`}>
                 <span className="poster w-7 flex-none tabular-nums">{r.out ? "DNF" : `P${r.pos}`}</span>
-                <Car color={t.color} ink={t.ink} num={c.num} width={26} />
+                <span className="hidden flex-none sm:block">
+                  <Car color={t.color} ink={t.ink} num={c.num} width={26} />
+                </span>
+                <span className="h-4 w-1 flex-none rounded-full sm:hidden" style={{ background: t.color }} aria-hidden />
                 <span className="min-w-0 flex-1 truncate font-bold text-white">{c.name}</span>
+                <Gained grid={r.grid} pos={r.pos} out={!!r.out} />
                 <span className="flex flex-none items-center gap-0.5" aria-label={`${r.stops} สต็อป`} title={`${r.stops} สต็อป`}>
                   {r.stints.map((k, i) => (
                     <TyreDot key={i} c={k} size={12} />
