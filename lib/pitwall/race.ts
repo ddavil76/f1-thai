@@ -542,6 +542,7 @@ export function classify(st: RaceState, lapCells: number) {
     points: c.out === null && i < POINTS.length ? POINTS[i] : 0,
     stops: c.stops,
     stints: c.stints,
+    grid: c.grid,
     best: c.bestLap,
     penalty: c.penalty,
     out: c.out,

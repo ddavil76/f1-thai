@@ -233,7 +233,7 @@ function RadioTicker({ snap, team }: { snap: Snapshot; team: number }) {
   if (!last) return null;
   const tone = last.tone === "good" ? "border-[#22c55e]" : last.tone === "bad" ? "border-(--color-f1)" : last.tone === "warn" ? "border-[#facc15]" : "border-white/20";
   return (
-    <div key={last.id} className={`bg-pop pointer-events-none absolute inset-x-2 bottom-7 z-10 mx-auto flex max-w-md items-center gap-2 rounded-xl border-l-4 bg-[#08080A]/90 px-3 py-2 text-xs text-white ${tone}`}>
+    <div key={last.id} className={`radio-toast pointer-events-none absolute inset-x-2 bottom-7 z-10 mx-auto flex max-w-md items-center gap-2 rounded-xl border-l-4 bg-[#08080A]/90 px-3 py-2 text-xs text-white ${tone}`}>
       <RadioIcon className="h-4 w-4 flex-none text-white/60" aria-hidden />
       <span>{last.text}</span>
     </div>
@@ -332,15 +332,25 @@ function QualiCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsh
             })}
           </div>
           <div className="grid grid-cols-2 gap-1.5">
-            <Seg size="sm" value={laps} onChange={setLaps} options={[{ v: 1, label: "รอบเร่ง 1" }, { v: 2, label: "รอบเร่ง 2" }]} />
-            <Seg size="sm" value={risk} onChange={setRisk} options={[{ v: "normal", label: "ปกติ" }, { v: "attack", label: "เสี่ยง", tone: "#fb923c" }]} />
+            <Control label="จำนวนรอบเร่ง" hint={LAPS_HINT[laps === 2 ? 2 : 1]}>
+              <Seg size="sm" value={laps} onChange={setLaps} options={[{ v: 1, label: "1 รอบ" }, { v: 2, label: "2 รอบ" }]} />
+            </Control>
+            <Control label="การขับ" hint={RISK_HINT[risk]}>
+              <Seg size="sm" value={risk} onChange={setRisk} options={[{ v: "normal", label: "ปกติ" }, { v: "attack", label: "เสี่ยง", tone: "#fb923c" }]} />
+            </Control>
           </div>
-          <div className="flex flex-wrap gap-3 text-[11px] text-white/75">
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" checked={tow} onChange={(e) => setTow(e.target.checked)} className="h-4 w-4 accent-[#E10600]" /> ลากท้ายเพื่อนร่วมทีม
+          <div className="space-y-1.5 text-[11px] text-white/75">
+            <label className="flex items-start gap-1.5">
+              <input type="checkbox" checked={tow} onChange={(e) => setTow(e.target.checked)} className="mt-0.5 h-4 w-4 flex-none accent-[#E10600]" />
+              <span>
+                ลากท้ายเพื่อนร่วมทีม <span className="text-white/60">· ถ้าเพื่อนกำลังเร่งอยู่ข้างหน้าใกล้ ๆ จะเร็วขึ้นราว 0.15 วิ</span>
+              </span>
             </label>
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" checked={drive} onChange={(e) => setDrive(e.target.checked)} className="h-4 w-4 accent-[#E10600]" /> ขับเอง (เกมจับจังหวะ)
+            <label className="flex items-start gap-1.5">
+              <input type="checkbox" checked={drive} onChange={(e) => setDrive(e.target.checked)} className="mt-0.5 h-4 w-4 flex-none accent-[#E10600]" />
+              <span>
+                ขับเอง <span className="text-white/60">· เล่นเกมจับจังหวะคันเร่ง/เบรกแทนนักขับ ขับดีได้เวลาดีขึ้น</span>
+              </span>
             </label>
           </div>
           <Btn
@@ -384,15 +394,16 @@ function QualiTower({ snap, mine, onPick }: { snap: Snapshot; mine: CarSpec[]; o
               <button type="button" onClick={() => onPick(id)} className={`flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left ${mine.some((m) => m.id === id) ? "bg-(--color-f1)/20" : "bg-white/[0.03]"}`}>
                 <span className="poster w-6 tabular-nums">{c.best === null ? "—" : i + 1}</span>
                 <span className="h-3 w-1 rounded-full" style={{ background: t.color }} />
-                <span className="w-7 font-bold tabular-nums">#{spec.num}</span>
-                <span className="flex gap-0.5">
+                <span className="w-7 flex-none font-bold tabular-nums">#{spec.num}</span>
+                <span className="min-w-0 flex-1 truncate">{spec.name}</span>
+                <span className="flex flex-none gap-0.5">
                   {[0, 1, 2].map((k) => {
                     const s = c.bestSec[k];
                     return <i key={k} className="h-2 w-2 rounded-sm" style={{ background: s === null ? "rgba(255,255,255,.12)" : s <= top[k] + 1e-6 ? SECTOR.purple : SECTOR.green }} />;
                   })}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-white/60">{c.status === "garage" ? "พิท" : c.status === "push" ? "เร่ง" : c.status === "out" ? "อุ่นยาง" : "กลับ"}</span>
-                <span className="tabular-nums text-white">{fmtLap(c.best)}</span>
+                <span className="w-10 flex-none text-white/60">{c.status === "garage" ? "พิท" : c.status === "push" ? "เร่ง" : c.status === "out" ? "อุ่นยาง" : "กลับ"}</span>
+                <span className="flex-none tabular-nums text-white">{fmtLap(c.best)}</span>
                 <span className="w-12 text-right tabular-nums text-white/60">{i === 0 || c.best === null || best === null ? "" : `+${(c.best - best).toFixed(3)}`}</span>
               </button>
             </li>
@@ -431,6 +442,14 @@ function TeamOrders({ snap, team, send }: { snap: Snapshot; team: number; send: 
 }
 
 /** คำอธิบายสั้นของตัวเลือกที่เลือกอยู่ (ให้รู้ว่าได้อะไร เสียอะไร) */
+const LAPS_HINT: Record<1 | 2, string> = {
+  1: "ทำเวลา 1 รอบแล้วกลับพิท",
+  2: "ได้ลองแก้ตัวอีกรอบ แต่ยางรอบสองสึกกว่า",
+};
+const RISK_HINT: Record<Risk, string> = {
+  normal: "โอกาสพลาดน้อย",
+  attack: "เร็วขึ้นราว 0.2 วิ แต่รอบถูกตัดหรือพลาดง่ายขึ้น",
+};
 const MODE_HINT: Record<DriveMode, string> = {
   save: "ช้าลงเล็กน้อย ยางสึกช้า เสี่ยงพลาดน้อย",
   normal: "สมดุลระหว่างความเร็วกับยาง",
