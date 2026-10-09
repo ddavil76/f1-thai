@@ -11,3 +11,6 @@ class_name = "PitRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PitRoom"]
+
+# build ของ branch อื่นที่ไม่ใช่ main ใช้ wrangler preview ซึ่งต้องมีบล็อกนี้ (ว่างได้)
+[previews]
