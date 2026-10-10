@@ -30,11 +30,11 @@ export type Mods = { tow: number; dirty: number; boost?: number };
 export const LANE_RATE = 1.1;
 /** แบตเตอรี่: ใช้ Overtake หมดถังในกี่วินาที · แรงเร่งเพิ่ม (ม./วิ²) · ความเร็วสูงสุดเพิ่ม */
 const OT_DRAIN = 1 / 4.5;
-export const OT_ACCEL = 2.4;
-const OT_TOP = 0.03;
+export const OT_ACCEL = 3.6;
+const OT_TOP = 0.05;
 /** ชาร์จคืนตอนเบรก/ปล่อยคันเร่ง (ต่อวินาที) */
-const REGEN_BRAKE = 0.07;
-const REGEN_LIFT = 0.02;
+const REGEN_BRAKE = 0.2;
+const REGEN_LIFT = 0.035;
 /** ลมดูดเพิ่มความเร็วสูงสุดได้ · อากาศเสียลดการเกาะถนน */
 const TOW_TOP = 0.035;
 export const DIRTY_GRIP = 0.06;

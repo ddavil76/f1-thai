@@ -82,6 +82,28 @@ describe("โหมดนักขับ: ลมดูด / แบตเตอ�
     for (let k = 0; k < 120; k++) stepCar(monza, c, { throttle: false, brake: true }, perfOf(0));
     expect(c.energy).toBeGreaterThan(0.2);
   });
+
+  it("ชาร์จแบต: เบรกชาร์จเร็ว (เต็มใน ~5 วิ) · ยกคันเร่งชาร์จช้ากว่ามาก · ใช้ OT ได้เร็วขึ้นชัดเจน", () => {
+    const charge = (input: { throttle: boolean; brake: boolean }) => {
+      const c = newCar(monza, { s: 0, v: 80, lat: 0 });
+      c.energy = 0;
+      for (let k = 0; k < 120; k++) stepCar(monza, c, input, perfOf(0));
+      return c.energy;
+    };
+    const brake = charge({ throttle: false, brake: true });
+    const lift = charge({ throttle: false, brake: false });
+    expect(brake).toBeGreaterThan(0.15);
+    expect(lift).toBeGreaterThan(0);
+    expect(lift).toBeLessThan(brake / 4);
+    // จาก 180 กม./ชม. เร่ง 4 วิ: ใช้ OT เร็วกว่าไม่ใช้อย่างน้อย 30 กม./ชม.
+    const speedAfter = (ot: boolean) => {
+      const c = newCar(monza, { s: 0, v: 50, lat: 0 });
+      c.energy = 1;
+      for (let k = 0; k < 120 * 4; k++) stepCar(monza, c, { throttle: true, brake: false, sm: true, ot }, perfOf(0));
+      return c.v * 3.6;
+    };
+    expect(speedAfter(true) - speedAfter(false)).toBeGreaterThan(30);
+  });
 });
 
 // จำลองการแข่งทั้งรายการ (หลายพันขั้น) — เครื่อง CI ช้ากว่าเครื่องทั่วไป ให้เวลามากกว่าค่าเริ่มต้น 5 วิ

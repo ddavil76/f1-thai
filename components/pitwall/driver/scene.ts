@@ -66,6 +66,8 @@ export type DriveScene = {
     rivals?: { s: number; lateral: number; speed: number; aero: number }[];
     /** เส้นช่วยไดนามิก: เลนที่รถอยู่ (lat) · ตัวคูณการเกาะถนน (ทีม × อากาศเสีย) · fadeAt = โหมดฝึก ความจำของโค้งที่ระยะ s (0..1) */
     guide?: DriveSceneGuide;
+    /** กำลังใช้แบต Overtake (มุมกล้องกว้างขึ้น ให้รู้สึกพุ่ง) */
+    boost?: boolean;
   }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
@@ -885,7 +887,7 @@ export function createDriveScene(opts: {
   const fwd = new THREE.Vector3();
   const chaseDir = new THREE.Vector3();
   // การเคลื่อนไหวของตัวรถ (เกลี่ยให้นุ่ม)
-  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0 };
+  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0, boost: 0 };
   let baseFov = 66;
 
   /** วางรถ: หันหัวตามทิศของ racing line (ไม่ใช่เส้นกลางถนน) — ระยะเยื้องจากไลน์ (ไถล) คงที่ตลอดช่วงที่ดูทิศ */
@@ -916,7 +918,7 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false }) {
       drawGuide(s, speed, accel, dt, guide);
       // ปีกพับ/กาง ใช้เวลาราว 0.3 วินาที
       const ka = Math.min(1, dt * 7);
@@ -977,7 +979,8 @@ export function createDriveScene(opts: {
 
       // ความรู้สึกเร็ว: มุมกล้องกว้างขึ้นตามความเร็ว + สั่นเล็กน้อย (มากขึ้นตอนขึ้น kerb)
       const sp01 = Math.min(1, speed / VMAX);
-      const fov = baseFov + sp01 * 9;
+      motion.boost += ((boost ? 1 : 0) - motion.boost) * Math.min(1, dt * 5);
+      const fov = baseFov + sp01 * 9 + motion.boost * 7;
       if (Math.abs(camera.fov - fov) > 0.05) {
         camera.fov += (fov - camera.fov) * Math.min(1, dt * 3);
         camera.updateProjectionMatrix();

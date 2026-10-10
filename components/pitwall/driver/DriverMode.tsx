@@ -264,7 +264,7 @@ function Setup({
               <b className="text-white">แซง:</b> ปุ่ม “แซง” พร้อมเมื่อตามติดที่ ~0.2 วิ เหลือทางตรงพอ และฝั่งข้างว่าง/ถนนกว้างพอ (ใกล้โค้งปุ่มเป็นสีเทา) · กดแล้วรถขึ้นไปเคียงเอง แล้วกลับ racing line เมื่อพ้น · ถึงจุดเบรกแล้วยังขึ้นไม่ถึงครึ่งคัน รถถอยกลับไปต่อท้าย
             </li>
             <li>
-              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง · แบตชาร์จคืนตอนเบรก · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
+              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง (แรงเร่งเพิ่ม · ความเร็วสูงสุด +5% · หมดใน ~4.5 วิ) · เบรกชาร์จเร็ว (แถบเขียว) · ยกคันเร่งชาร์จช้า · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
             </li>
             <li>
               <b className="text-white">หลุดโค้ง:</b> เข้าโค้งเร็วเกิน รถลงหญ้า ความเร็วหายเกือบครึ่ง · เตือน 3 ครั้ง ครั้งต่อไปโดน +5 วินาทีทุกครั้ง
@@ -1107,7 +1107,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             cornerDirty = false;
           }
         }
-        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide: { lat: car.lat, grip, fadeAt } });
+        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide: { lat: car.lat, grip, fadeAt }, boost: car.ot });
         scene.render();
 
         const kmh = car.v * 3.6;
@@ -1124,7 +1124,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           // ยางเอี๊ยด: รถกำลังไถลออกจากไลน์ (ระยะไถลเปลี่ยนเร็ว) · ล้อลงหญ้า
           const slideRate = dt > 0 ? Math.abs(car.slide - prevSlide) / dt : 0;
           prevSlide = car.slide;
-          sfx.frame({ rpm, gear, on, squeal: car.offT > 0 ? 0 : Math.min(1, slideRate / 2.5), grass: car.offT > 0 });
+          sfx.frame({ rpm, gear, on, squeal: car.offT > 0 ? 0 : Math.min(1, slideRate / 2.5), grass: car.offT > 0, boost: car.ot });
           // รถคันอื่นวิ่งผ่านใกล้ ๆ (แซงเราหรือเราแซง): ฟิ้วจากฝั่งที่รถอยู่
           if (race) {
             for (const k of rivalIdx) {
@@ -1152,7 +1152,11 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           hudAt = now;
           const h = hud.current;
           const i = input.current;
-          if (h.speed) h.speed.textContent = String(Math.round(kmh));
+          if (h.speed) {
+            h.speed.textContent = String(Math.round(kmh));
+            // ใช้แบต: ตัวเลขความเร็วเป็นสีเหลือง
+            h.speed.style.color = car.ot ? "#facc15" : "";
+          }
           if (h.gear) h.gear.textContent = String(gearOf(kmh));
           if (race) {
             const me = race.cars[pi];
@@ -1167,7 +1171,10 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             }
             if (h.battery) {
               h.battery.style.width = `${Math.round(car.energy * 100)}%`;
-              h.battery.style.background = car.ot ? "#facc15" : "#38bdf8";
+              // เหลือง = กำลังใช้ · เขียว = กำลังชาร์จจากการเบรก · ฟ้า = ปกติ
+              const charging = (i.brake || i.touchB) && car.energy < 1;
+              h.battery.style.background = car.ot ? "#facc15" : charging ? "#4ade80" : "#38bdf8";
+              h.battery.style.boxShadow = car.ot ? "0 0 10px #facc15" : charging ? "0 0 8px #4ade80" : "";
             }
             if (h.tow) h.tow.style.opacity = me.tow > 0.15 ? "1" : "0";
             if (h.side) {

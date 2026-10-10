@@ -6,7 +6,7 @@
  */
 export type Sfx = {
   /** เรียกทุกเฟรม: rpm 0..1 · เกียร์ · on = เปิดเสียง (ปิดเสียง/หยุด/ไฟยังไม่ดับ = เงียบ) */
-  frame(p: { rpm: number; gear: number; on: boolean; squeal: number; grass: boolean }): void;
+  frame(p: { rpm: number; gear: number; on: boolean; squeal: number; grass: boolean; boost?: boolean }): void;
   shift(): void;
   /** รถคันอื่นวิ่งผ่าน · pan −1 ซ้าย … 1 ขวา · แรง 0..1 */
   whoosh(pan: number, strength: number): void;
@@ -60,10 +60,12 @@ export function createSfx(): Sfx | null {
   const grass = loop("lowpass", 260, 0.7);
 
   return {
-    frame({ rpm, gear, on, squeal: sq, grass: onGrass }) {
+    frame({ rpm, gear, on, squeal: sq, grass: onGrass, boost = false }) {
+      // Overtake: เสียงเครื่องแหลมและดังขึ้น (มอเตอร์ไฟฟ้าช่วย)
+      lp.frequency.setTargetAtTime(boost ? 2400 : 900, now(), 0.08);
       enabled = on;
       osc.frequency.setTargetAtTime(70 + rpm * 160 + gear * 6, now(), 0.05);
-      engine.gain.setTargetAtTime(on ? 0.035 : 0, now(), 0.1);
+      engine.gain.setTargetAtTime(on ? (boost ? 0.05 : 0.035) : 0, now(), 0.1);
       squeal.gain.setTargetAtTime(on ? Math.min(0.05, sq * 0.06) : 0, now(), 0.06);
       grass.gain.setTargetAtTime(on && onGrass ? 0.12 : 0, now(), 0.08);
     },
