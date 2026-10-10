@@ -254,7 +254,7 @@ function Setup({
           {settings.mode !== "tt" && (
             <>
               {" "}
-              · แข่ง: <b>D</b> = แซง (เมื่อปุ่มแซงพร้อม) · <b>Q</b> (กดค้าง) = OT ใช้แบต · <b>P</b> = ขอ/ยกเลิกเข้าพิท · <b>1</b>/<b>2</b>/<b>3</b> = เลือกยาง S/M/H · ในพิท <b>Enter</b> หรือ <b>Space</b> = จอด / ไป · มือถือ: ปุ่ม “แซง” “OT” และ “PIT”
+              · แข่ง: <b>D</b> = แซง (เมื่อปุ่มแซงพร้อม) · <b>Q</b> (กดค้าง) = OT ใช้แบต · <b>P</b> = ขอ/ยกเลิกเข้าพิท · <b>1</b>/<b>2</b>/<b>3</b> = ขอเข้าพิทพร้อมเลือกยาง S/M/H · ในพิท <b>Enter</b> หรือ <b>Space</b> = จอด / ไป · มือถือ: ปุ่ม “แซง” “OT” และ “PIT”
             </>
           )}
         </p>
@@ -822,7 +822,11 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       else if (k === "p" || k === "P") {
         if (down && !e.repeat) requestPit(!pitRef.current.on);
       } else if (k === "1" || k === "2" || k === "3") {
-        if (down && !e.repeat) requestPit(pitRef.current.on, COMPOUNDS[Number(k) - 1]);
+        // เลือกยาง = ขอเข้าพิทด้วยยางนั้นเลย (กดยางเดิมซ้ำ = ยกเลิก)
+        if (down && !e.repeat) {
+          const c = COMPOUNDS[Number(k) - 1];
+          requestPit(!(pitRef.current.on && pitRef.current.tyre === c), c);
+        }
       } else if (k === "Enter") {
         if (down && !e.repeat) input.current.pitAct = true;
       } else if (down && k === "Escape") setPaused((p) => !p);
@@ -1309,8 +1313,10 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               const st = me.pit ? "in" : me.finish !== null ? "off" : me.pitWant ? (nextLap ? "next" : "on") : "idle";
               const label = st === "in" ? "ในพิท" : st === "on" ? `PIT รอบนี้ · ${COMPOUND_INFO[me.pitWant!].short}` : st === "next" ? `PIT รอบหน้า · ${COMPOUND_INFO[me.pitWant!].short}` : "PIT";
               if (h.pitBtn.textContent !== label) h.pitBtn.textContent = label;
-              h.pitBtn.style.opacity = st === "off" || st === "in" ? "0" : "1";
-              h.pitBtn.style.pointerEvents = st === "off" || st === "in" ? "none" : "auto";
+              // ซ่อนทั้งกลุ่ม (ปุ่ม PIT + ยาง) ตอนอยู่ในพิท/จบแล้ว
+              const box = h.pitBtn.parentElement ?? h.pitBtn;
+              box.style.opacity = st === "off" || st === "in" ? "0" : "1";
+              box.style.pointerEvents = st === "off" || st === "in" ? "none" : "auto";
               const urge = st === "idle" && me.pits === 0 && me.car.lap >= race.laps - 1;
               h.pitBtn.classList.toggle("animate-pulse", urge || st === "on");
               h.pitBtn.dataset.on = st === "on" || st === "next" ? "1" : "";
@@ -1558,34 +1564,48 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             OT
           </button>
 
-          {/* PIT: แตะเพื่อขอ/ยกเลิกเข้าพิท · เลือกยางที่จะใส่ */}
-          <div className="absolute right-3 top-40 flex flex-col items-end gap-1 sm:top-44">
+          {/* PIT: แตะเพื่อขอ/ยกเลิกเข้าพิท · เลือกยางที่จะใส่ (คอม: P / 1 2 3)
+              ใช้ pointerdown ไม่ใช่ click — มือถือกดคันเร่งค้างอยู่ (มีนิ้วอื่นแตะจอ) click จะไม่ทำงาน
+              ไม่รับโฟกัส — คลิกแล้วกด Space/Enter จะได้ไม่ไปกดปุ่มซ้ำ */}
+          <div className="absolute right-3 top-48 flex flex-col items-end gap-1 sm:top-auto sm:right-[8.5rem] sm:bottom-40">
             <button
               ref={(n) => void (hud.current.pitBtn = n)}
               type="button"
-              onClick={() => requestPit(!pitOn)}
+              tabIndex={-1}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                requestPit(!pitRef.current.on);
+              }}
+              onContextMenu={(e) => e.preventDefault()}
               aria-pressed={pitOn}
-              className="poster min-h-11 rounded-xl border-2 border-white/70 bg-black/55 px-3 text-sm tracking-wide backdrop-blur data-[on=1]:border-[#facc15] data-[on=1]:bg-[#facc15]/25 data-[on=1]:text-[#facc15]"
+              aria-keyshortcuts="P"
+              className="poster min-h-12 touch-none select-none rounded-xl border-2 border-white/70 bg-black/55 px-3 text-sm tracking-wide backdrop-blur data-[on=1]:border-[#facc15] data-[on=1]:bg-[#facc15]/25 data-[on=1]:text-[#facc15]"
             >
               PIT
             </button>
-            {pitOn && (
-              <div className="flex gap-1" role="group" aria-label="ยางที่จะเปลี่ยน">
-                {COMPOUNDS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    aria-pressed={pitTyre === c}
-                    aria-label={`ยาง ${COMPOUND_INFO[c].label}`}
-                    onClick={() => requestPit(true, c)}
-                    className={`flex h-10 w-10 items-center justify-center rounded-full border-2 bg-black/60 text-sm font-black ${pitTyre === c ? "ring-2 ring-white" : "opacity-70"}`}
-                    style={{ color: COMPOUND_INFO[c].color, borderColor: COMPOUND_INFO[c].color }}
-                  >
-                    {COMPOUND_INFO[c].short}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex gap-1" role="group" aria-label="ยางที่จะเปลี่ยน (เลือกแล้วขอเข้าพิทเลย)">
+              {COMPOUNDS.map((c, k) => (
+                <button
+                  key={c}
+                  type="button"
+                  tabIndex={-1}
+                  aria-pressed={pitOn && pitTyre === c}
+                  aria-label={`เข้าพิท ใส่ยาง ${COMPOUND_INFO[c].label}`}
+                  aria-keyshortcuts={String(k + 1)}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    requestPit(true, c);
+                  }}
+                  onContextMenu={(e) => e.preventDefault()}
+                  className={`relative flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border-2 bg-black/60 text-sm font-black ${pitOn && pitTyre === c ? "ring-2 ring-white" : "opacity-60"}`}
+                  style={{ color: COMPOUND_INFO[c].color, borderColor: COMPOUND_INFO[c].color }}
+                >
+                  {COMPOUND_INFO[c].short}
+                  <span className="absolute -bottom-1 -right-1 hidden rounded bg-black/80 px-1 text-[9px] font-bold text-white/80 sm:block pointer-coarse:hidden">{k + 1}</span>
+                </button>
+              ))}
+            </div>
+            <span className="hidden text-[10px] text-white/60 sm:block pointer-coarse:hidden">P = เข้าพิท/ยกเลิก · 1 2 3 = เลือกยาง</span>
           </div>
 
           {/* ในพิท: แถบจังหวะจอด (ช่องเขียว = หยุดตรงกรอบอู่) · เปลี่ยนยาง · ไฟเขียวกดไป */}
