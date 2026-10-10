@@ -178,7 +178,7 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
   /** ขับตามเส้นช่วย (เบรกเอง) */
   const drive = (race: Race, me: RaceCar, extra: Partial<RaceInput> = {}) => stepRace(race, { ...idealInput(monza, me.car), ...extra });
 
-  it("ตามติด: ความเร็วถูกจำกัดให้ค้างห่าง ~0.2 วิ ไม่ชน และปุ่มแซงขึ้น", () => {
+  it("ตามติด: ความเร็วถูกจำกัดให้ค้างห่าง ~HOLD_GAP วิ ไม่ชน และปุ่มแซงขึ้น", () => {
     const { race, slow, me } = chase();
     let closest = Infinity;
     let ready = false;
@@ -189,7 +189,7 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
       if (me.passState === "ready") ready = true;
       if (me.held) heldGap = (slow.car.s - me.car.s - CAR_LEN) / me.car.v;
     }
-    expect(closest).toBeGreaterThan(CAR_LEN + 1);
+    expect(closest).toBeGreaterThan(CAR_LEN + 0.5);
     expect(heldGap).not.toBeNull();
     expect(heldGap!).toBeGreaterThan(HOLD_GAP - 0.07);
     expect(heldGap!).toBeLessThan(HOLD_GAP + 0.08);

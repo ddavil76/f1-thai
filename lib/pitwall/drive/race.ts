@@ -5,9 +5,9 @@
  *  2) ลมดูด: ตามหลังใกล้ ๆ บนทางตรง แรงต้านน้อยลง · อากาศเสีย: ตามติดในโค้ง เกาะถนนน้อยลง
  *  3) Overtake: แบตเตอรี่เสริม · ตามหลังไม่เกิน 1 วิ ตอนผ่านจุดวัด (ต้นโซน Straight Mode) ได้พลังงานเพิ่ม
  *  4) ดวลในโค้ง: เคียงกันเข้าโค้ง คันด้านนอกที่ไม่นำครึ่งคันต้องค่อย ๆ ยอม
- * กันชนท้าย: ตามทันคันหน้าในแนวเดียวกัน ความเร็วถูกจำกัดให้ค้างห่าง ~0.2 วินาที — จะผ่านต้อง "แซง"
+ * กันชนท้าย: ตามทันคันหน้าในแนวเดียวกัน ความเร็วถูกจำกัดให้ค้างห่าง ~0.1 วินาที — จะผ่านต้อง "แซง"
  *  (ไม่ได้ช่วยเบรกเข้าโค้ง: ตามติดแล้วไม่เบรกเอง = เบรกช้า ชนท้าย เสียความเร็ว)
- * แซง (กติกาเดียวกันทั้งผู้เล่นและ AI): ค้างอยู่ที่ ~0.2 วิ + ทางตรงเหลือพอ + ฝั่งข้างว่างและถนนกว้างพอวิ่งเคียงกัน
+ * แซง (กติกาเดียวกันทั้งผู้เล่นและ AI): ห่างไม่เกิน PASS_WINDOW (0.28 วิ) + ทางตรงเหลือพอ + ฝั่งข้างว่างและถนนกว้างพอวิ่งเคียงกัน
  *  → เปลี่ยนเลนขึ้นไปเคียง (ไม่มีแรงเสริมฟรี: ใช้ลมดูดที่พาออกมา + แบต Overtake ที่กดเอง) → พ้นแล้วกลับ racing line
  *  — ถึงจุดเบรกแล้วยังขึ้นไม่ถึงครึ่งคัน = ถอยกลับไปต่อท้าย · AI ป้องกันได้ครั้งเดียวต่อทางตรง
  * หลุดโค้ง (ลงหญ้า ความเร็วตก): เตือน 3 ครั้ง ครั้งต่อไปโดน +5 วินาทีทุกครั้ง
@@ -25,13 +25,17 @@ const DIRTY_RANGE = 22;
 const DETECT_GAP = 1.0;
 const DETECT_BONUS = 0.3;
 /** กันชนท้าย: ค้างห่างคันหน้า HOLD_GAP วินาที (ไม่ต่ำกว่า HOLD_MIN เมตรระหว่างกึ่งกลางรถ) · HOLD_K = ความแรงของการปรับความเร็ว */
-export const HOLD_GAP = 0.2;
-const HOLD_MIN = CAR_LEN + 1.5;
+export const HOLD_GAP = 0.1;
+const HOLD_MIN = CAR_LEN + 1;
+/** ถือว่า "ตามติด" เมื่อห่างไม่เกินนี้ (วินาที) — ใช้นับเวลาที่ถูกบล็อกและให้ AI แตะเบรกก่อนชน */
+const FOLLOW_NEAR = 0.35;
 const HOLD_K = 2.5;
 /** กันชนท้ายลดความเร็วได้ไม่เกินนี้ (ม./วิ²) — มีคันตัดเข้ามาข้างหน้าก็ค่อย ๆ ถอย ไม่เบรกกระชาก */
 const HOLD_DECEL = 30;
+/** …แต่ถ้าเข้ามาอยู่ในระยะกันชนแล้ว ชะลอรวมได้ถึงนี้ (ม./วิ² · ยังต่ำกว่าการกระชาก 120) */
+const HOLD_DECEL_CLOSE = 90;
 /** แซงได้เมื่อห่างคันหน้าไม่เกินกี่วินาที · ต้องเหลือทางตรงก่อนจุดเบรกอย่างน้อยกี่เมตร · แซงนานเกินนี้ (วินาที) = ยกเลิก */
-const PASS_WINDOW = HOLD_GAP + 0.08;
+export const PASS_WINDOW = 0.28;
 const PASS_STRAIGHT = 250;
 const PASS_TIMEOUT = 12;
 /** ลมดูดที่พาออกมาตอนออกแซง หายไปกี่ส่วนต่อวินาที */
@@ -266,6 +270,8 @@ function passCheck(race: Race, i: number): { state: "none" | "wait" } | { state:
   if (f.j < 0 || gapSec(f.gap, c.v) > PASS_WINDOW || c.v < 25) return { state: "none" };
   const toBrake = brakeAhead(t, c.s);
   if (toBrake < PASS_STRAIGHT) return { state: "wait" };
+  // คันหน้ากำลังแซงคันอื่นอยู่ (ขบวนรถติดกัน) → รอให้เขาจบก่อน ไม่งั้นจะเบียดเข้าเลนเดียวกัน
+  if (race.cars[f.j].pass) return { state: "wait" };
   const T = race.cars[f.j].car;
   const cur = Math.round(c.lat);
   const inside = turnAhead(t, c.s, 40, 300) > 0 ? 1 : -1;
@@ -367,7 +373,7 @@ function aiInput(race: Race, i: number, events: RaceEvent[]): Input {
   // ตามติดคันหน้าแล้วกำลังไล่ทัน (เช่นคันหน้าเบรกก่อน) → เบรกตาม ไม่ชนท้าย
   // (รวมคันข้าง ๆ ที่ถนนกำลังจะแคบจนต้องต่อแถว: ถอยไปอยู่ข้างหลังแต่เนิ่น ๆ)
   const fb = frontInBand(race, i, Math.max(SQUEEZE_LOOK, c.v * 1.2));
-  if (fb.j >= 0 && c.v > race.cars[fb.j].car.v + 0.5 && gapSec(fb.gap, c.v) < HOLD_GAP + 0.15) pedals = { throttle: false, brake: true, sm: true };
+  if (fb.j >= 0 && c.v > race.cars[fb.j].car.v + 0.5 && gapSec(fb.gap, c.v) < FOLLOW_NEAR) pedals = { throttle: false, brake: true, sm: true };
 
   // Overtake: เก็บแบตไว้ใช้ตอนแซงบนทางตรงเท่านั้น
   const ot = rc.pass !== null && bend < 0.003 && toBrake > 60 && c.energy > 0;
@@ -445,10 +451,16 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     const before = rc.car.lat;
     stepEv.length = 0;
     const smBefore = t.smZone[Math.floor((((rc.car.s / DS) % t.n) + t.n) % t.n)];
+    const vPre = rc.car.v;
     stepCar(t, rc.car, { ...input, lane: want }, rc.perf, stepEv, mods);
     rc.held = rc.car.v > vHold;
-    if (rc.held) rc.car.v = Math.max(0, vHold, rc.car.v - HOLD_DECEL * STEP);
-    rc.heldT = rc.held || (fb.j >= 0 && (fb.gap - CAR_LEN) / Math.max(15, rc.car.v) < HOLD_GAP + 0.15) ? rc.heldT + STEP : 0;
+    if (rc.held) {
+      // อยู่ในระยะกันชนแล้ว (คันหน้าเบรกแรง) → ชะลอรวมกับเบรกเองได้ถึง HOLD_DECEL_CLOSE ไม่งั้นไหลไปทับคันหน้า
+      const inside = fb.gap < Math.max(HOLD_MIN, CAR_LEN + HOLD_GAP * vPre);
+      const floor = inside ? Math.min(rc.car.v, vPre - HOLD_DECEL_CLOSE * STEP) : rc.car.v - HOLD_DECEL * STEP;
+      rc.car.v = Math.max(0, vHold, floor);
+    }
+    rc.heldT = rc.held || (fb.j >= 0 && (fb.gap - CAR_LEN) / Math.max(15, rc.car.v) < FOLLOW_NEAR) ? rc.heldT + STEP : 0;
     rc.blocked = false;
     if (rc.car.lat !== before) {
       const now = rc.car.lat;
