@@ -1262,8 +1262,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const pad = "flex select-none items-center justify-center rounded-2xl border-2 text-sm font-black tracking-wide touch-none";
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] bg-[#08080A] text-white">
-      <div ref={host} className="absolute inset-0" />
+    // รีเพลย์: ซ่อนหน้าปัด/ปุ่มขับ เหลือภาพ ตารางอันดับ และป้ายรีเพลย์ (ลูกที่มี data-keep)
+    <div data-replay={replaying ? "" : undefined} className="fixed inset-0 z-[60] bg-[#08080A] text-white data-replay:[&>*:not([data-keep])]:hidden">
+      <div ref={host} data-keep className="absolute inset-0" />
       {failed && <p className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm">เครื่องนี้ไม่รองรับกราฟิก 3D (WebGL)</p>}
 
       {/* แถบบน */}
@@ -1403,7 +1404,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           {/* ผลการแข่ง */}
           {/* กำลังเล่นรีเพลย์ */}
           {replaying && (
-            <div className="absolute inset-x-0 top-16 z-10 flex items-center justify-center gap-2 sm:top-24">
+            <div data-keep className="absolute inset-x-0 top-16 z-10 flex items-center justify-center gap-2 sm:top-24">
               <span className="poster rounded bg-(--color-f1) px-3 py-1 text-sm tracking-wide">{replaying === "finish" ? "REPLAY · เส้นชัย" : "ไฮไลต์การแซง"}</span>
               <button type="button" onClick={stopReplay} className="rounded-full bg-black/60 px-3 py-1 text-sm font-bold backdrop-blur">
                 ข้าม ⏭
