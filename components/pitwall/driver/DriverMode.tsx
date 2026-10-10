@@ -2,20 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Copy, Flag, LogIn, LogOut, Route, Users, Volume2, VolumeX } from "lucide-react";
+import { Camera, Copy, Flag, LogIn, LogOut, Pause, Play, RotateCcw, Route, Users, Volume2, VolumeX } from "lucide-react";
 import { Btn, Card, Head, Seg } from "@/components/pitwall/ui";
 import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
-import { buildDriveTrack, DS, laneValue, laneZone, poseAt, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { buildDriveTrack, DS, laneValue, poseAt, sample as sampleAt, VSM, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceEvent } from "@/lib/pitwall/drive/race";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
-import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
+import { brakeDistance, cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
 import { cornerAhead } from "@/lib/pitwall/drive/corners";
 import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
 import type { BodyModel, CameraMode, DriveScene, Gfx, GuideMode } from "./scene";
+import { buzz, createSfx } from "./sfx";
+import { frameAt, Recorder, type RFrame } from "./replay";
 
 type Settings = {
   team: number;
@@ -26,6 +28,8 @@ type Settings = {
   guide: GuideMode;
   /** โหมดฝึก: เส้นช่วยค่อย ๆ จางในโค้งที่ผ่านได้ดีติดกัน (หลุดโค้ง = กลับมาเต็ม) */
   train: boolean;
+  /** สั่นมือถือตอนขึ้น kerb / หลุดโค้ง / ชนท้าย */
+  haptics: boolean;
   autoBrake: boolean;
   camera: CameraMode;
   gfx: "auto" | Gfx;
@@ -139,7 +143,7 @@ const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 export default function DriverMode({ name, onExit }: { name: string; onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = typeof window === "undefined" ? null : readJson<Partial<Settings>>(SETTINGS_KEY);
-    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", train: false, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", ...saved };
+    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", train: false, haptics: true, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", ...saved };
   });
   const [driving, setDriving] = useState(false);
   const [room, setRoom] = useState<string | null>(null);
@@ -190,8 +194,8 @@ function Setup({
             online
               ? "สร้างห้องแล้วส่งรหัสให้เพื่อน (สูงสุด 8 คน) ทุกคนเลือกรถ หัวห้องเลือกสนามและจำนวนรอบ แล้วออกตัวพร้อมกัน"
               : settings.mode === "race"
-                ? "ออกตัวจากกริดพร้อมคู่แข่ง AI ตามติดคันหน้า กด “แซง” ให้รถขึ้นไปเคียง แล้วกด OT ใช้แบตเร่งผ่าน · เบรกเองเข้าโค้ง หลุดโค้งเกิน 3 ครั้งโดนโทษ"
-                : "ขับเองหนึ่งคัน กดคันเร่งและเบรกตามเส้นช่วยบนถนน ยิ่งกดตรงจังหวะยิ่งเร็ว ทำเวลาให้ดีที่สุด"
+                ? "ออกตัวจากกริดพร้อมคู่แข่ง AI ตามติดคันหน้าแล้วกด “แซง” ใช้ OT เร่งผ่าน"
+                : "ขับคนเดียว ทำเวลาต่อรอบให้ดีที่สุด"
           }
         />
         <Seg<Settings["mode"]>
@@ -199,6 +203,18 @@ function Setup({
           onChange={(v) => set({ mode: v })}
           options={[{ v: "tt", label: "Time Trial" }, { v: "race", label: "แข่งกับ AI" }, ...(onlineReady() ? [{ v: "online" as const, label: "แข่งกับเพื่อน" }] : [])]}
         />
+        <p className="text-xs text-white/70">
+          {online ? "แข่งออนไลน์" : `${circuitName(settings.circuit)} · #${(team.drivers[settings.driver] ?? team.drivers[0]).num} ${team.name}`}
+          {settings.mode === "race" && !online && ` · ${settings.raceLaps} รอบ · ${settings.field} คัน · AI ${({ easy: "ง่าย", normal: "ปกติ", hard: "ยาก" } as const)[settings.difficulty]}`}
+        </p>
+        {!online && (
+          <Btn className="w-full" onClick={onStart} disabled={!track}>
+            <Flag className="inline h-4 w-4" /> {track === undefined ? "กำลังโหลดสนาม…" : settings.mode === "race" ? "แข่งเลย" : "ขับเลย"}
+          </Btn>
+        )}
+        <details className="group rounded-xl bg-[#08080A] p-3 text-xs text-white/75">
+          <summary className="cursor-pointer select-none font-bold text-white">วิธีเล่น · ปุ่ม · ความหมายของสีเส้นช่วย</summary>
+          <div className="mt-3 space-y-3">
         {settings.guide === "static" ? (
           <div className="grid gap-2 rounded-xl bg-[#08080A] p-3 text-xs text-white/75 sm:grid-cols-3">
             <p>
@@ -231,7 +247,7 @@ function Setup({
           </div>
         )}
         <p className="text-xs text-white/60">
-          คอม: <b>↑</b> หรือ <b>W</b> = คันเร่ง · <b>↓</b> <b>S</b> หรือ <b>Space</b> = เบรก · <b>E</b> หรือ <b>Shift</b> = Straight Mode · <b>C</b> = สลับกล้อง · <b>Esc</b> = ออก · มือถือ: ปุ่มเบรกซ้าย คันเร่งขวา
+          คอม: <b>↑</b> หรือ <b>W</b> = คันเร่ง · <b>↓</b> <b>S</b> หรือ <b>Space</b> = เบรก · <b>E</b> หรือ <b>Shift</b> = Straight Mode · <b>C</b> = สลับกล้อง · <b>Esc</b> = หยุดชั่วคราว · มือถือ: ปุ่มเบรกซ้าย คันเร่งขวา
           {settings.mode !== "tt" && (
             <>
               {" "}
@@ -239,6 +255,27 @@ function Setup({
             </>
           )}
         </p>
+            {settings.mode !== "tt" && (
+              <ul className="list-disc space-y-1 pl-4 text-[11px] text-white/65">
+            <li>
+              <b className="text-white">ตามติด:</b> ตามทันคันหน้าบนทางตรง ความเร็วถูกจำกัดให้ค้างห่างราว 0.2 วินาที · เข้าโค้งต้องเบรกเอง ไม่เบรก = ชนท้าย เสียความเร็วมาก
+            </li>
+            <li>
+              <b className="text-white">แซง:</b> ปุ่ม “แซง” พร้อมเมื่อตามติดที่ ~0.2 วิ เหลือทางตรงพอ และฝั่งข้างว่าง/ถนนกว้างพอ (ใกล้โค้งปุ่มเป็นสีเทา) · กดแล้วรถขึ้นไปเคียงเอง แล้วกลับ racing line เมื่อพ้น · ถึงจุดเบรกแล้วยังขึ้นไม่ถึงครึ่งคัน รถถอยกลับไปต่อท้าย
+            </li>
+            <li>
+              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง · แบตชาร์จคืนตอนเบรก · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
+            </li>
+            <li>
+              <b className="text-white">หลุดโค้ง:</b> เข้าโค้งเร็วเกิน รถลงหญ้า ความเร็วหายเกือบครึ่ง · เตือน 3 ครั้ง ครั้งต่อไปโดน +5 วินาทีทุกครั้ง
+            </li>
+            <li>
+              <b className="text-white">AI:</b> ใช้กติกาเดียวกัน — แซงบนทางตรงยาว เก็บแบตไว้ใช้ตอนแซง ป้องกันได้ครั้งเดียวต่อทางตรง
+            </li>
+              </ul>
+            )}
+          </div>
+        </details>
       </Card>
 
       {online && <JoinCard onRoom={onRoom} />}
@@ -280,23 +317,6 @@ function Setup({
               />
             </label>
           </div>
-          <ul className="list-disc space-y-1 pl-4 text-[11px] text-white/65">
-            <li>
-              <b className="text-white">ตามติด:</b> ตามทันคันหน้าบนทางตรง ความเร็วถูกจำกัดให้ค้างห่างราว 0.2 วินาที · เข้าโค้งต้องเบรกเอง ไม่เบรก = ชนท้าย เสียความเร็วมาก
-            </li>
-            <li>
-              <b className="text-white">แซง:</b> ปุ่ม “แซง” พร้อมเมื่อตามติดที่ ~0.2 วิ เหลือทางตรงพอ และฝั่งข้างว่าง/ถนนกว้างพอ (ใกล้โค้งปุ่มเป็นสีเทา) · กดแล้วรถขึ้นไปเคียงเอง แล้วกลับ racing line เมื่อพ้น · ถึงจุดเบรกแล้วยังขึ้นไม่ถึงครึ่งคัน รถถอยกลับไปต่อท้าย
-            </li>
-            <li>
-              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง · แบตชาร์จคืนตอนเบรก · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
-            </li>
-            <li>
-              <b className="text-white">หลุดโค้ง:</b> เข้าโค้งเร็วเกิน รถลงหญ้า ความเร็วหายเกือบครึ่ง · เตือน 3 ครั้ง ครั้งต่อไปโดน +5 วินาทีทุกครั้ง
-            </li>
-            <li>
-              <b className="text-white">AI:</b> ใช้กติกาเดียวกัน — แซงบนทางตรงยาว เก็บแบตไว้ใช้ตอนแซง ป้องกันได้ครั้งเดียวต่อทางตรง
-            </li>
-          </ul>
         </Card>
       )}
 
@@ -348,9 +368,15 @@ function Setup({
       </Card>
       )}
 
-      <Card>
-        <Head kicker="ตัวช่วย" title="ตั้งค่าการขับ" />
-        <div className="grid gap-3 sm:grid-cols-2">
+      <details className="card group p-4">
+        <summary className="cursor-pointer select-none list-none">
+          <p className="poster text-xs text-(--color-f1-text)">ตัวช่วย</p>
+          <p className="poster flex items-center justify-between text-2xl text-white">
+            ตั้งค่าการขับ <span className="text-sm text-white/60 group-open:hidden">แตะเพื่อเปิด ▾</span>
+          </p>
+          <p className="text-xs text-white/60">เส้นช่วย · เบรกอัตโนมัติ · โหมดฝึก · สั่น · Straight Mode · กล้อง · กราฟิก</p>
+        </summary>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">เส้นช่วย</span>
             <Seg<GuideMode | "off">
@@ -371,6 +397,10 @@ function Setup({
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">โหมดฝึก (เส้นจางเมื่อจำโค้งได้)</span>
             <Seg value={settings.train ? 1 : 0} onChange={(v) => set({ train: v === 1 })} options={[{ v: 0, label: "ปิด" }, { v: 1, label: "เปิด" }]} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold text-white/70">สั่น (มือถือ: kerb · หลุดโค้ง · ชนท้าย)</span>
+            <Seg value={settings.haptics ? 1 : 0} onChange={(v) => set({ haptics: v === 1 })} options={[{ v: 1, label: "เปิด" }, { v: 0, label: "ปิด" }]} />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">Straight Mode (พับปีกบนทางตรง)</span>
@@ -394,7 +424,7 @@ function Setup({
           </label>
         </div>
         <p className="text-[11px] text-white/60">Straight Mode: บนทางตรงที่กำหนด ปีกหน้า/หลังพับราบ แรงต้านน้อยลง วิ่งได้เร็วขึ้น — ปิดเองเมื่อเบรกหรือพ้นทางตรง (แบบกฎรถปี 2026) · เบรกอัตโนมัติ: รถเบรกให้เองเมื่อถึงจุดเบรก กดแค่คันเร่ง เหมาะกับมือใหม่ · กราฟิกต่ำ: ไม่มีเงา ต้นไม้น้อยลง ลื่นกว่าบนมือถือ</p>
-      </Card>
+      </details>
 
       {!online && (
         <Btn className="w-full" onClick={onStart} disabled={!track}>
@@ -667,6 +697,31 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const soundRef = useRef(sound);
   const [failed, setFailed] = useState(false);
   const [credit, setCredit] = useState(false);
+  // หยุดชั่วคราว (ออนไลน์: การแข่งเดินต่อ แค่เปิดเมนู)
+  const [paused, setPaused] = useState(false);
+  // รีเพลย์ (หลังแข่งจบ): ตัวบันทึกของรอบนี้ · คลิปที่กำลังเล่น
+  const recRef = useRef<Recorder | null>(null);
+  const replayRef = useRef<{ queue: RFrame[][]; idx: number; t: number } | null>(null);
+  const [replaying, setReplaying] = useState<null | "finish" | "highlights">(null);
+  const [clipCount, setClipCount] = useState({ finish: false, highlights: 0 });
+  const stopReplay = () => {
+    replayRef.current = null;
+    sceneRef.current?.setCamera(camera);
+    setReplaying(null);
+  };
+  const startReplay = (kind: "finish" | "highlights") => {
+    const rec = recRef.current;
+    const queue = kind === "finish" ? (rec?.finish ? [rec.finish] : []) : (rec?.clips ?? []);
+    if (!queue.length || !queue[0].length) return;
+    replayRef.current = { queue, idx: 0, t: queue[0][0].t };
+    sceneRef.current?.setCamera("orbit");
+    setReplaying(kind);
+  };
+  const pausedRef = useRef(false);
+  useEffect(() => {
+    pausedRef.current = paused;
+    if (paused) Object.assign(input.current, { throttle: false, brake: false, touchT: false, touchB: false, pass: false, ot: false, touchO: false });
+  }, [paused]);
 
   // แผนที่ย่อ (จุดละ ~40 ม.)
   const mini = useMemo(() => {
@@ -709,7 +764,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         // กดแซง (ทำงานเมื่อปุ่มแซงพร้อม)
         if (down && !e.repeat) input.current.pass = true;
       } else if (k === "q" || k === "Q") input.current.ot = down;
-      else if (down && k === "Escape") onExit();
+      else if (down && k === "Escape") setPaused((p) => !p);
       else return;
       e.preventDefault();
     };
@@ -782,25 +837,20 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       const onResize = () => scene.resize();
       window.addEventListener("resize", onResize);
 
-      // เสียงเครื่องยนต์เบา ๆ (สร้างหลังผู้เล่นกดเริ่มขับแล้ว เบราว์เซอร์จึงยอมให้เล่น)
-      let audio: { ctx: AudioContext; osc: OscillatorNode; gain: GainNode } | null = null;
-      try {
-        const ctx = new AudioContext();
-        const osc = ctx.createOscillator();
-        osc.type = "sawtooth";
-        const filter = ctx.createBiquadFilter();
-        filter.type = "lowpass";
-        filter.frequency.value = 900;
-        const gain = ctx.createGain();
-        gain.gain.value = 0;
-        osc.connect(filter).connect(gain).connect(ctx.destination);
-        osc.start();
-        audio = { ctx, osc, gain };
-      } catch {
-        audio = null;
-      }
+      // เสียง (สร้างหลังผู้เล่นกดเริ่มขับแล้ว เบราว์เซอร์จึงยอมให้เล่น) · สั่นบนมือถือ
+      const sfx = createSfx();
+      const shake = (ms: number | number[]) => {
+        if (settings.haptics) buzz(ms);
+      };
+      let lastGear = 0;
+      let prevSlide = 0;
+      let kerbAt = 0;
+      /** ระยะ (ตามสนาม) ของรถคันอื่นเทียบกับเรา เฟรมก่อน — ไว้จับจังหวะวิ่งผ่านกันแล้วเล่นเสียงฟิ้ว */
+      const relPrev = new Map<number, number>();
 
       const car = race ? race.cars[pi].car : newCar(track);
+      recRef.current = race ? new Recorder() : null;
+      replayRef.current = null;
       const revents: RaceEvent[] = [];
       let yieldMsgAt = 0;
       let towerAt = 0;
@@ -838,6 +888,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       let hudAt = 0;
       let wasInvalid = false;
       let prevV = car.v;
+      // อัตราเร่งแบบเรียบ (ใช้คาดความเร็วตอนไปถึงโค้ง ให้ข้อความเบรกตรงกับสีเส้นช่วย)
+      let accelEma = 0;
       // โหมดฝึก: ความจำของแต่ละโค้ง (เก็บในเครื่องแยกตามสนาม) · ผ่านโค้งโดยไม่หลุด = จำได้มากขึ้น
       const corners = cornerMap(track);
       const cornerAt = (ss: number) => corners[Math.floor((((ss / DS) % track.n) + track.n) % track.n)];
@@ -857,6 +909,36 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
 
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
+        // หยุดชั่วคราว: นาฬิกาหยุด (ออนไลน์เดินต่อ) · เงียบ · ภาพค้างไว้
+        // รีเพลย์: เล่นตำแหน่งที่บันทึกไว้ด้วยกล้องวนรอบรถ (การแข่งไม่เดิน)
+        const rp = replayRef.current;
+        if (rp) {
+          const dtR = Math.min(0.1, (now - last) / 1000);
+          last = now;
+          const clip = rp.queue[rp.idx];
+          rp.t += dtR;
+          if (rp.t > clip[clip.length - 1].t) {
+            rp.idx++;
+            if (rp.idx >= rp.queue.length) {
+              replayRef.current = null;
+              scene.setCamera(camera);
+              setReplaying(null);
+              return;
+            }
+            rp.t = rp.queue[rp.idx][0].t;
+          }
+          const f = frameAt(rp.queue[rp.idx], rp.t);
+          scene.update({ s: f.me.s, lateral: f.me.lateral, ghost: null, speed: f.me.v, accel: 0, dt: dtR, aero: f.me.aero, rivals: f.rivals.map((c) => ({ s: c.s, lateral: c.lateral, speed: c.v, aero: c.aero })) });
+          scene.render();
+          sfx?.frame({ rpm: Math.min(1, (f.me.v % 25) / 25), gear: gearOf(f.me.v * 3.6), on: soundRef.current, squeal: 0, grass: false });
+          return;
+        }
+        if (pausedRef.current && !netRef.current) {
+          last = now;
+          sfx?.frame({ rpm: 0, gear: 1, on: false, squeal: 0, grass: false });
+          scene.render();
+          return;
+        }
         const dt = Math.min(0.1, (now - last) / 1000);
         last = now;
         if (race) {
@@ -880,19 +962,31 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             if (smWas && !car.sm) i.smArm = false;
             const me = race.cars[pi];
             for (const e of revents) {
-              if (e.kind === "overtake" && e.by === me.id) setMsg({ id: now + 1, text: `แซงได้! P${race.order.indexOf(pi) + 1}`, tone: "good" });
+              if (e.kind === "overtake" && e.by === me.id) {
+                recRef.current?.markOvertake(race.t);
+                setMsg({ id: now + 1, text: `แซงได้! P${race.order.indexOf(pi) + 1}`, tone: "good" });
+              }
               else if (e.kind === "overtake" && e.on === me.id) setMsg({ id: now + 2, text: `โดนแซง · P${race.order.indexOf(pi) + 1}`, tone: "bad" });
               else if (e.kind === "pass" && e.id === me.id) setMsg({ id: now + 3, text: "แซง! ขึ้นไปเคียง · กด OT ใช้แบต", tone: "info" });
               else if (e.kind === "passEnd" && e.id === me.id && e.why !== "done") setMsg({ id: now + 9, text: "แซงไม่สำเร็จ · กลับเข้าแถว", tone: "bad" });
-              else if (e.kind === "offtrack" && e.id === me.id)
+              else if (e.kind === "offtrack" && e.id === me.id) {
+                sfx?.thump(1);
+                shake([60, 40, 90]);
                 setMsg({ id: now + 10, text: e.n <= TRACK_LIMITS ? `หลุดโค้ง! เตือน ${e.n}/${TRACK_LIMITS}` : `หลุดโค้ง! โทษ +${OFF_PENALTY} วิ (รวม +${e.penalty})`, tone: "bad" });
-              else if (e.kind === "bump" && e.id === me.id) setMsg({ id: now + 11, text: "ชนท้าย! เบรกช้าไป", tone: "bad" });
+              } else if (e.kind === "bump" && e.id === me.id) {
+                sfx?.thump(0.7);
+                shake(60);
+                setMsg({ id: now + 11, text: "ชนท้าย! เบรกช้าไป", tone: "bad" });
+              }
               else if (e.kind === "detect" && e.id === me.id) setMsg({ id: now + 4, text: "ตามติดใน 1 วิ · ได้พลังงาน OVERTAKE", tone: "info" });
               else if (e.kind === "yield" && e.id === me.id && now - yieldMsgAt > 2500) {
                 yieldMsgAt = now;
                 setMsg({ id: now + 5, text: "อยู่ด้านนอกโค้ง ต้องยอมให้คันใน", tone: "bad" });
               } else if (e.kind === "lap" && e.id === me.id && me.finish === null) setMsg({ id: now + 6, text: `รอบ ${e.lap} · ${fmtTime(e.time)}`, tone: "info" });
-              else if (e.kind === "finish" && e.id === me.id) setMsg({ id: now + 7, text: `เข้าเส้นชัย P${race.order.indexOf(pi) + 1}`, tone: "good" });
+              else if (e.kind === "finish" && e.id === me.id) {
+                recRef.current?.markFinish(race.t);
+                setMsg({ id: now + 7, text: `เข้าเส้นชัย P${race.order.indexOf(pi) + 1}`, tone: "good" });
+              }
             }
           }
           if (wasLights && race.lights <= 0) setMsg({ id: now + 8, text: "ไป!", tone: "good" });
@@ -950,6 +1044,10 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             if (smWas && !car.sm) i.smArm = false;
             for (const e of events) {
               if (e.kind === "off") setMsg({ id: now, text: "หลุดโค้ง! รอบนี้ไม่นับ", tone: "bad" });
+              if (e.kind === "excursion") {
+                sfx?.thump(1);
+                shake([60, 40, 90]);
+              }
               if (e.kind === "lap") {
                 const r = e.result;
                 setLaps((l) => [r, ...l].slice(0, 8));
@@ -977,6 +1075,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         const b = bestRef.current;
         const ghost = b && car.lapStart !== null ? ghostDistance(b.trace, car.t - car.lapStart) + car.lap * track.length : null;
         const accel = dt > 0 ? (car.v - prevV) / dt : 0;
+        accelEma += (accel - accelEma) * Math.min(1, dt * 4);
         prevV = car.v;
         const rivalStates = race
           ? rivalIdx.map((k) => {
@@ -984,6 +1083,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               return { s: c.s, lateral: laneValue(track, "offset", c.s, c.lat) + c.slide, speed: c.v, aero: c.sm ? 1 : 0 };
             })
           : undefined;
+        // บันทึกรีเพลย์ (แข่งเท่านั้น หลังไฟดับ)
+        if (race && race.lights <= 0 && rivalStates && recRef.current) {
+          const rec = recRef.current;
+          const before = rec.clips.length + (rec.finish ? 1 : 0);
+          rec.push({ t: race.t, me: { s: car.s, lateral, v: car.v, aero: car.sm ? 1 : 0 }, rivals: rivalStates.map((r) => ({ s: r.s, lateral: r.lateral, v: r.speed, aero: r.aero })) });
+          if (rec.clips.length + (rec.finish ? 1 : 0) !== before) setClipCount({ finish: !!rec.finish, highlights: rec.clips.length });
+        }
         scene.setLane(car.lat);
         // เส้นช่วยไดนามิก: การเกาะถนนของรถเรา (ทีม × อากาศเสียจากคันหน้า)
         const grip = race ? race.cars[pi].perf.grip * (1 - DIRTY_GRIP * race.cars[pi].dirty) : perf.grip;
@@ -1005,13 +1111,40 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         scene.render();
 
         const kmh = car.v * 3.6;
-        if (audio) {
+        if (sfx) {
           const gear = gearOf(kmh);
           const lo = GEARS[gear - 1] ?? 0;
           const hi = GEARS[gear] ?? 340;
           const rpm = Math.min(1, Math.max(0, (kmh - lo) / Math.max(1, hi - lo)));
-          audio.osc.frequency.setTargetAtTime(70 + rpm * 160 + gear * 6, audio.ctx.currentTime, 0.05);
-          audio.gain.gain.setTargetAtTime(soundRef.current && (race ? race.lights <= 0 : wait <= 0) ? 0.035 : 0, audio.ctx.currentTime, 0.1);
+          const on = soundRef.current && (race ? race.lights <= 0 : wait <= 0);
+          if (gear !== lastGear) {
+            if (lastGear && gear > lastGear) sfx.shift();
+            lastGear = gear;
+          }
+          // ยางเอี๊ยด: รถกำลังไถลออกจากไลน์ (ระยะไถลเปลี่ยนเร็ว) · ล้อลงหญ้า
+          const slideRate = dt > 0 ? Math.abs(car.slide - prevSlide) / dt : 0;
+          prevSlide = car.slide;
+          sfx.frame({ rpm, gear, on, squeal: car.offT > 0 ? 0 : Math.min(1, slideRate / 2.5), grass: car.offT > 0 });
+          // รถคันอื่นวิ่งผ่านใกล้ ๆ (แซงเราหรือเราแซง): ฟิ้วจากฝั่งที่รถอยู่
+          if (race) {
+            for (const k of rivalIdx) {
+              const o = race.cars[k].car;
+              const ds = o.s - car.s;
+              const before = relPrev.get(k);
+              relPrev.set(k, ds);
+              if (before === undefined || Math.sign(before) === Math.sign(ds) || Math.abs(ds) > 8) continue;
+              const side = laneValue(track, "offset", o.s, o.lat) + o.slide - lateral;
+              if (Math.abs(side) > 5) continue;
+              sfx.whoosh(side / 4, Math.abs(o.v - car.v) / 15);
+            }
+          }
+        }
+        // ขึ้น kerb: สั่นเบา ๆ
+        const edgeR = laneValue(track, "offset", car.s, car.lat) + car.slide;
+        const onKerb = car.v > 15 && (edgeR > sampleAt(track, track.wr, car.s) - 0.6 || edgeR < 0.6 - sampleAt(track, track.wl, car.s));
+        if (onKerb && now - kerbAt > 250) {
+          kerbAt = now;
+          shake(12);
         }
 
         // อัปเดตหน้าปัด ~20 ครั้ง/วิ
@@ -1078,19 +1211,10 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           }
           if (h.thr) h.thr.style.opacity = i.throttle || i.touchT ? "1" : "0.18";
           if (h.brk) h.brk.style.opacity = i.brake || i.touchB ? "1" : "0.18";
-          // บอกล่วงหน้าเมื่อโซนเบรกใกล้เข้ามา
+          // บอกล่วงหน้าว่าต้องเริ่มเบรกอีกกี่เมตร (คิดแบบเดียวกับสีลูกศร: ความเร็วที่จะมีตอนไปถึง vs ความเร็วที่โค้งรับได้ × การเกาะถนน)
           if (h.hint) {
-            let dist: number | null = null;
-            for (let k = 0; k <= 260; k += DS) {
-              const z = laneZone(track, car.s + k, car.lat);
-              if (z === "brake") {
-                dist = k;
-                break;
-              }
-            }
-            // ช้าพอแล้ว (ไม่เร็วกว่าความเร็วอ้างอิงตรงนั้น) ไม่ต้องเตือน
-            const fast = dist !== null && car.v > laneValue(track, "vref", car.s + dist, car.lat) + 2;
-            h.hint.textContent = !fast || dist === null ? "" : dist < 8 ? "เบรก!" : `เบรกใน ${Math.round(dist)} ม.`;
+            const dist = brakeDistance(track, car.s, car.lat, car.v, accelEma, grip, VSM * grip, 260);
+            h.hint.textContent = dist === null ? "" : dist < 8 ? "เบรก!" : `เบรกใน ${Math.round(dist)} ม.`;
           }
           // สถานะ Straight Mode
           if (h.sm) {
@@ -1123,7 +1247,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         window.removeEventListener("resize", onResize);
         scene.dispose();
         sceneRef.current = null;
-        audio?.ctx.close().catch(() => {});
+        sfx?.close();
       };
     })();
     return () => {
@@ -1144,8 +1268,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
 
       {/* แถบบน */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start gap-2 p-2 sm:p-3">
-        <button type="button" onClick={onExit} aria-label="ออก" className="pointer-events-auto rounded-full bg-black/55 p-2.5 backdrop-blur">
-          <LogOut className="h-5 w-5" />
+        <button type="button" onClick={() => setPaused(true)} aria-label="หยุดชั่วคราว" className="pointer-events-auto rounded-full bg-black/55 p-2.5 backdrop-blur">
+          <Pause className="h-5 w-5" />
         </button>
         <div className="hidden rounded-xl bg-black/55 px-3 py-1.5 backdrop-blur sm:block">
           <p className="poster text-[11px] text-(--color-f1-text)">{circuitName(settings.circuit)}</p>
@@ -1277,7 +1401,17 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           </button>
 
           {/* ผลการแข่ง */}
-          {result && (
+          {/* กำลังเล่นรีเพลย์ */}
+          {replaying && (
+            <div className="absolute inset-x-0 top-16 z-10 flex items-center justify-center gap-2 sm:top-24">
+              <span className="poster rounded bg-(--color-f1) px-3 py-1 text-sm tracking-wide">{replaying === "finish" ? "REPLAY · เส้นชัย" : "ไฮไลต์การแซง"}</span>
+              <button type="button" onClick={stopReplay} className="rounded-full bg-black/60 px-3 py-1 text-sm font-bold backdrop-blur">
+                ข้าม ⏭
+              </button>
+            </div>
+          )}
+
+          {result && !replaying && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 p-4">
               <div className="w-full max-w-md space-y-3 rounded-2xl bg-[#14151a] p-4">
                 <p className="poster text-center text-2xl">ผลการแข่ง · {circuitName(settings.circuit)}</p>
@@ -1294,6 +1428,20 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                     </li>
                   ))}
                 </ol>
+                {(clipCount.finish || clipCount.highlights > 0) && (
+                  <div className="flex gap-2">
+                    {clipCount.finish && (
+                      <Btn tone="white" className="flex-1" onClick={() => startReplay("finish")}>
+                        <Play className="inline h-4 w-4" /> รีเพลย์เส้นชัย
+                      </Btn>
+                    )}
+                    {clipCount.highlights > 0 && (
+                      <Btn tone="white" className="flex-1" onClick={() => startReplay("highlights")}>
+                        <Play className="inline h-4 w-4" /> ไฮไลต์การแซง ({clipCount.highlights})
+                      </Btn>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   {net ? (
                     net.host ? (
@@ -1309,6 +1457,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                       onClick={() => {
                         setResult(null);
                         setTower([]);
+                        setClipCount({ finish: false, highlights: 0 });
                         setRunId((n) => n + 1);
                       }}
                     >
@@ -1373,6 +1522,39 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           <div ref={(n) => void (hud.current.thr = n)} className="h-10 w-2.5 rounded-full bg-[#22c55e]" aria-hidden />
         </div>
       </div>
+
+      {/* เมนูหยุดชั่วคราว */}
+      {paused && !result && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="หยุดชั่วคราว">
+          <div className="w-full max-w-xs space-y-3 rounded-2xl bg-[#14151a] p-4 text-center">
+            <p className="poster text-2xl">หยุดชั่วคราว</p>
+            {net && <p className="text-xs text-[#facc15]">แข่งออนไลน์: การแข่งยังเดินต่อ รถคุณจะไม่ถูกบังคับ</p>}
+            <Btn className="w-full" onClick={() => setPaused(false)}>
+              <Play className="inline h-4 w-4" /> เล่นต่อ
+            </Btn>
+            {!net && (
+              <Btn
+                tone="white"
+                className="w-full"
+                onClick={() => {
+                  setPaused(false);
+                  setResult(null);
+                  setTower([]);
+                  setLaps([]);
+                  setClipCount({ finish: false, highlights: 0 });
+                  setRunId((n) => n + 1);
+                }}
+              >
+                <RotateCcw className="inline h-4 w-4" /> {isRace ? "เริ่มแข่งใหม่" : "เริ่มใหม่"}
+              </Btn>
+            )}
+            <Btn tone="ghost" className="w-full" onClick={onExit}>
+              <LogOut className="inline h-4 w-4" /> {net ? "ออกจากห้อง" : "ออกไปหน้าตั้งค่า"}
+            </Btn>
+            <p className="text-[11px] text-white/50">คีย์บอร์ด: Esc = หยุด/เล่นต่อ</p>
+          </div>
+        </div>
+      )}
 
       {/* ปุ่ม Straight Mode (โหมดกดเอง) */}
       {settings.sm === "manual" && (

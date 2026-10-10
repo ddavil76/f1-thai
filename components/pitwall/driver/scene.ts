@@ -14,7 +14,8 @@ import { buildCar, type Livery } from "./carModel";
 type Three = typeof THREE_NS;
 type Obj = THREE_NS.Object3D;
 
-export type CameraMode = "tv" | "chase";
+/** orbit = กล้องรีเพลย์ วนรอบรถช้า ๆ */
+export type CameraMode = "tv" | "chase" | "orbit";
 export type Gfx = "high" | "low";
 
 const ZONE_COLOR: Record<Zone, number> = { throttle: 0x22c55e, lift: 0xfacc15, brake: 0xef4444 };
@@ -877,6 +878,7 @@ export function createDriveScene(opts: {
   });
 
   let mode: CameraMode = "tv";
+  let orbitAngle = 0;
   const camPos = new THREE.Vector3();
   const camLook = new THREE.Vector3();
   const tmp = new THREE.Vector3();
@@ -986,7 +988,18 @@ export function createDriveScene(opts: {
       const sy = (Math.random() - 0.5) * amp;
 
       fwd.set(0, 0, 1).applyQuaternion(car.root.quaternion);
-      if (mode === "tv") {
+      if (mode === "orbit") {
+        // รีเพลย์: วนรอบรถช้า ๆ เห็นรถคันอื่นรอบ ๆ
+        orbitAngle += dt * 0.35;
+        const r = 11;
+        camPos.copy(car.root.position);
+        camPos.x += Math.cos(orbitAngle) * r;
+        camPos.z += Math.sin(orbitAngle) * r;
+        camPos.y = Math.max(heightAt(t, s), car.root.position.y) + 3.2;
+        camera.position.copy(camPos);
+        camLook.copy(car.root.position).setY(car.root.position.y + 0.6);
+        camera.lookAt(camLook);
+      } else if (mode === "tv") {
         // เหนือหัวนักขับ เห็นหมวก จมูกรถ และล้อหน้าด้านล่างจอ · เอียงตามตัวรถนิดหน่อย
         camPos.copy(car.root.position).addScaledVector(fwd, 0.15).setY(car.root.position.y + 1.32 + sy);
         camLook.copy(car.root.position).addScaledVector(fwd, 16).setY(heightAt(t, s + 16) + 0.35);

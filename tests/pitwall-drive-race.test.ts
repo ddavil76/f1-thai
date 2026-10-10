@@ -4,6 +4,7 @@ import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
 import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
+import { frameAt, Recorder } from "@/components/pitwall/driver/replay";
 import { cornerMap, GUIDE_RED, GUIDE_WARN, guideColor, guideFade, guideNeeded, guideRisk, learnCorner, projectedSpeed, type Mastery } from "@/lib/pitwall/drive/guide";
 import { TEAMS } from "@/lib/pitwall/teams";
 
@@ -404,5 +405,48 @@ describe("โหมดนักขับ: คาดความเร็ว / �
     expect(guideFade(m[2], 0.9)).toBe(0);
     m = learnCorner(m, 2, false);
     expect(m[2]).toBe(0);
+  });
+});
+
+describe("โหมดนักขับ: รีเพลย์", () => {
+  const car = (s: number) => ({ s, lateral: 0, v: 50, aero: 0 });
+  const feed = (rec: Recorder, from: number, to: number) => {
+    for (let t = from; t <= to + 1e-9; t += 1 / 120) rec.push({ t, me: car(t * 50), rivals: [car(t * 50 + 10)] });
+  };
+
+  it("เก็บย้อนหลัง 15 วิ ที่ 30 ครั้ง/วิ", () => {
+    const rec = new Recorder();
+    feed(rec, 0, 40);
+    expect(rec.ring[0].t).toBeGreaterThanOrEqual(25 - 1e-6);
+    expect(rec.ring.length).toBeGreaterThan(440);
+    expect(rec.ring.length).toBeLessThan(460);
+  });
+
+  it("ไฮไลต์การแซง: คลิป 6 วิก่อน + 2.5 วิหลัง · แซงติดกันนับคลิปเดียว · รีเพลย์เส้นชัย 8+3 วิ", () => {
+    const rec = new Recorder();
+    feed(rec, 0, 20);
+    rec.markOvertake(20);
+    rec.markOvertake(21);
+    feed(rec, 20, 30);
+    expect(rec.clips).toHaveLength(1);
+    const clip = rec.clips[0];
+    expect(clip[0].t).toBeCloseTo(14, 1);
+    expect(clip[clip.length - 1].t).toBeCloseTo(22.5, 1);
+    rec.markFinish(30);
+    expect(rec.finish).toBeNull();
+    feed(rec, 30, 34);
+    expect(rec.finish).not.toBeNull();
+    expect(rec.finish![0].t).toBeCloseTo(22, 1);
+  });
+
+  it("เล่นย้อน: เกลี่ยตำแหน่งระหว่างเฟรม", () => {
+    const frames = [
+      { t: 0, me: car(0), rivals: [car(10)] },
+      { t: 1, me: car(50), rivals: [car(60)] },
+    ];
+    const f = frameAt(frames, 0.5);
+    expect(f.me.s).toBeCloseTo(25, 5);
+    expect(f.rivals[0].s).toBeCloseTo(35, 5);
+    expect(frameAt(frames, 5).me.s).toBe(50);
   });
 });
