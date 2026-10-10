@@ -33,12 +33,14 @@ export function guideColor(risk: number) {
 export const guideNeeded = (t: DriveTrack, s: number, lat: number, risk: number) => risk > 0 || laneZone(t, s, lat) !== "throttle";
 
 /**
- * ความเร็วที่จะมีตอนไปถึงระยะ d ข้างหน้า ถ้ายังทำแบบเดิม (เร่งต่อ/ผ่อน/เบรกด้วยอัตราเร่งตอนนี้) · ไม่เกิน vtop
- * — กำลังเร่ง: ไปถึงโค้งจะเร็วกว่าตอนนี้ เส้นแดงเร็วขึ้น · กำลังเบรก: เส้นค่อย ๆ กลับเป็นเขียว
+ * ความเร็วที่จะมีตอนไปถึงระยะ d ข้างหน้า ถ้ายังเร่งต่อด้วยอัตราเร่งตอนนี้ · ไม่เกิน vtop
+ * — กำลังเร่ง: ไปถึงโค้งจะเร็วกว่าตอนนี้ เส้นแดงเร็วขึ้น
+ * — กำลังเบรก/ผ่อน: ใช้ความเร็วตอนนี้ (ไม่คาดว่าจะเบรกต่อ) — สีเขียวเมื่อความเร็วลดลงพอจริงแล้วเท่านั้น
+ *   (ถ้าคิดเผื่อการเบรก เส้นจะเขียวตอนกดเบรก แล้วกลับแดงทันทีที่ปล่อยเบรกทั้งที่ยังเร็วเกิน)
  */
 export function projectedSpeed(v: number, accel: number, d: number, vtop: number) {
-  const a = Math.max(-45, Math.min(15, accel));
-  return Math.min(Math.max(v, vtop), Math.sqrt(Math.max(0, v * v + 2 * a * d)));
+  const a = Math.max(0, Math.min(15, accel));
+  return Math.min(Math.max(v, vtop), Math.sqrt(v * v + 2 * a * d));
 }
 
 /**

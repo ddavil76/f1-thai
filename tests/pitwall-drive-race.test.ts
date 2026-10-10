@@ -366,10 +366,24 @@ describe("โหมดนักขับ: เส้นช่วยไดนา�
 });
 
 describe("โหมดนักขับ: คาดความเร็ว / โหมดฝึก", () => {
-  it("คาดความเร็ว: เร่ง = เร็วขึ้น (ไม่เกิน vtop) · เบรก = ช้าลง (ไม่ติดลบ)", () => {
+  it("คาดความเร็ว: เร่ง = เร็วขึ้น (ไม่เกิน vtop) · เบรก = ใช้ความเร็วตอนนี้ (สีไม่เขียวจนกว่าจะช้าลงจริง)", () => {
     expect(projectedSpeed(50, 10, 100, 95)).toBeCloseTo(Math.sqrt(50 * 50 + 2000), 5);
     expect(projectedSpeed(90, 10, 500, 95)).toBe(95);
-    expect(projectedSpeed(50, -40, 100, 95)).toBe(0);
+    expect(projectedSpeed(50, -40, 100, 95)).toBe(50);
+  });
+
+  it("กดเบรกตอนยังเร็วเกินโค้ง: เส้นที่โค้งยังไม่เขียว (ไม่หลอกว่าปลอดภัย) · ช้าลงพอแล้วถึงเขียว", () => {
+    let apex = 0;
+    for (let i = 0; i < monza.n * 0.2; i++) if (monza.vref[i] < monza.vref[apex]) apex = i;
+    const s = apex * DS - 60;
+    const riskAtApex = (v: number, accel: number) => guideRisk(monza, apex * DS, 0, projectedSpeed(v, accel, 60, 97), 1);
+    const vApex = monza.vref[apex];
+    // เร็วเกิน 40% กำลังเบรกเต็มที่ → ยังแดง
+    expect(riskAtApex(vApex * 1.4, -45)).toBe(1);
+    // ช้าลงจนต่ำกว่าเป้าหมายแล้ว → เขียว ปล่อยเบรกได้ (ปล่อยแล้วสีไม่เปลี่ยน)
+    expect(riskAtApex(vApex * 0.95, -45)).toBe(0);
+    expect(riskAtApex(vApex * 0.95, 0)).toBe(0);
+    expect(s).toBeGreaterThan(0);
   });
 
   it("แบ่งโค้ง: ทุกจุดมีเลขโค้ง เลขต่อเนื่อง และสนามมีหลายโค้ง", () => {
