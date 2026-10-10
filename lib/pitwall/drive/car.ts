@@ -20,8 +20,8 @@ export const GHOST_DS = 10;
  * lane = เลนที่อยากไป (−1 ซ้าย · 0 racing line · 1 ขวา) · ot = กดใช้พลังงานแบตเตอรี่เสริม (Overtake)
  */
 export type Input = { throttle: boolean; brake: boolean; sm?: boolean; lane?: number; ot?: boolean };
-/** ผลจากรถคันอื่น: tow = ลมดูดจากคันหน้า (0..1) · dirty = อากาศเสียในโค้ง (0..1) */
-export type Mods = { tow: number; dirty: number };
+/** ผลจากรถคันอื่น: tow = ลมดูดจากคันหน้า (0..1) · dirty = อากาศเสียในโค้ง (0..1) · boost = แรงเสริมตอนแซง (ส่วนของความเร็วสูงสุด) */
+export type Mods = { tow: number; dirty: number; boost?: number };
 
 /** เปลี่ยนเลนได้เร็วสุดกี่เลนต่อวินาที (1 เลน = LANE_GAP ม.) */
 export const LANE_RATE = 1.1;
@@ -84,9 +84,9 @@ export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, ev
   else if (input.brake) c.energy = Math.min(1, c.energy + REGEN_BRAKE * dt);
   else if (!input.throttle) c.energy = Math.min(1, c.energy + REGEN_LIFT * dt);
   // ความเร็วสูงสุดตามแรงต้าน: ปีกพับ · ลมดูด · แบตเตอรี่เสริม
-  const vtop = (c.sm ? VSM : VMAX) * (1 + TOW_TOP * (mods?.tow ?? 0) + (c.ot ? OT_TOP : 0));
+  const vtop = (c.sm ? VSM : VMAX) * (1 + TOW_TOP * (mods?.tow ?? 0) + (c.ot ? OT_TOP : 0) + (mods?.boost ?? 0));
   // ขึ้นเนิน = แรงโน้มถ่วงดึงถอยหลัง · ลงเนิน = ไหลเร็วขึ้น
-  const drive = accelFor(v, vtop) * perf.accel + (c.ot ? OT_ACCEL : 0);
+  const drive = accelFor(v, vtop) * perf.accel + (c.ot ? OT_ACCEL : 0) + (mods?.boost ?? 0) * 30;
   const a = (input.brake ? -brakeAt(v) : input.throttle ? drive : -(c.sm ? coastSM(v) : coastAt(v))) - G * sample(t, t.grade, c.s);
   // ความเร็วสูงสุด: พับปีกกลับ/หมดลมดูดขณะเร็วกว่า → ลดลงเองทีละน้อย (ไม่ชนกำแพงความเร็ว)
   const top = vtop * perf.top;

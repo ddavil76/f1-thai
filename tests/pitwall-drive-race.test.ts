@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { buildDriveTrack, DS, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { buildDriveTrack, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
-import { advanceRemote, CAR_LEN, createRace, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
 import { TEAMS } from "@/lib/pitwall/teams";
 
@@ -17,7 +17,7 @@ const field = (n: number, playerAt = -1): Entrant[] =>
     .map((e, i) => ({ ...e, player: i === playerAt }));
 
 /** วิ่งการแข่งจนจบ (ผู้เล่น = ขับตามเส้นช่วย ถ้ามี) */
-function run(race: ReturnType<typeof createRace>, pick?: (s: number) => { lane?: number; ot?: boolean }) {
+function run(race: ReturnType<typeof createRace>, pick?: (s: number) => { pass?: boolean }) {
   const ev: RaceEvent[] = [];
   const all: RaceEvent[] = [];
   const pi = race.cars.findIndex((c) => c.player);
@@ -109,11 +109,9 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
   it("ผู้เล่นขับตามเส้นช่วย แซงจากท้ายกริดได้", () => {
     const n = 8;
     const race = createRace(monza, field(n, n - 1), { laps: 3, difficulty: "easy", seed: 9 });
-    const ev = run(race, (s) => {
-      // ไปเลนในก่อนโค้ง (แบบที่ผู้เล่นจะทำ)
-      const ahead = race.cars.filter((c) => !c.player && c.car.s > s && c.car.s - s < 30).length;
-      return { lane: ahead ? 1 : 0, ot: ahead > 0 };
-    });
+    // กดแซงทุกครั้งที่ปุ่มขึ้น (แบบที่ผู้เล่นจะทำ)
+    const me = race.cars.find((c) => c.player)!;
+    const ev = run(race, () => ({ pass: me.passLane !== null }));
     const pi = race.cars.findIndex((c) => c.player);
     expect(race.order.indexOf(pi)).toBeLessThan(n - 1);
     expect(ev.some((e) => e.kind === "overtake" && e.by === race.cars[pi].id)).toBe(true);
@@ -138,21 +136,78 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
     expect(worst).toBeGreaterThanOrEqual(CAR_LEN - 0.05);
   });
 
-  it("ชนท้ายแรง = โดนโทษ +5 วินาที", () => {
-    const race = createRace(monza, field(2, 1), { laps: 1, difficulty: "normal", seed: 1 });
+  /** ผู้เล่นตามหลังรถ AI ที่ช้ากว่ามาก (เลนเดียวกัน) */
+  const chase = () => {
+    const race = createRace(monza, field(2, 1), { laps: 3, difficulty: "normal", seed: 1 });
     race.lights = 0;
-    const [a, me] = race.cars;
-    a.car.s = 400;
-    a.car.v = 20;
-    a.car.lat = 0;
-    me.car.s = 400 - CAR_LEN - 0.05;
-    me.car.v = 60;
+    const [slow, me] = race.cars;
+    slow.slack = 0.25;
+    slow.car.s = 400;
+    slow.car.v = 40;
+    slow.car.lat = 0;
+    me.car.s = 340;
+    me.car.v = 70;
     me.car.lat = 0;
+    return { race, slow, me };
+  };
+
+  it("กันชนท้าย: เร่งเต็มที่ใส่คันหน้าที่ช้ากว่า → ค้างห่าง ~0.3 วิ ไม่ชน ไม่มีโทษ และปุ่มแซงขึ้น", () => {
+    const { race, slow, me } = chase();
+    let closest = Infinity;
+    let sawButton = false;
+    for (let k = 0; k < 120 * 20; k++) {
+      stepRace(race, { throttle: true, brake: false });
+      closest = Math.min(closest, slow.car.s - me.car.s);
+      if (me.passLane !== null) sawButton = true;
+    }
+    expect(closest).toBeGreaterThan(CAR_LEN + 1);
+    expect(me.held).toBe(true);
+    const gap = (slow.car.s - me.car.s - CAR_LEN) / me.car.v;
+    expect(gap).toBeGreaterThan(HOLD_GAP - 0.1);
+    expect(gap).toBeLessThan(HOLD_GAP + 0.15);
+    expect(me.car.s).toBeLessThan(slow.car.s);
+    expect(me.penalty).toBe(0);
+    expect(sawButton).toBe(true);
+  });
+
+  it("ปุ่มแซง: กดครั้งเดียว รถเปลี่ยนเลนเอง แซงผ่าน แล้วกลับ racing line", () => {
+    const { race, slow, me } = chase();
+    for (let k = 0; k < 120 * 8; k++) stepRace(race, { throttle: true, brake: false });
+    expect(me.passLane).not.toBeNull();
     const ev: RaceEvent[] = [];
-    stepRace(race, { throttle: true, brake: false, lane: 0 }, ev);
-    expect(me.penalty).toBe(5);
-    expect(ev.some((e) => e.kind === "contact")).toBe(true);
-    expect(DS).toBeGreaterThan(0);
+    stepRace(race, { throttle: true, brake: false, pass: true }, ev);
+    expect(me.pass).not.toBeNull();
+    expect(ev.some((e) => e.kind === "pass" && e.id === me.id)).toBe(true);
+    let wide = 0;
+    for (let k = 0; k < 120 * 20; k++) {
+      ev.length = 0;
+      stepRace(race, { ...idealInput(monza, me.car), throttle: true }, ev);
+      wide = Math.max(wide, Math.abs(me.car.lat));
+      expect(ev.some((e) => e.kind === "passEnd" && e.id === me.id && e.why !== "done")).toBe(false);
+    }
+    expect(wide).toBeGreaterThan(0.9);
+    expect(me.car.s).toBeGreaterThan(slow.car.s + CAR_LEN);
+    expect(me.pass).toBeNull();
+    expect(Math.abs(me.car.lat)).toBeLessThan(0.05);
+  });
+
+  it("AI ไม่ชนกัน: ไม่มีการเบรกกระชาก และแซงกันสำเร็จได้", () => {
+    const race = createRace(monza, field(10), { laps: 2, difficulty: "normal", seed: 4 });
+    const ev: RaceEvent[] = [];
+    let jolts = 0;
+    let done = 0;
+    for (let k = 0; k < 120 * 60 * 8 && !race.cars.every((c) => c.finish !== null); k++) {
+      ev.length = 0;
+      const before = race.cars.map((c) => c.car.v);
+      stepRace(race, { throttle: false, brake: false }, ev);
+      race.cars.forEach((c, i) => {
+        // ลดความเร็วเกิน 1 ม./วิ ในขั้นเดียว (120 ม./วิ²) = กระชาก (รถเบรกเองได้ไม่ถึงนั้น)
+        if (before[i] - c.car.v > 1) jolts++;
+      });
+      done += ev.filter((e) => e.kind === "passEnd" && e.why === "done").length;
+    }
+    expect(jolts).toBeLessThanOrEqual(3);
+    expect(done).toBeGreaterThan(0);
   });
 });
 

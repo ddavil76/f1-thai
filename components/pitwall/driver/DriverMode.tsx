@@ -184,7 +184,7 @@ function Setup({
             online
               ? "สร้างห้องแล้วส่งรหัสให้เพื่อน (สูงสุด 8 คน) ทุกคนเลือกรถ หัวห้องเลือกสนามและจำนวนรอบ แล้วออกตัวพร้อมกัน"
               : settings.mode === "race"
-                ? "ออกตัวจากกริดพร้อมคู่แข่ง AI เปลี่ยนเลนไปเลนในก่อนโค้ง ใช้ลมดูดและแบตเตอรี่ Overtake แซงขึ้นนำ"
+                ? "ออกตัวจากกริดพร้อมคู่แข่ง AI ตามติดคันหน้าแล้วกดปุ่ม “แซง” รถจะเปลี่ยนเลนและเร่งแซงให้เอง"
                 : "ขับเองหนึ่งคัน กดคันเร่งและเบรกตามเส้นช่วยบนถนน ยิ่งกดตรงจังหวะยิ่งเร็ว ทำเวลาให้ดีที่สุด"
           }
         />
@@ -209,7 +209,7 @@ function Setup({
           {settings.mode !== "tt" && (
             <>
               {" "}
-              · แข่ง: <b>←</b>/<b>A</b> <b>→</b>/<b>D</b> = เปลี่ยนเลน · <b>Q</b> (กดค้าง) = Overtake · มือถือ: ปุ่ม ◀ ▶ และ OT
+              · แข่ง: <b>Q</b> หรือ <b>D</b> = แซง (เมื่อปุ่มแซงขึ้น) · มือถือ: ปุ่ม “แซง” สีเหลือง
             </>
           )}
         </p>
@@ -256,16 +256,16 @@ function Setup({
           </div>
           <ul className="list-disc space-y-1 pl-4 text-[11px] text-white/65">
             <li>
-              <b className="text-white">เลน:</b> นอกจาก racing line มีเลนซ้าย/ขวา — เลนในของโค้งระยะสั้นกว่าแต่เข้าโค้งได้ช้ากว่า เคียงกันเข้าโค้ง คันด้านในที่หัวรถถึงก่อนได้ไป คันนอกต้องยอม
+              <b className="text-white">กันชนท้าย:</b> ตามทันคันหน้า รถจะค้างห่างไว้ราว 0.3 วินาทีเอง ไม่มีการชน
             </li>
             <li>
-              <b className="text-white">ลมดูด:</b> ตามหลังใกล้ ๆ บนทางตรงได้ความเร็วเพิ่ม · ตามติดในโค้ง อากาศเสียทำให้เกาะถนนน้อยลง
+              <b className="text-white">แซง:</b> ตอนค้างอยู่หลังคันหน้า ปุ่ม “แซง” จะขึ้น กดครั้งเดียว รถเปลี่ยนเลนไปฝั่งที่ว่าง (เลนในของโค้งถัดไปก่อน) ใช้แบตเตอรี่ Overtake เร่งแซง แล้วกลับเข้า racing line ให้เอง
             </li>
             <li>
-              <b className="text-white">Overtake:</b> แบตเตอรี่เสริม กดค้างแล้วแรงขึ้น · ชาร์จคืนตอนเบรก · ตามหลังไม่เกิน 1 วินาทีตอนผ่านเส้นต้นโซนทางตรง ได้พลังงานเพิ่ม
+              <b className="text-white">ลมดูด / แบต:</b> ตามหลังใกล้ ๆ บนทางตรงได้ความเร็วเพิ่ม · แบตชาร์จคืนตอนเบรก · ตามหลังไม่เกิน 1 วินาทีตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
             </li>
             <li>
-              <b className="text-white">กติกา:</b> ชนท้ายแรง โดนเพิ่มเวลา +5 วินาที
+              <b className="text-white">AI:</b> ตามคันหน้าไม่ชน แซงบนทางตรงยาว ถ้าถึงจุดเบรกแล้วยังขึ้นไม่ถึงครึ่งคันจะถอยกลับ ป้องกันได้ครั้งเดียวต่อทางตรง
             </li>
           </ul>
         </Card>
@@ -370,7 +370,7 @@ function JoinCard({ onRoom }: { onRoom: (code: string) => void }) {
   const [err, setErr] = useState<string | null>(null);
   return (
     <Card>
-      <Head kicker="ออนไลน์" title="ห้องแข่ง" sub="แต่ละเครื่องขับรถของตัวเอง แล้วเห็นรถเพื่อนวิ่งในสนามเดียวกัน · รถผ่านทะลุกันได้ (กันเน็ตกระตุก) แต่ชนท้ายแรงยังโดนโทษ" />
+      <Head kicker="ออนไลน์" title="ห้องแข่ง" sub="แต่ละเครื่องขับรถของตัวเอง แล้วเห็นรถเพื่อนวิ่งในสนามเดียวกัน · มีกันชนท้าย ตามติดแล้วกดปุ่มแซงเหมือนแข่งกับ AI" />
       <Btn
         className="w-full"
         disabled={busy}
@@ -574,6 +574,7 @@ type Hud = {
   tow: HTMLSpanElement | null;
   side: HTMLSpanElement | null;
   lane: HTMLSpanElement | null;
+  pass: HTMLButtonElement | null;
   lights: HTMLDivElement | null;
   dots: (SVGCircleElement | null)[];
 };
@@ -604,14 +605,14 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const team = TEAMS[settings.team] ?? TEAMS[0];
   const driver = team.drivers[settings.driver] ?? team.drivers[0];
   const host = useRef<HTMLDivElement>(null);
-  const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false, smArm: false, lane: 0, ot: false, touchO: false });
+  const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false, smArm: false, pass: false });
   const isRace = settings.mode === "race";
   const netEntrants = net?.entrants;
   const field = useMemo(() => netEntrants ?? (isRace ? buildField(settings) : []), [netEntrants, isRace, settings]);
   const [tower, setTower] = useState<TowerRow[]>([]);
   const [result, setResult] = useState<TowerRow[] | null>(null);
   const [runId, setRunId] = useState(0);
-  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, hint: null, dot: null, lap: null, corner: null, sm: null, battery: null, tow: null, side: null, lane: null, lights: null, dots: [] });
+  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, hint: null, dot: null, lap: null, corner: null, sm: null, battery: null, tow: null, side: null, lane: null, pass: null, lights: null, dots: [] });
   const sceneRef = useRef<DriveScene | null>(null);
   const [camera, setCamera] = useState<CameraMode>(settings.camera);
   const [line, setLine] = useState(settings.line);
@@ -662,9 +663,10 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         // กดหนึ่งครั้ง = เตรียมเปิด/ปิด Straight Mode (โหมดกดเอง)
         if (down && !e.repeat) input.current.smArm = !input.current.smArm;
       }
-      else if (down && (k === "ArrowLeft" || k === "a" || k === "A")) input.current.lane = Math.max(-1, input.current.lane - 1);
-      else if (down && (k === "ArrowRight" || k === "d" || k === "D")) input.current.lane = Math.min(1, input.current.lane + 1);
-      else if (k === "q" || k === "Q") input.current.ot = down;
+      else if (k === "q" || k === "Q" || k === "d" || k === "D") {
+        // กดแซง (ทำงานเมื่อปุ่มแซงขึ้น)
+        if (down && !e.repeat) input.current.pass = true;
+      }
       else if (down && k === "Escape") onExit();
       else return;
       e.preventDefault();
@@ -672,7 +674,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
     const dn = (e: KeyboardEvent) => keys(e, true);
     const up = (e: KeyboardEvent) => keys(e, false);
     // สลับแอป/แท็บ: ปล่อยปุ่มทั้งหมด กันรถเร่งค้าง
-    const blur = () => Object.assign(input.current, { throttle: false, brake: false, touchT: false, touchB: false, ot: false, touchO: false });
+    const blur = () => Object.assign(input.current, { throttle: false, brake: false, touchT: false, touchB: false, pass: false });
     window.addEventListener("keydown", dn);
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);
@@ -756,7 +758,6 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       }
 
       const car = race ? race.cars[pi].car : newCar(track);
-      if (race) input.current.lane = Math.round(car.lat);
       const revents: RaceEvent[] = [];
       let yieldMsgAt = 0;
       let towerAt = 0;
@@ -814,7 +815,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           const wasLights = race.lights > 0;
           while (acc >= RACE_STEP) {
             acc -= RACE_STEP;
-            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB, sm: settings.sm === "auto" || i.smArm, lane: i.lane, ot: i.ot || i.touchO };
+            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB, sm: settings.sm === "auto" || i.smArm, pass: i.pass };
+            i.pass = false;
             if (settings.autoBrake) {
               const ideal = idealInput(track, car);
               want.brake = want.brake || ideal.brake;
@@ -828,7 +830,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             for (const e of revents) {
               if (e.kind === "overtake" && e.by === me.id) setMsg({ id: now + 1, text: `แซงได้! P${race.order.indexOf(pi) + 1}`, tone: "good" });
               else if (e.kind === "overtake" && e.on === me.id) setMsg({ id: now + 2, text: `โดนแซง · P${race.order.indexOf(pi) + 1}`, tone: "bad" });
-              else if (e.kind === "contact" && e.id === me.id) setMsg({ id: now + 3, text: `ชนท้าย! โทษ +5 วินาที (รวม +${e.penalty})`, tone: "bad" });
+              else if (e.kind === "pass" && e.id === me.id) setMsg({ id: now + 3, text: "แซง! เปลี่ยนเลน + OVERTAKE", tone: "info" });
+              else if (e.kind === "passEnd" && e.id === me.id && e.why !== "done") setMsg({ id: now + 9, text: "แซงไม่สำเร็จ · กลับเข้าแถว", tone: "bad" });
               else if (e.kind === "detect" && e.id === me.id) setMsg({ id: now + 4, text: "ตามติดใน 1 วิ · ได้พลังงาน OVERTAKE", tone: "info" });
               else if (e.kind === "yield" && e.id === me.id && now - yieldMsgAt > 2500) {
                 yieldMsgAt = now;
@@ -965,9 +968,20 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             if (h.tow) h.tow.style.opacity = me.tow > 0.15 ? "1" : "0";
             if (h.side) {
               const sb = sideBySide(race, pi);
-              h.side.textContent = `${sb.left ? "◀ มีรถ" : ""}${sb.left && sb.right ? " · " : ""}${sb.right ? "มีรถ ▶" : ""}${me.blocked ? " · เปลี่ยนเลนไม่ได้" : ""}`;
+              h.side.textContent = `${sb.left ? "◀ มีรถ" : ""}${sb.left && sb.right ? " · " : ""}${sb.right ? "มีรถ ▶" : ""}`;
             }
-            if (h.lane) h.lane.textContent = ["เลนซ้าย", "racing line", "เลนขวา"][Math.round(car.lat) + 1] ?? "";
+            if (h.lane) h.lane.textContent = me.pass ? "กำลังแซง" : me.held ? "ตามติด" : "";
+            // ปุ่มแซง: ขึ้นเมื่อค้างอยู่หลังคันหน้าและมีฝั่งว่าง
+            if (h.pass) {
+              const st = me.pass ? "on" : me.passLane !== null ? (me.passLane < Math.round(car.lat) ? "left" : "right") : "off";
+              if (h.pass.dataset.st !== st) {
+                h.pass.dataset.st = st;
+                h.pass.textContent = st === "on" ? "กำลังแซง…" : st === "left" ? "◀ แซง" : "แซง ▶";
+                h.pass.style.opacity = st === "off" ? "0" : "1";
+                h.pass.style.pointerEvents = st === "left" || st === "right" ? "auto" : "none";
+                h.pass.classList.toggle("animate-pulse", st === "left" || st === "right");
+              }
+            }
             if (h.lights) {
               const lit = race.lights > 0 ? Math.min(5, Math.floor((lightsTotal - race.lights) / 0.8) + 1) : 0;
               h.lights.style.opacity = race.lights > 0 ? "1" : "0";
@@ -1153,45 +1167,20 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             </div>
           </div>
 
-          {/* ปุ่มสัมผัส: เปลี่ยนเลน + Overtake */}
-          <div className="absolute bottom-30 left-3 flex gap-2 sm:bottom-26">
-            {[
-              [-1, "◀", "เปลี่ยนไปเลนซ้าย"],
-              [1, "▶", "เปลี่ยนไปเลนขวา"],
-            ].map(([dir, label, aria]) => (
-              <button
-                key={label as string}
-                type="button"
-                aria-label={aria as string}
-                onPointerDown={() => {
-                  input.current.lane = Math.max(-1, Math.min(1, input.current.lane + (dir as number)));
-                }}
-                onContextMenu={(e) => e.preventDefault()}
-                className={`${pad} h-12 w-13 border-white/40 bg-black/40 text-lg active:bg-white/30`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* ปุ่มแซง: ขึ้นเองเมื่อตามติดคันหน้า · กดครั้งเดียว รถเปลี่ยนเลนและแซงให้ */}
           <button
+            ref={(n) => void (hud.current.pass = n)}
             type="button"
-            aria-label="Overtake (กดค้าง)"
+            data-st="off"
+            aria-label="แซงคันหน้า"
             onPointerDown={() => {
-              input.current.touchO = true;
-            }}
-            onPointerUp={() => {
-              input.current.touchO = false;
-            }}
-            onPointerCancel={() => {
-              input.current.touchO = false;
-            }}
-            onPointerLeave={() => {
-              input.current.touchO = false;
+              input.current.pass = true;
             }}
             onContextMenu={(e) => e.preventDefault()}
-            className={`${pad} absolute bottom-30 right-33 h-12 w-16 border-[#facc15] bg-black/40 text-xs text-[#facc15] active:bg-[#facc15]/40 sm:bottom-26 sm:right-30`}
+            style={{ opacity: 0, pointerEvents: "none" }}
+            className={`${pad} poster absolute bottom-30 left-3 h-14 w-32 border-[#facc15] bg-[#facc15]/25 text-base text-[#facc15] transition-opacity active:bg-[#facc15]/60 sm:bottom-26`}
           >
-            OT
+            แซง ▶
           </button>
 
           {/* ผลการแข่ง */}
