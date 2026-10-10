@@ -126,7 +126,7 @@ export class DriveRoom {
       case "state": {
         if (this.phase !== "race" || !this.grid.includes(id)) return null;
         const st = msg.st;
-        if (!Array.isArray(st) || st.length !== 9 || st.some((x) => typeof x !== "number" || !Number.isFinite(x))) return null;
+        if (!Array.isArray(st) || st.length < 9 || st.length > 13 || st.some((x) => typeof x !== "number" || !Number.isFinite(x))) return null;
         this.states[id] = st;
         if (st[8] >= 0 && !this.firstFinish) this.firstFinish = now;
         return null;

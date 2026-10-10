@@ -129,9 +129,16 @@ export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, ev
     c.slide -= Math.sign(c.slide) * Math.min(Math.abs(c.slide), 3 * dt);
   }
 
-  const before = c.s;
   // v = ความเร็วจริงบน racing line · s นับตามเส้นกลาง (ในโค้งด้านใน 1 ม. ของไลน์ = มากกว่า 1 ม. ของเส้นกลาง)
-  c.s += (c.v * dt) / Math.max(0.2, laneValue(t, "stretch", c.s, c.lat));
+  advanceCar(t, c, (c.v * dt) / Math.max(0.2, laneValue(t, "stretch", c.s, c.lat)), events);
+  return events;
+}
+
+/** เลื่อนรถไปตามสนาม ds เมตร (เส้นกลาง) หนึ่งขั้นเวลา: บันทึกเวลาทุก GHOST_DS เมตร · ข้ามเส้นชัย = จบรอบ (ใช้กับพิทเลนด้วย) */
+export function advanceCar(t: DriveTrack, c: CarState, ds: number, events: StepEvent[] = []): StepEvent[] {
+  const dt = STEP;
+  const before = c.s;
+  c.s += ds;
   c.t += dt;
 
   // บันทึกเวลาที่ผ่านทุก GHOST_DS เมตรในรอบนี้
@@ -189,15 +196,16 @@ export function ghostDistance(best: number[], tLap: number): number {
 /**
  * ผู้ช่วยขับ: ปุ่มที่ควรกดตามเส้นช่วย (ใช้ทำเบรกอัตโนมัติ และทดสอบ)
  * — เบรกเฉพาะตอนยังเร็วกว่าความเร็วอ้างอิง ไม่เบรกจนรถหยุดกลางโซนแดง
+ * — corner = ตัวคูณความเร็วช่วงเบรก/โค้ง (ยางเกาะน้อยลง = เข้าโค้งช้าลง) ไม่กระทบทางตรง
  */
-export function idealInput(t: DriveTrack, c: CarState, scale = 1): Input {
-  return { ...idealPedals(t, c, scale), sm: true };
+export function idealInput(t: DriveTrack, c: CarState, scale = 1, corner = 1): Input {
+  return { ...idealPedals(t, c, scale, corner), sm: true };
 }
 
 /** ปุ่มที่ควรกดตามเลนที่อยู่ · scale < 1 = ขับช้ากว่าความเร็วอ้างอิง (AI ฝีมือน้อยกว่า) */
-function idealPedals(t: DriveTrack, c: CarState, scale = 1): Input {
+function idealPedals(t: DriveTrack, c: CarState, scale = 1, corner = 1): Input {
   const z = laneZone(t, c.s, c.lat);
-  const ref = laneValue(t, "vref", c.s, c.lat) * scale;
+  const ref = laneValue(t, "vref", c.s, c.lat) * scale * (z === "throttle" ? 1 : corner);
   if (c.v > ref + 0.3) return { throttle: false, brake: z === "brake" || c.v > ref + 3 };
   return { throttle: z === "throttle" || c.v < ref - 1, brake: false };
 }
