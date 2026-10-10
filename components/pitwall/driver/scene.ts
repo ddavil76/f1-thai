@@ -10,6 +10,7 @@ import type * as THREE_NS from "three";
 import { DS, VMAX, VSM, heightAt, laneValue, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
 import { guideColor, guideFade, guideNeeded, guideRisk, projectedSpeed } from "@/lib/pitwall/drive/guide";
 import { buildCar, type Livery } from "./carModel";
+import { buildTerrain, STAND_DEPTH, STAND_RISE, STAND_ROOF, STAND_TIERS } from "./terrain";
 
 type Three = typeof THREE_NS;
 type Obj = THREE_NS.Object3D;
@@ -496,138 +497,12 @@ export function createDriveScene(opts: {
     }
   }
 
-  /* ---------- ฉากรอบสนาม: ต้นไม้ อัฒจันทร์ ---------- */
-  // ตารางค้นหาจุดสนามใกล้ ๆ (กันวางของทับถนน)
-  const CELL = 40;
-  const grid = new Map<string, number[]>();
-  for (let i = 0; i < t.n; i += 2) {
-    const k = `${Math.floor(t.x[i] / CELL)},${Math.floor(t.z[i] / CELL)}`;
-    const list = grid.get(k);
-    if (list) list.push(i);
-    else grid.set(k, [i]);
-  }
-  const nearTrack = (x: number, z: number, d: number) => {
-    const cx = Math.floor(x / CELL);
-    const cz = Math.floor(z / CELL);
-    const reach = Math.ceil(d / CELL);
-    for (let a = -reach; a <= reach; a++)
-      for (let b = -reach; b <= reach; b++) {
-        for (const i of grid.get(`${cx + a},${cz + b}`) ?? []) if (Math.hypot(t.x[i] - x, t.z[i] - z) < d) return true;
-      }
-    return false;
-  };
-
-  /* ---------- พื้นดิน: ตามความสูงของสนาม + เนินไกล ๆ ---------- */
-  // ตารางหยาบ: ช่องที่มีถนน = ความสูงถนน (ต่ำกว่านิด) · ช่องอื่นเกลี่ยจากรอบ ๆ ให้เป็นเนินต่อเนื่อง
-  const MARGIN = 1500;
-  const FC = 50;
-  const fx0 = minX - MARGIN;
-  const fz0 = minZ - MARGIN;
-  const fw = Math.ceil((maxX - minX + 2 * MARGIN) / FC) + 1;
-  const fh = Math.ceil((maxZ - minZ + 2 * MARGIN) / FC) + 1;
-  const field = new Float32Array(fw * fh);
-  const fixed = new Uint8Array(fw * fh);
-  const dist = new Float32Array(fw * fh).fill(1e9);
-  {
-    const sum = new Float32Array(fw * fh);
-    const cnt = new Uint16Array(fw * fh);
-    let mean = 0;
-    for (let i = 0; i < t.n; i++) {
-      const k = Math.round((t.z[i] - fz0) / FC) * fw + Math.round((t.x[i] - fx0) / FC);
-      // ทางที่ซ้อนกัน (สะพาน) ใช้ระดับล่าง
-      sum[k] = cnt[k] ? Math.min(sum[k] / cnt[k], t.y[i]) * (cnt[k] + 1) : t.y[i];
-      cnt[k]++;
-      mean += t.y[i] / t.n;
-    }
-    for (let k = 0; k < fw * fh; k++) {
-      if (cnt[k]) {
-        field[k] = sum[k] / cnt[k] - 0.4;
-        fixed[k] = 1;
-        dist[k] = 0;
-      } else field[k] = mean;
-    }
-    // ระยะห่างจากถนน (หน่วยช่อง) แบบไล่สองทิศ
-    for (let pass = 0; pass < 2; pass++)
-      for (let zz = 0; zz < fh; zz++)
-        for (let xx = 0; xx < fw; xx++) {
-          const X = pass ? fw - 1 - xx : xx;
-          const Z = pass ? fh - 1 - zz : zz;
-          const k = Z * fw + X;
-          const d = pass ? 1 : -1;
-          const nx = X - d;
-          const nz = Z - d;
-          if (nx >= 0 && nx < fw) dist[k] = Math.min(dist[k], dist[Z * fw + nx] + 1);
-          if (nz >= 0 && nz < fh) dist[k] = Math.min(dist[k], dist[nz * fw + X] + 1);
-        }
-    const tmpF = new Float32Array(fw * fh);
-    for (let it = 0; it < 160; it++) {
-      for (let zz = 0; zz < fh; zz++)
-        for (let xx = 0; xx < fw; xx++) {
-          const k = zz * fw + xx;
-          if (fixed[k]) {
-            tmpF[k] = field[k];
-            continue;
-          }
-          const l = field[zz * fw + Math.max(0, xx - 1)];
-          const rr = field[zz * fw + Math.min(fw - 1, xx + 1)];
-          const u = field[Math.max(0, zz - 1) * fw + xx];
-          const dd = field[Math.min(fh - 1, zz + 1) * fw + xx];
-          tmpF[k] = (l + rr + u + dd) / 4;
-        }
-      field.set(tmpF);
-    }
-  }
-  const fieldAt = (arr: Float32Array, x: number, z: number) => {
-    const gx = Math.max(0, Math.min(fw - 1.001, (x - fx0) / FC));
-    const gz = Math.max(0, Math.min(fh - 1.001, (z - fz0) / FC));
-    const ix = Math.floor(gx);
-    const iz = Math.floor(gz);
-    const ax = gx - ix;
-    const az = gz - iz;
-    const k = iz * fw + ix;
-    return (arr[k] * (1 - ax) + arr[k + 1] * ax) * (1 - az) + (arr[k + fw] * (1 - ax) + arr[k + fw + 1] * ax) * az;
-  };
-  const hillSeed = r() * 100;
-  /** รัศมีที่พื้นต้องอิงระดับถนน (เมตร) · ความชันคันดินข้างสนามสูงสุด */
-  const NEAR = 120;
-  const SINK = 1.1;
-  const BANK = 0.3;
-  const SEG = high ? 24 : 40;
-  const FLAT = Math.max(maxEdge + 6, SEG * 1.5);
-  /** ความสูงพื้นดินที่ (x, z): ใกล้ถนน = ต่ำกว่าถนนเล็กน้อย · ไกลออกไปมีเนินเขาเพิ่มขึ้นเรื่อย ๆ */
-  function terrainAt(x: number, z: number) {
-    let h = fieldAt(field, x, z);
-    const far = Math.min(1, Math.max(0, (fieldAt(dist, x, z) * FC - 120) / 600));
-    h +=
-      far *
-      (16 * Math.sin(x / 210 + hillSeed) * Math.sin(z / 260 - hillSeed * 0.7) +
-        7 * Math.sin(x / 90 - z / 120 + hillSeed * 1.3) +
-        24 * far * Math.max(0, Math.sin(x / 520 + z / 610 + hillSeed)));
-    // ใกล้ถนน: พื้นต้องตามระดับถนน (ต่ำกว่านิด) แล้วค่อยลาดขึ้น/ลงได้ไม่เกินความชันคันดิน — กันพื้นโผล่ทับถนนตรงเนินชัน
-    // ถนนทุกเส้นที่อยู่ใกล้: พื้นต้องต่ำกว่าทุกเส้น (สนามที่ถนนสองช่วงสูงต่างกันอยู่ใกล้กัน) ·
-    // และไม่ต่ำกว่าเส้นที่ใกล้สุดเกินความชันคันดิน (ไม่เป็นหน้าผา)
-    const cx = Math.floor(x / CELL);
-    const cz = Math.floor(z / CELL);
-    let best = NEAR;
-    let lower = -Infinity;
-    let upper = Infinity;
-    for (let a = -3; a <= 3; a++)
-      for (let b = -3; b <= 3; b++)
-        for (const i of grid.get(`${cx + a},${cz + b}`) ?? []) {
-          const d = Math.hypot(t.x[i] - x, t.z[i] - z);
-          if (d >= NEAR) continue;
-          // ถนนเอียง: ขอบด้านในต่ำกว่ากลางถนน
-          const low = t.y[i] - SINK - Math.abs(Math.tan(t.bank[i])) * Math.max(t.wl[i], t.wr[i]);
-          const room = Math.max(0, d - FLAT) * BANK;
-          upper = Math.min(upper, low + room);
-          if (d < best) {
-            best = d;
-            lower = low - room;
-          }
-        }
-    if (upper !== Infinity) h = Math.min(upper, Math.max(lower, h));
-    return h;
-  }
+  /* ---------- ฉากรอบสนาม: พื้น ต้นไม้ อัฒจันทร์ (ไม่บังถนนข้างหน้าจากมุมกล้อง — ดู terrain.ts) ---------- */
+  const terra = buildTerrain(t, { high, hillSeed: r() * 100 });
+  const terrainAt = terra.heightAt;
+  const nearTrack = terra.nearTrack;
+  const MARGIN = terra.margin;
+  const SEG = terra.seg;
   {
     const seg = SEG;
     const gw = maxX - minX + 2 * MARGIN;
@@ -666,7 +541,10 @@ export function createDriveScene(opts: {
       const p = poseAt(t, i * DS, side * off);
       if (nearTrack(p.x, p.z, maxEdge + 10)) continue;
       const s = 0.7 + r() * 0.8;
-      pos.set(p.x, terrainAt(p.x, p.z) - 0.1, p.z);
+      const gy = terrainAt(p.x, p.z);
+      // ยอดไม้ (9.5 ม. × ขนาด × ยืดสูงสุด 1.3) ต้องไม่ขึ้นมาบังเส้นสายตาไปถนนข้างหน้า
+      if (gy + 9.5 * s * 1.3 > terra.sightFloor(p.x, p.z)) continue;
+      pos.set(p.x, gy - 0.1, p.z);
       q.setFromAxisAngle(up, r() * Math.PI * 2);
       sc.set(s, s * (0.8 + r() * 0.5), s);
       m.compose(pos, q, sc);
@@ -695,40 +573,25 @@ export function createDriveScene(opts: {
     const standMat = keep(new THREE.MeshStandardMaterial({ map: crowd, roughness: 0.9 }));
     const frameMat = keep(new THREE.MeshStandardMaterial({ color: 0xd9dde3, roughness: 0.6, metalness: 0.2 }));
     const roofMat = keep(new THREE.MeshStandardMaterial({ color: 0xf2f4f7, roughness: 0.5 }));
-    // ทางตรงยาว = ช่วงคันเร่งต่อเนื่อง
-    const runs: { i: number; len: number }[] = [];
-    for (let i = 0; i < t.n; i++) {
-      if (t.zone[i] !== "throttle" || t.zone[(i - 1 + t.n) % t.n] === "throttle") continue;
-      let len = 0;
-      while (len < t.n && t.zone[(i + len) % t.n] === "throttle") len++;
-      runs.push({ i, len });
-    }
-    runs.sort((a, b) => b.len - a.len);
-    // เส้นสตาร์ทมีอัฒจันทร์เสมอ
-    const spots = [{ i: t.n - Math.round(150 / DS), len: Math.round(300 / DS) }, ...runs.slice(0, high ? 4 : 2)];
-    for (const run of spots) {
-      const len = Math.min(run.len * DS * 0.7, 260);
-      const mid = run.i * DS + (run.len * DS) / 2;
-      // ด้านนอก = ฝั่งตรงข้ามกับโค้งถัดไป
-      const side = sample(t, t.curve, run.i * DS + run.len * DS + 40) > 0 ? -1 : 1;
-      const k = Math.round(mid / DS) % t.n;
-      const p = poseAt(t, mid, side > 0 ? R(k) + RUN + 6 : -(L(k) + RUN + 6));
+    for (const st of terra.stands) {
+      const { len, side } = st;
       const g = new THREE.Group();
-      g.position.set(p.x, heightAt(t, mid), p.z);
+      g.position.set(st.x, st.y, st.z);
       // แกน x ของกลุ่มตามทิศถนน · แกน z ชี้ออกจากถนน (ฝั่ง side)
-      g.rotation.y = -p.heading;
-      const tiers = 6;
+      g.rotation.y = -st.heading;
+      const tiers = STAND_TIERS;
+      const top = tiers * STAND_RISE + STAND_ROOF;
       for (let k = 0; k < tiers; k++) {
-        const step = new THREE.Mesh(keep(new THREE.BoxGeometry(len, 1.2, 2.2)), k % 2 ? standMat : frameMat);
-        step.position.set(0, 0.6 + k * 1.2, side * (1.1 + k * 2.2));
+        const step = new THREE.Mesh(keep(new THREE.BoxGeometry(len, STAND_RISE, STAND_DEPTH)), k % 2 ? standMat : frameMat);
+        step.position.set(0, STAND_RISE / 2 + k * STAND_RISE, side * (STAND_DEPTH / 2 + k * STAND_DEPTH));
         g.add(step);
       }
-      const roof = new THREE.Mesh(keep(new THREE.BoxGeometry(len, 0.3, tiers * 2.2 + 2)), roofMat);
-      roof.position.set(0, tiers * 1.2 + 4, side * (tiers * 1.1 + 0.5));
+      const roof = new THREE.Mesh(keep(new THREE.BoxGeometry(len, 0.3, tiers * STAND_DEPTH + 2)), roofMat);
+      roof.position.set(0, top, side * ((tiers * STAND_DEPTH) / 2 + 0.5));
       g.add(roof);
       for (const x of [-len / 2, 0, len / 2]) {
-        const post = new THREE.Mesh(keep(new THREE.BoxGeometry(0.4, tiers * 1.2 + 4, 0.4)), frameMat);
-        post.position.set(x, (tiers * 1.2 + 4) / 2, side * (tiers * 2.2 + 0.6));
+        const post = new THREE.Mesh(keep(new THREE.BoxGeometry(0.4, top, 0.4)), frameMat);
+        post.position.set(x, top / 2, side * (tiers * STAND_DEPTH + 0.6));
         g.add(post);
       }
       g.traverse((o) => {
