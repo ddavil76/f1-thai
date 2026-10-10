@@ -11,6 +11,7 @@ import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, pe
 import { buildDriveTrack, DS, laneValue, laneZone, poseAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceEvent } from "@/lib/pitwall/drive/race";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
+import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
 import { cornerAhead } from "@/lib/pitwall/drive/corners";
 import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
@@ -23,6 +24,8 @@ type Settings = {
   line: boolean;
   /** แบบเส้นช่วย: ไดนามิก (สีตามความเร็วตอนนี้) · เฉพาะโค้ง · คงที่ (สามสีตายตัว) */
   guide: GuideMode;
+  /** โหมดฝึก: เส้นช่วยค่อย ๆ จางในโค้งที่ผ่านได้ดีติดกัน (หลุดโค้ง = กลับมาเต็ม) */
+  train: boolean;
   autoBrake: boolean;
   camera: CameraMode;
   gfx: "auto" | Gfx;
@@ -83,6 +86,7 @@ const MODEL_FILE: Record<string, string> = {
 };
 // v2: ผังสนามจริง + เนิน — เวลาเก่า (ผังคร่าว ๆ) เทียบกันไม่ได้
 const bestKey = (circuit: string) => `pitwall-drive-best2:${circuit}`;
+const masteryKey = (circuit: string) => `pitwall-drive-mastery:${circuit}`;
 
 /** สนามที่สร้างแล้ว (สร้างครั้งเดียวต่อสนาม) */
 const trackCache = new Map<string, DriveTrack | null>();
@@ -135,7 +139,7 @@ const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 export default function DriverMode({ name, onExit }: { name: string; onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = typeof window === "undefined" ? null : readJson<Partial<Settings>>(SETTINGS_KEY);
-    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", ...saved };
+    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", train: false, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", ...saved };
   });
   const [driving, setDriving] = useState(false);
   const [room, setRoom] = useState<string | null>(null);
@@ -221,7 +225,9 @@ function Setup({
                 <b className="text-(--color-f1-text)">แดง</b> เร็วเกิน ต้องเบรกเดี๋ยวนี้
               </p>
             </div>
-            <p className="text-[11px] text-white/60">ลูกศรบนถนนเปลี่ยนสีตามความเร็วตอนนี้ — เบรกแล้วสีแดงจะกลายเป็นเหลือง/เขียว · ตามติดคันหน้าในโค้ง (อากาศเสีย) สีจะแดงเร็วขึ้น</p>
+            <p className="text-[11px] text-white/60">
+              ลูกศรบนถนนเปลี่ยนสีตามความเร็วที่คุณจะมีตอนไปถึงจุดนั้น (กำลังเร่ง = แดงเร็วขึ้น · กำลังเบรก = ค่อย ๆ กลับเป็นเขียว) · <b className="text-white">เส้นขาวขวางถนน</b> = จุดที่ต้องเริ่มเบรก · ตามติดคันหน้าในโค้ง (อากาศเสีย) สีจะแดงเร็วขึ้น · โหมดฝึก: ผ่านโค้งไหนได้ไม่หลุด 3 ครั้ง เส้นของโค้งนั้นจะจางเกือบหาย (หลุดเมื่อไหร่กลับมาเต็ม)
+            </p>
           </div>
         )}
         <p className="text-xs text-white/60">
@@ -361,6 +367,10 @@ function Setup({
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">เบรกอัตโนมัติ</span>
             <Seg value={settings.autoBrake ? 1 : 0} onChange={(v) => set({ autoBrake: v === 1 })} options={[{ v: 0, label: "ปิด" }, { v: 1, label: "เปิด" }]} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold text-white/70">โหมดฝึก (เส้นจางเมื่อจำโค้งได้)</span>
+            <Seg value={settings.train ? 1 : 0} onChange={(v) => set({ train: v === 1 })} options={[{ v: 0, label: "ปิด" }, { v: 1, label: "เปิด" }]} />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">Straight Mode (พับปีกบนทางตรง)</span>
@@ -828,6 +838,15 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       let hudAt = 0;
       let wasInvalid = false;
       let prevV = car.v;
+      // โหมดฝึก: ความจำของแต่ละโค้ง (เก็บในเครื่องแยกตามสนาม) · ผ่านโค้งโดยไม่หลุด = จำได้มากขึ้น
+      const corners = cornerMap(track);
+      const cornerAt = (ss: number) => corners[Math.floor((((ss / DS) % track.n) + track.n) % track.n)];
+      let mastery: Mastery = (settings.train && readJson<Mastery>(masteryKey(settings.circuit))) || {};
+      let curCorner = cornerAt(car.s);
+      let cornerDirty = false;
+      // ช่วงแรกที่เริ่มกลางทาง (ออกตัว) ไม่นับ
+      let cornerPrimed = false;
+      const fadeAt = settings.train ? (ss: number) => mastery[cornerAt(ss)] ?? 0 : undefined;
       // นับถอยหลังสั้น ๆ ก่อนออกตัว (Time Trial) · แข่ง = ไฟสตาร์ท
       let wait = 1.6;
       let resultShown = false;
@@ -968,7 +987,21 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         scene.setLane(car.lat);
         // เส้นช่วยไดนามิก: การเกาะถนนของรถเรา (ทีม × อากาศเสียจากคันหน้า)
         const grip = race ? race.cars[pi].perf.grip * (1 - DIRTY_GRIP * race.cars[pi].dirty) : perf.grip;
-        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide: { lat: car.lat, grip } });
+        if (settings.train) {
+          if (car.offT > 0) cornerDirty = true;
+          const c = cornerAt(car.s);
+          if (c !== curCorner) {
+            // จบช่วงโค้งหนึ่ง: ไม่หลุดเลย = จำได้มากขึ้น · หลุด = กลับไปเริ่มใหม่
+            if (cornerPrimed) {
+              mastery = learnCorner(mastery, curCorner, !cornerDirty);
+              writeJson(masteryKey(settings.circuit), mastery);
+            }
+            cornerPrimed = true;
+            curCorner = c;
+            cornerDirty = false;
+          }
+        }
+        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide: { lat: car.lat, grip, fadeAt } });
         scene.render();
 
         const kmh = car.v * 3.6;

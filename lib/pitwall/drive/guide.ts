@@ -25,3 +25,59 @@ export function guideColor(risk: number) {
 
 /** โหมด "เฉพาะโค้ง": ซ่อนช่วงทางตรงที่ไม่มีอะไรต้องระวัง */
 export const guideNeeded = (t: DriveTrack, s: number, lat: number, risk: number) => risk > 0 || laneZone(t, s, lat) !== "throttle";
+
+/**
+ * ความเร็วที่จะมีตอนไปถึงระยะ d ข้างหน้า ถ้ายังทำแบบเดิม (เร่งต่อ/ผ่อน/เบรกด้วยอัตราเร่งตอนนี้) · ไม่เกิน vtop
+ * — กำลังเร่ง: ไปถึงโค้งจะเร็วกว่าตอนนี้ เส้นแดงเร็วขึ้น · กำลังเบรก: เส้นค่อย ๆ กลับเป็นเขียว
+ */
+export function projectedSpeed(v: number, accel: number, d: number, vtop: number) {
+  const a = Math.max(-45, Math.min(15, accel));
+  return Math.min(Math.max(v, vtop), Math.sqrt(Math.max(0, v * v + 2 * a * d)));
+}
+
+/** จุดที่ต้องเริ่มเบรก (ระยะข้างหน้า, เมตร) ตามความเร็วที่คาดไว้ · null = ยังไม่ต้องเบรกภายใน reach */
+export function brakePoint(t: DriveTrack, s: number, lat: number, v: number, accel: number, grip: number, vtop: number, reach: number, step = 2) {
+  for (let d = 0; d <= reach; d += step) if (guideRisk(t, s + d, lat, projectedSpeed(v, accel, d, vtop), grip) > 0) return d;
+  return null;
+}
+
+/**
+ * แบ่งสนามเป็นช่วงโค้ง (ใช้กับโหมดฝึก): แต่ละจุดได้เลขของโค้งที่กำลังจะถึง/อยู่ในโค้งนั้น
+ * — โค้ง = ช่วงที่ไม่ใช่โซนคันเร่งของ racing line · ทางตรงก่อนโค้งนับรวมกับโค้งนั้น (จุดเบรกอยู่บนทางตรง)
+ */
+export function cornerMap(t: DriveTrack): Int16Array {
+  const zone = t.lanes[1].zone;
+  const n = t.n;
+  const id = new Int16Array(n).fill(-1);
+  // หาจุดเริ่มที่เป็นทางตรง จะได้ไม่เริ่มกลางโค้ง
+  let start = 0;
+  while (start < n && zone[start] !== "throttle") start++;
+  if (start >= n) return id.fill(0);
+  let c = 0;
+  let inCorner = false;
+  const ends: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const i = (start + k) % n;
+    const corner = zone[i] !== "throttle";
+    if (inCorner && !corner) {
+      ends.push(i);
+      c++;
+    }
+    inCorner = corner;
+    id[i] = c;
+  }
+  if (inCorner) c++;
+  // ทางตรงหลังโค้งสุดท้ายวนกลับไปเป็นของโค้งแรก
+  const count = Math.max(1, c);
+  for (let i = 0; i < n; i++) id[i] = id[i] % count;
+  return id;
+}
+
+/** ความจำโค้ง 0..1 ต่อโค้ง: ผ่านดี (ไม่หลุด) +1/3 · หลุดโค้ง = เริ่มใหม่ */
+export type Mastery = Record<number, number>;
+export const MASTERY_STEP = 1 / 3;
+export function learnCorner(m: Mastery, corner: number, clean: boolean): Mastery {
+  return { ...m, [corner]: clean ? Math.min(1, (m[corner] ?? 0) + MASTERY_STEP) : 0 };
+}
+/** เส้นจางลงตามความจำ (เหลือเห็นราง ๆ) — แต่ถ้าเร็วเกินมาก (เสี่ยงหลุด) แสดงเต็มเสมอ */
+export const guideFade = (mastery: number, risk: number) => (risk > 0.6 ? 0 : Math.max(0, Math.min(1, mastery)) * 0.85);
