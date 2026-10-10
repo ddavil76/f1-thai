@@ -264,10 +264,10 @@ function Setup({
               <b className="text-white">ตามติด:</b> ตามทันคันหน้าบนทางตรง ความเร็วถูกจำกัดให้ค้างห่างราว 0.1 วินาที · เข้าโค้งต้องเบรกเอง ไม่เบรก = ชนท้าย เสียความเร็วมาก
             </li>
             <li>
-              <b className="text-white">แซง:</b> ปุ่ม “แซง” พร้อมเมื่อห่างคันหน้าไม่เกิน ~0.28 วิ (ตั้งแต่ระยะนั้นจนติดคันหน้า) เหลือทางตรงพอ และฝั่งข้างว่าง/ถนนกว้างพอ (ใกล้โค้งปุ่มเป็นสีเทา) · กดแล้วรถขึ้นไปเคียงเอง แล้วกลับ racing line เมื่อพ้น · ถึงจุดเบรกแล้วยังขึ้นไม่ถึงครึ่งคัน รถถอยกลับไปต่อท้าย
+              <b className="text-white">แซง:</b> ปุ่ม “แซง” พร้อมเมื่อห่างคันหน้าไม่เกิน ~0.28 วิ (ตั้งแต่ระยะนั้นจนติดคันหน้า) และฝั่งข้างว่าง/ถนนกว้างพอ · บนทางตรง กดแล้วรถขึ้นไปเคียงเอง (ถึงจุดเบรกแล้วยังขึ้นไม่ถึงครึ่งคัน = ถอยกลับไปต่อท้าย) · ก่อนเข้าโค้ง (ยังห่างจุดเบรก 70 ม.+) ปุ่มเป็น “แซงด้านใน” = ดำเข้าด้านในโค้ง คันหน้าต้องเว้นที่ให้ ถ้าถึงจุดเบรกแล้วหัวรถเลยล้อหลังคันหน้าได้ เข้าโค้งเคียงกัน คันด้านนอกต้องยอม · เบรกเองตามเส้นช่วยด้วย
             </li>
             <li>
-              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง (แรงเร่งเพิ่ม · ความเร็วสูงสุด +5% · หมดใน ~4.5 วิ) · เบรกชาร์จเร็ว (แถบเขียว) · ยกคันเร่งชาร์จช้า · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
+              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง (แรงเร่งเพิ่ม · ความเร็วสูงสุด +5% · หมดใน ~4.5 วิ) · ใช้ OT ตอนตามติดคันหน้า (≤ 0.15 วิ) คันหน้าเสียกำลังชั่วครู่ แซงง่ายขึ้น · เบรกชาร์จเร็ว (แถบเขียว) · ยกคันเร่งชาร์จช้า · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
             </li>
             <li>
               <b className="text-white">หลุดโค้ง:</b> เข้าโค้งเร็วเกิน รถลงหญ้า ความเร็วหายเกือบครึ่ง · เตือน 3 ครั้ง ครั้งต่อไปโดน +5 วินาทีทุกครั้ง
@@ -276,7 +276,7 @@ function Setup({
               <b className="text-white">ยาง:</b> Soft (แดง) เกาะดีสุดแต่หมดเร็ว · Medium (เหลือง) กลาง ๆ · Hard (ขาว) ทนสุด · สึกตามระยะ และสึกเร็วขึ้นเมื่อไถล/หลุดโค้ง · ใกล้หมดเกาะถนนลดลงเร็ว (เส้นช่วยแดงเร็วขึ้นตาม) · ยางใหม่จากพิทยังเย็นช่วงครึ่งรอบแรก
             </li>
             <li>
-              <b className="text-white">เข้าพิท (ต้องเข้าอย่างน้อย 1 ครั้ง ไม่งั้นโทษ +{PIT_MISS_PENALTY} วิ):</b> กด PIT แล้วเลือกยาง → ถึงทางเข้าพิท (ก่อนเส้นชัย) รถวิ่งเองที่ 80 กม./ชม. → กด “จอด!” ให้รถหยุดตรงกรอบอู่ทีม (แถบเลื่อนเข้าช่องเขียว — อู่แต่ละทีมอยู่คนละตำแหน่ง จังหวะจึงต่างกัน) จอดตรง = เปลี่ยนยาง ~2.3 วิ · ก่อน/เลยกรอบ = ช้าลง · ไฟเขียวแล้วกด “ไป!” (กดก่อนไฟเขียว เสียเวลาเพิ่ม)
+              <b className="text-white">เข้าพิท (ต้องเข้าอย่างน้อย 1 ครั้ง ไม่งั้นโทษ +{PIT_MISS_PENALTY} วิ):</b> กด PIT แล้วเลือกยาง → ถึงทางเข้าพิท (ช่วงทางตรงเส้นชัย) รถวิ่งเองที่ 80 กม./ชม. → กด “จอด!” ให้รถหยุดตรงกรอบอู่ทีม (แถบเลื่อนเข้าช่องเขียว — อู่แต่ละทีมอยู่คนละตำแหน่ง จังหวะจึงต่างกัน) จอดตรง = เปลี่ยนยาง ~2.3 วิ · ก่อน/เลยกรอบ = ช้าลง · ไฟเขียวแล้วกด “ไป!” (กดก่อนไฟเขียว เสียเวลาเพิ่ม) · ออกจากพิทแล้วระบบช่วยขับจนพ้นโค้งแรก แล้วคืนการควบคุมบนทางตรง
             </li>
             <li>
               <b className="text-white">AI:</b> ใช้กติกาเดียวกัน — แซงบนทางตรงยาว เก็บแบตไว้ใช้ตอนแซง ป้องกันได้ครั้งเดียวต่อทางตรง · วางแผนเข้าพิทตามยาง
@@ -1036,7 +1036,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                 setMsg({ id: now + 1, text: `แซงได้! P${race.order.indexOf(pi) + 1}`, tone: "good" });
               }
               else if (e.kind === "overtake" && e.on === me.id) setMsg({ id: now + 2, text: `โดนแซง · P${race.order.indexOf(pi) + 1}`, tone: "bad" });
-              else if (e.kind === "pass" && e.id === me.id) setMsg({ id: now + 3, text: "แซง! ขึ้นไปเคียง · กด OT ใช้แบต", tone: "info" });
+              else if (e.kind === "pass" && e.id === me.id) setMsg({ id: now + 3, text: me.pass?.corner ? "ดำเข้าด้านใน! เบรกให้ทัน · ขึ้นเคียงก่อนจุดเบรก" : "แซง! ขึ้นไปเคียง · กด OT ใช้แบต", tone: "info" });
               else if (e.kind === "passEnd" && e.id === me.id && e.why !== "done") setMsg({ id: now + 9, text: "แซงไม่สำเร็จ · กลับเข้าแถว", tone: "bad" });
               else if (e.kind === "offtrack" && e.id === me.id) {
                 sfx?.thump(1);
@@ -1064,6 +1064,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                 setMsg({ id: now + 13, text: `เปลี่ยนยาง ${COMPOUND_INFO[e.c].label} · ${e.time.toFixed(1)} วิ · ${label}`, tone: e.grade === "perfect" || e.grade === "good" ? "good" : "bad" });
               } else if (e.kind === "pitEarly" && e.id === me.id) setMsg({ id: now + 14, text: "กดไปก่อนไฟเขียว! ช่างยังไม่เสร็จ +0.6 วิ", tone: "bad" });
               else if (e.kind === "pitMiss" && e.id === me.id) setMsg({ id: now + 15, text: `ไม่ได้เข้าพิท · โทษ +${PIT_MISS_PENALTY} วิ`, tone: "bad" });
+              else if (e.kind === "otHit" && e.by === me.id) setMsg({ id: now + 17, text: "OT! คันหน้าเสียกำลัง · ได้จังหวะแซง", tone: "good" });
+              else if (e.kind === "otHit" && e.on === me.id) setMsg({ id: now + 18, text: "คันหลังใช้ OT ตามติด · เสียกำลังชั่วครู่", tone: "bad" });
+              else if (e.kind === "control" && e.id === me.id) setMsg({ id: now + 19, text: "กลับเข้าสนามแล้ว · คุมรถเองได้", tone: "info" });
               else if (e.kind === "tyreLow" && e.id === me.id && me.finish === null) setMsg({ id: now + 16, text: me.pits === 0 ? "ยางเริ่มหมด · กด PIT เข้าพิทได้เลย" : "ยางเริ่มหมด · เกาะถนนน้อยลง", tone: "bad" });
               else if (e.kind === "finish" && e.id === me.id) {
                 recRef.current?.markFinish(race.t);
@@ -1273,11 +1276,12 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             if (h.lane) h.lane.textContent = me.pass ? "กำลังแซง" : me.held ? "ตามติด" : "";
             // ปุ่มแซง: ซ่อนเมื่อไม่ได้ตามติด · เทาเมื่อตามติดแต่ยังแซงไม่ได้ (ใกล้โค้ง/ถนนแคบ/ข้างไม่ว่าง) · เหลืองเมื่อกดได้
             if (h.pass) {
-              const st = me.pass ? "on" : me.passState === "ready" && me.passLane !== null ? (me.passLane < Math.round(car.lat) ? "left" : "right") : me.passState;
+              const st = me.pass ? "on" : me.passState === "ready" && me.passLane !== null ? `${me.passLane < Math.round(car.lat) ? "left" : "right"}${me.passCorner ? "-in" : ""}` : me.passState;
               if (h.pass.dataset.st !== st) {
                 h.pass.dataset.st = st;
-                const ready = st === "left" || st === "right";
-                h.pass.textContent = st === "on" ? "กำลังแซง…" : st === "wait" ? "แซง · รอทางตรง" : st === "left" ? "◀ แซง" : "แซง ▶";
+                const ready = st.startsWith("left") || st.startsWith("right");
+                const inside = st.endsWith("-in");
+                h.pass.textContent = st === "on" ? "กำลังแซง…" : st === "wait" ? "แซง · รอจังหวะ" : st.startsWith("left") ? (inside ? "◀ แซงด้านใน" : "◀ แซง") : inside ? "แซงด้านใน ▶" : "แซง ▶";
                 h.pass.style.opacity = st === "none" ? "0" : "1";
                 h.pass.style.pointerEvents = ready ? "auto" : "none";
                 h.pass.style.filter = st === "wait" ? "grayscale(1) brightness(0.8)" : "";
