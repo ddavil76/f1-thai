@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { buildDriveTrack, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { buildDriveTrack, DS, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
-import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
 import { TEAMS } from "@/lib/pitwall/teams";
 
@@ -17,7 +17,7 @@ const field = (n: number, playerAt = -1): Entrant[] =>
     .map((e, i) => ({ ...e, player: i === playerAt }));
 
 /** วิ่งการแข่งจนจบ (ผู้เล่น = ขับตามเส้นช่วย ถ้ามี) */
-function run(race: ReturnType<typeof createRace>, pick?: (s: number) => { pass?: boolean }) {
+function run(race: ReturnType<typeof createRace>, pick?: (s: number) => { pass?: boolean; ot?: boolean }) {
   const ev: RaceEvent[] = [];
   const all: RaceEvent[] = [];
   const pi = race.cars.findIndex((c) => c.player);
@@ -89,9 +89,9 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
     expect(race.cars.every((c) => c.finish !== null)).toBe(true);
     const times = race.order.map((i) => race.cars[i].finish! + race.cars[i].penalty);
     for (let k = 1; k < times.length; k++) expect(times[k]).toBeGreaterThanOrEqual(times[k - 1]);
-    // ผู้ชนะใช้เวลาใกล้ ๆ 2 รอบอ้างอิง (+ออกตัวจากหยุดนิ่ง)
+    // ผู้ชนะใช้เวลาใกล้ ๆ 2 รอบอ้างอิง (+ออกตัวจากหยุดนิ่ง และเสียเวลาดวลกันรอบแรก)
     expect(times[0]).toBeGreaterThan(monza.refLap * 2);
-    expect(times[0]).toBeLessThan(monza.refLap * 2 + 12);
+    expect(times[0]).toBeLessThan(monza.refLap * 2 + 18);
   });
 
   it("AI แซงกันได้จริง (ลำดับเปลี่ยนจากกริด) และทีมเร็วไปข้างหน้า", () => {
@@ -101,17 +101,17 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
     const finalIds = race.order.map((i) => race.cars[i].id);
     const gridIds = race.cars.map((c) => c.id);
     expect(finalIds).not.toEqual(gridIds);
-    // ทีมเร็วสุด (papaya) จบดีกว่าตำแหน่งออกตัว
-    const pap = race.cars.findIndex((c) => c.team === "papaya");
-    expect(race.order.indexOf(pap)).toBeLessThan(pap);
+    // ทีมเร็วสุด (papaya) อย่างน้อยหนึ่งคันจบดีกว่าตำแหน่งออกตัว (แซงยากขึ้นเพราะไม่มีแรงเสริมฟรี)
+    const gained = race.cars.some((c, i) => c.team === "papaya" && race.order.indexOf(i) < i);
+    expect(gained).toBe(true);
   });
 
   it("ผู้เล่นขับตามเส้นช่วย แซงจากท้ายกริดได้", () => {
     const n = 8;
     const race = createRace(monza, field(n, n - 1), { laps: 3, difficulty: "easy", seed: 9 });
-    // กดแซงทุกครั้งที่ปุ่มขึ้น (แบบที่ผู้เล่นจะทำ)
+    // กดแซงทุกครั้งที่ปุ่มพร้อม แล้วกด OT ระหว่างแซง (แบบที่ผู้เล่นจะทำ)
     const me = race.cars.find((c) => c.player)!;
-    const ev = run(race, () => ({ pass: me.passLane !== null }));
+    const ev = run(race, () => ({ pass: me.passState === "ready", ot: me.pass !== null }));
     const pi = race.cars.findIndex((c) => c.player);
     expect(race.order.indexOf(pi)).toBeLessThan(n - 1);
     expect(ev.some((e) => e.kind === "overtake" && e.by === race.cars[pi].id)).toBe(true);
@@ -136,52 +136,64 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
     expect(worst).toBeGreaterThanOrEqual(CAR_LEN - 0.05);
   });
 
-  /** ผู้เล่นตามหลังรถ AI ที่ช้ากว่ามาก (เลนเดียวกัน) */
+  /** ผู้เล่นตามหลังรถ AI ที่ช้ากว่ามาก (เลนเดียวกัน) บนทางตรงยาวหลังเส้นสตาร์ทมอนซา */
   const chase = () => {
     const race = createRace(monza, field(2, 1), { laps: 3, difficulty: "normal", seed: 1 });
     race.lights = 0;
     const [slow, me] = race.cars;
     slow.slack = 0.25;
-    slow.car.s = 400;
-    slow.car.v = 40;
+    slow.car.s = 140;
+    slow.car.v = 50;
     slow.car.lat = 0;
-    me.car.s = 340;
+    me.car.s = 60;
     me.car.v = 70;
     me.car.lat = 0;
     return { race, slow, me };
   };
+  /** ขับตามเส้นช่วย (เบรกเอง) */
+  const drive = (race: Race, me: RaceCar, extra: Partial<RaceInput> = {}) => stepRace(race, { ...idealInput(monza, me.car), ...extra });
 
-  it("กันชนท้าย: เร่งเต็มที่ใส่คันหน้าที่ช้ากว่า → ค้างห่าง ~0.3 วิ ไม่ชน ไม่มีโทษ และปุ่มแซงขึ้น", () => {
+  it("ตามติด: ความเร็วถูกจำกัดให้ค้างห่าง ~0.2 วิ ไม่ชน และปุ่มแซงขึ้น", () => {
     const { race, slow, me } = chase();
     let closest = Infinity;
-    let sawButton = false;
-    for (let k = 0; k < 120 * 20; k++) {
-      stepRace(race, { throttle: true, brake: false });
+    let ready = false;
+    let heldGap: number | null = null;
+    for (let k = 0; k < 120 * 6; k++) {
+      drive(race, me);
       closest = Math.min(closest, slow.car.s - me.car.s);
-      if (me.passLane !== null) sawButton = true;
+      if (me.passState === "ready") ready = true;
+      if (me.held) heldGap = (slow.car.s - me.car.s - CAR_LEN) / me.car.v;
     }
     expect(closest).toBeGreaterThan(CAR_LEN + 1);
-    expect(me.held).toBe(true);
-    const gap = (slow.car.s - me.car.s - CAR_LEN) / me.car.v;
-    expect(gap).toBeGreaterThan(HOLD_GAP - 0.1);
-    expect(gap).toBeLessThan(HOLD_GAP + 0.15);
+    expect(heldGap).not.toBeNull();
+    expect(heldGap!).toBeGreaterThan(HOLD_GAP - 0.07);
+    expect(heldGap!).toBeLessThan(HOLD_GAP + 0.08);
     expect(me.car.s).toBeLessThan(slow.car.s);
-    expect(me.penalty).toBe(0);
-    expect(sawButton).toBe(true);
+    expect(ready).toBe(true);
   });
 
-  it("ปุ่มแซง: กดครั้งเดียว รถเปลี่ยนเลนเอง แซงผ่าน แล้วกลับ racing line", () => {
+  it("ตามติดแล้วไม่เบรกเองเข้าโค้ง = ชนท้าย เสียความเร็วมาก", () => {
     const { race, slow, me } = chase();
-    for (let k = 0; k < 120 * 8; k++) stepRace(race, { throttle: true, brake: false });
-    expect(me.passLane).not.toBeNull();
     const ev: RaceEvent[] = [];
-    stepRace(race, { throttle: true, brake: false, pass: true }, ev);
+    for (let k = 0; k < 120 * 30 && !ev.some((e) => e.kind === "bump"); k++) stepRace(race, { throttle: true, brake: false }, ev);
+    expect(ev.some((e) => e.kind === "bump" && e.id === me.id)).toBe(true);
+    expect(me.car.v).toBeLessThan(slow.car.v);
+  });
+
+  it("ปุ่มแซง: กดตอนพร้อม รถเปลี่ยนเลนเอง (ไม่มีแรงเสริมฟรี ใช้แบตที่กดเอง) แซงผ่าน แล้วกลับ racing line", () => {
+    const { race, slow, me } = chase();
+    me.car.energy = 1;
+    for (let k = 0; k < 120 * 6 && me.passState !== "ready"; k++) drive(race, me);
+    expect(me.passState).toBe("ready");
+    const ev: RaceEvent[] = [];
+    // กดครั้งเดียว: เริ่มแซงภายในเสี้ยววินาที
+    drive(race, me, { pass: true });
+    for (let k = 0; k < 48 && !me.pass; k++) drive(race, me);
     expect(me.pass).not.toBeNull();
-    expect(ev.some((e) => e.kind === "pass" && e.id === me.id)).toBe(true);
     let wide = 0;
-    for (let k = 0; k < 120 * 20; k++) {
+    for (let k = 0; k < 120 * 15; k++) {
       ev.length = 0;
-      stepRace(race, { ...idealInput(monza, me.car), throttle: true }, ev);
+      stepRace(race, { ...idealInput(monza, me.car), ot: true }, ev);
       wide = Math.max(wide, Math.abs(me.car.lat));
       expect(ev.some((e) => e.kind === "passEnd" && e.id === me.id && e.why !== "done")).toBe(false);
     }
@@ -191,12 +203,50 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
     expect(Math.abs(me.car.lat)).toBeLessThan(0.05);
   });
 
-  it("AI ไม่ชนกัน: ไม่มีการเบรกกระชาก และแซงกันสำเร็จได้", () => {
-    const race = createRace(monza, field(10), { laps: 2, difficulty: "normal", seed: 4 });
+  it("ปุ่มแซงกดไม่ได้ใกล้โค้ง (ทางตรงเหลือไม่พอ)", () => {
+    const { race, slow, me } = chase();
+    // ไปตามติดกันก่อนถึงจุดเบรกของชิเคนแรกนิดเดียว
+    const brakeAt = (() => {
+      for (let s = 200; s < 2000; s += DS) if (monza.zone[Math.floor(s / DS)] === "brake") return s;
+      return 800;
+    })();
+    slow.car.s = brakeAt - 100;
+    me.car.s = brakeAt - 100 - CAR_LEN - 0.2 * 50;
+    me.car.v = 50;
+    drive(race, me);
+    expect(me.passState).toBe("wait");
+    stepRace(race, { ...idealInput(monza, me.car), pass: true });
+    expect(me.pass).toBeNull();
+  });
+
+  it("หลุดโค้ง: กดคันเร่งค้างอย่างเดียวช้ากว่าขับตามเส้นมาก และหลุดเกิน 3 ครั้งโดนโทษ", () => {
+    const solo = (full: boolean) => {
+      const race = createRace(monza, field(1, 0), { laps: 2, difficulty: "normal", seed: 1 });
+      const me = race.cars[0];
+      const ev: RaceEvent[] = [];
+      const all: RaceEvent[] = [];
+      for (let k = 0; k < 120 * 60 * 6 && me.finish === null; k++) {
+        ev.length = 0;
+        stepRace(race, full ? { throttle: true, brake: false } : idealInput(monza, me.car), ev);
+        all.push(...ev);
+      }
+      return { time: me.finish! + me.penalty, offs: all.filter((e) => e.kind === "offtrack").length, pen: me.penalty };
+    };
+    const good = solo(false);
+    const bad = solo(true);
+    expect(good.offs).toBe(0);
+    expect(bad.offs).toBeGreaterThan(TRACK_LIMITS);
+    expect(bad.pen).toBe((bad.offs - TRACK_LIMITS) * OFF_PENALTY);
+    expect(bad.time).toBeGreaterThan(good.time + 20);
+  });
+
+  it("AI ไม่ชนกัน: ไม่ชนท้าย ไม่เบรกกระชาก และแซงกันสำเร็จได้", () => {
+    const race = createRace(monza, field(10), { laps: 3, difficulty: "normal", seed: 4 });
     const ev: RaceEvent[] = [];
     let jolts = 0;
     let done = 0;
-    for (let k = 0; k < 120 * 60 * 8 && !race.cars.every((c) => c.finish !== null); k++) {
+    let bumps = 0;
+    for (let k = 0; k < 120 * 60 * 10 && !race.cars.every((c) => c.finish !== null); k++) {
       ev.length = 0;
       const before = race.cars.map((c) => c.car.v);
       stepRace(race, { throttle: false, brake: false }, ev);
@@ -205,8 +255,10 @@ describe("โหมดนักขับ: แข่งกับ AI", () => {
         if (before[i] - c.car.v > 1) jolts++;
       });
       done += ev.filter((e) => e.kind === "passEnd" && e.why === "done").length;
+      bumps += ev.filter((e) => e.kind === "bump").length;
     }
-    expect(jolts).toBeLessThanOrEqual(3);
+    expect(bumps).toBeLessThanOrEqual(1);
+    expect(jolts).toBeLessThanOrEqual(6);
     expect(done).toBeGreaterThan(0);
   });
 });

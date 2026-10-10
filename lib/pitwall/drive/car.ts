@@ -12,6 +12,9 @@ export const RUN_UP = 350;
 const SLIDE_AT = 0.03;
 /** เร็วเกินกี่ % ถึงนับว่าหลุดโค้ง (รอบไม่นับ) */
 const OFF_AT = 0.1;
+/** หลุดโค้ง: เหลือความเร็วกี่ส่วน · กี่วินาทีกว่าจะกลับเข้าถนน */
+const OFF_KEEP = 0.55;
+const OFF_TIME = 1.5;
 /** ระยะบันทึกรถเงา (เมตร) */
 export const GHOST_DS = 10;
 
@@ -59,14 +62,17 @@ export type CarState = {
   /** แบตเตอรี่ 0..1 · ot = กำลังใช้ Overtake */
   energy: number;
   ot: boolean;
+  /** เวลาที่เหลือของการหลุดโค้งครั้งล่าสุด (ล้อลงหญ้า กำลังกลับเข้าถนน) */
+  offT: number;
 };
 
 export type LapResult = { lap: number; time: number; valid: boolean; trace: number[] };
-export type StepEvent = { kind: "slide"; amount: number } | { kind: "off" } | { kind: "lap"; result: LapResult };
+/** off = รอบนี้ไม่นับ (Time Trial) · excursion = หลุดโค้งลงหญ้าหนึ่งครั้ง (ความเร็วตก) */
+export type StepEvent = { kind: "slide"; amount: number } | { kind: "off" } | { kind: "excursion" } | { kind: "lap"; result: LapResult };
 
 export function newCar(t: DriveTrack, at?: { s: number; v: number; lat: number }): CarState {
   const s = at?.s ?? -RUN_UP;
-  return { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false };
+  return { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false, offT: 0 };
 }
 
 /** เดินหน้าหนึ่งขั้น STEP · คืนเหตุการณ์ที่เกิด (ไถล, หลุดโค้ง, จบรอบ) */
@@ -105,8 +111,20 @@ export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, ev
       c.invalid = true;
       events.push({ kind: "off" });
     }
+    // เร็วเกินมาก = หลุดโค้งลงหญ้า: ความเร็วหายไปเกือบครึ่ง แล้วค่อย ๆ กลับเข้าถนน (กดคันเร่งค้างเข้าโค้งไม่รอด)
+    if (over > OFF_AT && c.offT <= 0) {
+      c.v *= OFF_KEEP;
+      c.offT = OFF_TIME;
+      c.slide = Math.max(-9, Math.min(9, c.slide - Math.sign(curve) * 4));
+      events.push({ kind: "excursion" });
+    }
     events.push({ kind: "slide", amount: over });
-  } else {
+  }
+  if (c.offT > 0) {
+    c.offT -= dt;
+    // บนหญ้า: เร่งได้น้อย
+    if (input.throttle) c.v = Math.max(0, c.v - drive * 0.6 * dt);
+  } else if (over <= SLIDE_AT) {
     // ค่อย ๆ กลับเข้าไลน์
     c.slide -= Math.sign(c.slide) * Math.min(Math.abs(c.slide), 3 * dt);
   }
