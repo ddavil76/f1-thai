@@ -216,13 +216,13 @@ function Setup({
             <div className="h-2 rounded-full bg-gradient-to-r from-[#22c55e] via-[#facc15] to-[#ef4444]" aria-hidden />
             <div className="grid gap-2 sm:grid-cols-3">
               <p>
-                <b className="text-[#4ade80]">เขียว</b> ความเร็วนี้ผ่านโค้งได้
+                <b className="text-[#4ade80]">เขียว</b> ต่ำกว่าความเร็วที่โค้งรับได้ เร่งได้
               </p>
               <p>
-                <b className="text-[#facc15]">เหลือง → ส้ม</b> เร็วเสี่ยงหลุด ผ่อน/เริ่มเบรก
+                <b className="text-[#facc15]">เหลือง → ส้ม</b> ใกล้/เกินเล็กน้อย ยกคันเร่ง เตรียมเบรก
               </p>
               <p>
-                <b className="text-(--color-f1-text)">แดง</b> เร็วเกิน ต้องเบรกเดี๋ยวนี้
+                <b className="text-(--color-f1-text)">แดง</b> เกินมาก ไม่เบรกหลุดโค้งแน่
               </p>
             </div>
             <p className="text-[11px] text-white/60">
