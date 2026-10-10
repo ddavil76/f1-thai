@@ -58,15 +58,16 @@ export function useLocalSession(name: string): Session {
 export const SERVER = (process.env.NEXT_PUBLIC_PITWALL_SERVER ?? "").replace(/\/+$/, "");
 export const onlineReady = () => SERVER.length > 0;
 
-export async function createRoom(): Promise<string> {
-  const res = await fetch(`${SERVER}/new`, { method: "POST" });
+/** สร้างห้องใหม่ · kind "drive" = ห้องแข่งโหมดนักขับ */
+export async function createRoom(kind?: "drive"): Promise<string> {
+  const res = await fetch(`${SERVER}/new${kind ? `?kind=${kind}` : ""}`, { method: "POST" });
   if (!res.ok) throw new Error(`สร้างห้องไม่สำเร็จ (${res.status})`);
   const j = (await res.json()) as { code: string };
   return j.code;
 }
 
 /** รหัสผู้เล่นของเครื่องนี้ (จำไว้ เผื่อหลุดแล้วต่อกลับเข้าห้องเดิม) */
-function playerId(): string {
+export function playerId(): string {
   try {
     const k = "pitwall-id";
     const v = window.localStorage.getItem(k);

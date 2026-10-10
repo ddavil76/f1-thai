@@ -228,10 +228,11 @@ const canvas = (w: number, h: number) => {
 };
 
 /** พื้นผิวตัวถัง: ลวดลาย + สปอนเซอร์หลักข้างฝาครอบเครื่อง + รอง 2 ข้างจมูก + เลขรถบนจมูก/ข้างฝาครอบ */
-function tubTexture(d: Design, num: number) {
+function tubTexture(d: Design, num: number, q = 1) {
   const W = 2048;
   const H = 1024;
-  const [c, g] = canvas(W, H);
+  const [c, g] = canvas(W * q, H * q);
+  g.scale(q, q);
   paintBody(g, W, H, d, "tub");
   // u (แกน x) = หน้า → ท้าย ตามความยาวลำตัว z 3.06 → −2.2
   const U = (z: number) => ((3.06 - z) / 5.26) * W;
@@ -258,10 +259,11 @@ function tubTexture(d: Design, num: number) {
 }
 
 /** พื้นผิว sidepod: สปอนเซอร์รอง 1 ตัวใหญ่ด้านนอก · flip = sidepod ฝั่ง −x (เรขาคณิตสะท้อน ตัวอักษรต้องกลับซ้ายขวา) */
-function podTexture(d: Design, flip: boolean) {
+function podTexture(d: Design, flip: boolean, q = 1) {
   const W = 1024;
   const H = 512;
-  const [c, g] = canvas(W, H);
+  const [c, g] = canvas(W * q, H * q);
+  g.scale(q, q);
   paintBody(g, W, H, d, "pod");
   g.save();
   g.translate(W * 0.42, H * 0.72);
@@ -272,10 +274,11 @@ function podTexture(d: Design, flip: boolean) {
 }
 
 /** พื้นผิวปีก: สีหลัก + ขอบท้ายสีเน้น + สปอนเซอร์ตามความยาวปีกบนผิวบน (ซ้าย/ขวา หรือกลางปีก) */
-function wingTexture(d: Design, name: string, layout: "centre" | "pair") {
+function wingTexture(d: Design, name: string, layout: "centre" | "pair", q = 1) {
   const W = 1024;
   const H = 256;
-  const [c, g] = canvas(W, H);
+  const [c, g] = canvas(W * q, H * q);
+  g.scale(q, q);
   g.fillStyle = d.base;
   g.fillRect(0, 0, W, H);
   // ขอบท้ายปีก (v ≈ 0 และ 1) สีเน้น
@@ -301,10 +304,11 @@ function wingTexture(d: Design, name: string, layout: "centre" | "pair") {
  * ลายแผ่นข้างปีก: สีหลัก ขอบล่างสีรอง และโลโก้สปอนเซอร์ · u = ตามความยาวรถ (z น้อย → มาก = ท้าย → หน้า)
  * ฝั่ง +x มองจากด้านข้างหน้ารถอยู่ซ้ายมือ (u ลดลงเมื่ออ่านจากซ้ายไปขวา) → กลับซ้ายขวา
  */
-function panelTexture(d: Design, name: string, style: Design["styles"][number], facing: 1 | -1) {
+function panelTexture(d: Design, name: string, style: Design["styles"][number], facing: 1 | -1, q = 1) {
   const W = 512;
   const H = 512;
-  const [c, g] = canvas(W, H);
+  const [c, g] = canvas(W * q, H * q);
+  g.scale(q, q);
   g.fillStyle = d.base;
   g.fillRect(0, 0, W, H);
   g.fillStyle = d.second;
@@ -341,53 +345,45 @@ const RW_PIVOT = [0.96, -2.42] as const;
 const FW_OPEN = -0.35;
 const RW_OPEN = -0.4;
 
-export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Livery, opts: { ghost?: boolean } = {}): CarModel {
-  const own: { dispose(): void }[] = [];
-  const keep = <T extends { dispose(): void }>(x: T) => (own.push(x), x);
-  const ghost = !!opts.ghost;
-  const d = designOf(l.team, l.colour, l.ink);
-  const fade = <T extends Mat>(m: T) => {
-    if (ghost) {
-      m.transparent = true;
-      m.opacity = 0.3;
-      m.depthWrite = false;
-    }
-    return keep(m);
-  };
-  const tex = (c: HTMLCanvasElement, repeat = false) => {
-    const t = keep(new THREE.CanvasTexture(c));
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 4;
-    if (repeat) {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(6, 6);
-    }
-    return t;
-  };
-  /** สีกึ่งด้าน + เคลือบใส (ลิเวอรีสมัยใหม่) */
-  const paintMat = (map: THREE_NS.Texture | null, colour = 0xffffff, side: THREE_NS.Side = THREE.FrontSide, coat = 0.7) =>
-    fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : colour, map: ghost ? null : map, roughness: 0.42, metalness: 0.1, clearcoat: coat, clearcoatRoughness: 0.2, side }));
+/** ช่องวัสดุของแม่แบบรถ (เรขาคณิตใช้ร่วมกันทุกคัน · วัสดุ/ลายแยกตามคัน) */
+type Slot =
+  | "tub" | "podR" | "podL" | "rw" | "fw" | "accent" | "second" | "carbon" | "black" | "metal" | "helmet" | "visor" | "rain"
+  | "epf1" | "epf-1" | "epr1" | "epr-1";
 
-  const tubMat = paintMat(ghost ? null : tex(tubTexture(d, l.num)));
-  const podR = paintMat(ghost ? null : tex(podTexture(d, false)));
-  const podL = paintMat(ghost ? null : tex(podTexture(d, true)));
-  // ปีกเคลือบน้อยกว่า (มุมแคบสะท้อนฟ้าจนขาว)
-  const rwMat = paintMat(ghost ? null : tex(wingTexture(d, d.sponsors[0], "centre")), 0xffffff, THREE.DoubleSide, 0.2);
-  const fwMat = paintMat(ghost ? null : tex(wingTexture(d, d.sponsors[2], "pair")), 0xffffff, THREE.DoubleSide, 0.2);
-  const accent = paintMat(null, ghost ? 0xffffff : new THREE.Color(d.base).getHex(), THREE.DoubleSide);
-  const second = paintMat(null, ghost ? 0xffffff : new THREE.Color(d.second).getHex(), THREE.DoubleSide);
-  const carbon = fade(new THREE.MeshStandardMaterial({ color: ghost ? 0xdddddd : 0x6a6a6a, map: ghost ? null : tex(carbonTexture(), true), roughness: 0.38, metalness: 0.25, side: THREE.DoubleSide }));
-  const black = fade(new THREE.MeshStandardMaterial({ color: 0x060607, roughness: 0.7, side: THREE.DoubleSide }));
-  const metal = fade(new THREE.MeshStandardMaterial({ color: 0x9da3ab, roughness: 0.25, metalness: 0.9 }));
-  const helmetMat = fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : new THREE.Color(d.accent).getHex(), roughness: 0.2, clearcoat: 1 }));
-  const visor = fade(new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.05, metalness: 0.9 }));
+/** แม่แบบรถ (สร้างครั้งเดียวต่อ three หนึ่งชุด) — รถแต่ละคัน clone แล้วใส่วัสดุของตัวเอง */
+const templates = new WeakMap<object, THREE_NS.Group>();
+
+function buildTemplate(THREE: Three, merge: (g: Geo[]) => Geo | null): THREE_NS.Group {
+  const slots = new Map<Slot, Mat>();
+  const slot = (name: Slot) => {
+    let m = slots.get(name);
+    if (!m) {
+      m = new THREE.MeshBasicMaterial({ name });
+      slots.set(name, m);
+    }
+    return m;
+  };
+  const keep = <T,>(x: T) => x;
+  const tubMat = slot("tub");
+  const podR = slot("podR");
+  const podL = slot("podL");
+  const rwMat = slot("rw");
+  const fwMat = slot("fw");
+  const accent = slot("accent");
+  const second = slot("second");
+  const carbon = slot("carbon");
+  const black = slot("black");
+  const metal = slot("metal");
+  const helmetMat = slot("helmet");
+  const visor = slot("visor");
 
   const obj = new THREE.Group();
   // ปีกพับได้ของ Straight Mode (หมุนรอบขอบหน้าของแผ่นปีก)
   const frontFlap = new THREE.Group();
+  frontFlap.name = "frontFlap";
   const rearFlap = new THREE.Group();
+  rearFlap.name = "rearFlap";
   const add = (g: Geo, m: Mat | Mat[]) => {
-    keep(g);
     obj.add(new THREE.Mesh(g, m));
   };
   const merged = (list: Geo[]) => {
@@ -532,7 +528,7 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
     const EPF: [number, number][] = [[3.24, 0.03], [2.58, 0.03], [2.52, 0.2], [2.6, 0.34], [2.78, 0.37], [3.0, 0.29], [3.18, 0.13]];
     const ends: Geo[] = [];
     for (const s of [1, -1] as const) {
-      add(panel(THREE, EPF, s * (HALF + 0.016), s), paintMat(ghost ? null : tex(panelTexture(d, d.sponsors[2], d.styles[2], s)), 0xffffff));
+      add(panel(THREE, EPF, s * (HALF + 0.016), s), slot(s > 0 ? "epf1" : "epf-1"));
       ends.push(panel(THREE, EPF, s * (HALF + 0.004), s === 1 ? -1 : 1));
       // เสายึดจมูก
       ends.push(rod(THREE, [s * 0.04, 0.15, 2.98], [s * 0.04, 0.08, 3.0], 0.012));
@@ -580,7 +576,7 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
       [-2.13, 0.62], [-2.15, 0.86], [-2.22, 0.95], [-2.34, 0.99], [-2.62, 0.99], [-2.68, 0.94], [-2.66, 0.55], [-2.52, 0.38], [-2.3, 0.33], [-2.17, 0.4],
     ];
     for (const s of [1, -1] as const) {
-      add(panel(THREE, EPR, s * (EP + 0.006), s), paintMat(ghost ? null : tex(panelTexture(d, d.sponsors[0], d.styles[0], s)), 0xffffff));
+      add(panel(THREE, EPR, s * (EP + 0.006), s), slot(s > 0 ? "epr1" : "epr-1"));
       add(panel(THREE, EPR, s * (EP - 0.004), s === 1 ? -1 : 1), second);
     }
     // ท่อไอเสียกลมใต้ beam wing + โครงกันกระแทกท้าย
@@ -663,12 +659,82 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
   // ไฟท้าย (ไฟฝน)
   const rain = new THREE.BoxGeometry(0.12, 0.05, 0.03);
   rain.translate(0, 0.38, -2.22);
-  add(rain, fade(new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0xff1a10, emissiveIntensity: 1.6 })));
+  add(rain, slot("rain"));
 
+  return obj;
+}
+
+/**
+ * รถหนึ่งคันตามลิเวอรี · ghost = รถเงาโปร่งใส · quality = ความละเอียดลาย (0.5 สำหรับรถคู่แข่งหลายคัน ประหยัดหน่วยความจำ)
+ */
+export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Livery, opts: { ghost?: boolean; quality?: number } = {}): CarModel {
+  let tpl = templates.get(THREE);
+  if (!tpl) {
+    tpl = buildTemplate(THREE, merge);
+    templates.set(THREE, tpl);
+  }
+  const own: { dispose(): void }[] = [];
+  const keep = <T extends { dispose(): void }>(x: T) => (own.push(x), x);
+  const ghost = !!opts.ghost;
+  const q = opts.quality ?? 1;
+  const d = designOf(l.team, l.colour, l.ink);
+  const fade = <T extends Mat>(m: T) => {
+    if (ghost) {
+      m.transparent = true;
+      m.opacity = 0.3;
+      m.depthWrite = false;
+    }
+    return keep(m);
+  };
+  const tex = (c: HTMLCanvasElement, repeat = false) => {
+    const t = keep(new THREE.CanvasTexture(c));
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    if (repeat) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(6, 6);
+    }
+    return t;
+  };
+  /** สีกึ่งด้าน + เคลือบใส (ลิเวอรีสมัยใหม่) */
+  const paintMat = (map: THREE_NS.Texture | null, colour = 0xffffff, side: THREE_NS.Side = THREE.FrontSide, coat = 0.7) =>
+    fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : colour, map: ghost ? null : map, roughness: 0.42, metalness: 0.1, clearcoat: coat, clearcoatRoughness: 0.2, side }));
+  const lazy = <T,>(f: () => T) => {
+    let v: T | undefined;
+    return () => (v ??= f());
+  };
+  // สร้างวัสดุ/ลายเมื่อมีชิ้นส่วนใช้จริง (รถเงาไม่ต้องวาดลาย)
+  const mats: Record<Slot, () => Mat> = {
+    tub: lazy(() => paintMat(ghost ? null : tex(tubTexture(d, l.num, q)))),
+    podR: lazy(() => paintMat(ghost ? null : tex(podTexture(d, false, q)))),
+    podL: lazy(() => paintMat(ghost ? null : tex(podTexture(d, true, q)))),
+    // ปีกเคลือบน้อยกว่า (มุมแคบสะท้อนฟ้าจนขาว)
+    rw: lazy(() => paintMat(ghost ? null : tex(wingTexture(d, d.sponsors[0], "centre", q)), 0xffffff, THREE.DoubleSide, 0.2)),
+    fw: lazy(() => paintMat(ghost ? null : tex(wingTexture(d, d.sponsors[2], "pair", q)), 0xffffff, THREE.DoubleSide, 0.2)),
+    accent: lazy(() => paintMat(null, ghost ? 0xffffff : new THREE.Color(d.base).getHex(), THREE.DoubleSide)),
+    second: lazy(() => paintMat(null, ghost ? 0xffffff : new THREE.Color(d.second).getHex(), THREE.DoubleSide)),
+    carbon: lazy(() => fade(new THREE.MeshStandardMaterial({ color: ghost ? 0xdddddd : 0x6a6a6a, map: ghost ? null : tex(carbonTexture(), true), roughness: 0.38, metalness: 0.25, side: THREE.DoubleSide }))),
+    black: lazy(() => fade(new THREE.MeshStandardMaterial({ color: 0x060607, roughness: 0.7, side: THREE.DoubleSide }))),
+    metal: lazy(() => fade(new THREE.MeshStandardMaterial({ color: 0x9da3ab, roughness: 0.25, metalness: 0.9 }))),
+    helmet: lazy(() => fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : new THREE.Color(d.accent).getHex(), roughness: 0.2, clearcoat: 1 }))),
+    visor: lazy(() => fade(new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.05, metalness: 0.9 }))),
+    rain: lazy(() => fade(new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0xff1a10, emissiveIntensity: 1.6 }))),
+    epf1: lazy(() => paintMat(ghost ? null : tex(panelTexture(d, d.sponsors[2], d.styles[2], 1, q)))),
+    "epf-1": lazy(() => paintMat(ghost ? null : tex(panelTexture(d, d.sponsors[2], d.styles[2], -1, q)))),
+    epr1: lazy(() => paintMat(ghost ? null : tex(panelTexture(d, d.sponsors[0], d.styles[0], 1, q)))),
+    "epr-1": lazy(() => paintMat(ghost ? null : tex(panelTexture(d, d.sponsors[0], d.styles[0], -1, q)))),
+  };
+  const pick = (m: Mat) => mats[m.name as Slot]?.() ?? m;
+  // clone ใช้เรขาคณิตร่วมกับแม่แบบ แล้วเปลี่ยนวัสดุเป็นของคันนี้
+  const obj = tpl.clone(true);
   obj.traverse((o) => {
+    const mesh = o as THREE_NS.Mesh;
+    if (mesh.isMesh) mesh.material = Array.isArray(mesh.material) ? mesh.material.map(pick) : pick(mesh.material);
     o.castShadow = !ghost;
-    if (ghost) (o as THREE_NS.Mesh).renderOrder = 2;
+    if (ghost) mesh.renderOrder = 2;
   });
+  const frontFlap = obj.getObjectByName("frontFlap")!;
+  const rearFlap = obj.getObjectByName("rearFlap")!;
 
   return {
     obj,
