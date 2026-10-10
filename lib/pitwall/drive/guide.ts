@@ -35,12 +35,6 @@ export function projectedSpeed(v: number, accel: number, d: number, vtop: number
   return Math.min(Math.max(v, vtop), Math.sqrt(Math.max(0, v * v + 2 * a * d)));
 }
 
-/** จุดที่ต้องเริ่มเบรก (ระยะข้างหน้า, เมตร) ตามความเร็วที่คาดไว้ · null = ยังไม่ต้องเบรกภายใน reach */
-export function brakePoint(t: DriveTrack, s: number, lat: number, v: number, accel: number, grip: number, vtop: number, reach: number, step = 2) {
-  for (let d = 0; d <= reach; d += step) if (guideRisk(t, s + d, lat, projectedSpeed(v, accel, d, vtop), grip) > 0) return d;
-  return null;
-}
-
 /**
  * แบ่งสนามเป็นช่วงโค้ง (ใช้กับโหมดฝึก): แต่ละจุดได้เลขของโค้งที่กำลังจะถึง/อยู่ในโค้งนั้น
  * — โค้ง = ช่วงที่ไม่ใช่โซนคันเร่งของ racing line · ทางตรงก่อนโค้งนับรวมกับโค้งนั้น (จุดเบรกอยู่บนทางตรง)

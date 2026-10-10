@@ -8,7 +8,7 @@
  */
 import type * as THREE_NS from "three";
 import { DS, VMAX, VSM, heightAt, laneValue, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
-import { brakePoint, guideColor, guideFade, guideNeeded, guideRisk, projectedSpeed } from "@/lib/pitwall/drive/guide";
+import { guideColor, guideFade, guideNeeded, guideRisk, projectedSpeed } from "@/lib/pitwall/drive/guide";
 import { buildCar, type Livery } from "./carModel";
 
 type Three = typeof THREE_NS;
@@ -315,73 +315,16 @@ export function createDriveScene(opts: {
   const gUp = new THREE.Vector3(0, 1, 0);
   const gCol = new THREE.Color();
   const ROAD = new THREE.Color(0x3a3b40);
-  // จุดที่ต้องเริ่มเบรก (ตามความเร็วที่คาดว่าจะมีตอนไปถึง): เส้นขาวขวางถนน + ป้าย "เบรก" ตั้งสองข้างทาง (เห็นได้แต่ไกล)
-  const brake = new THREE.Group();
-  const brakeBar = new THREE.Mesh(
-    keep(new THREE.PlaneGeometry(1, 1.4).rotateX(-Math.PI / 2)),
-    keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 })),
-  );
-  brake.add(brakeBar);
-  const boardTex = canvasTex(
-    128,
-    160,
-    (g) => {
-      g.fillStyle = "#e10600";
-      g.fillRect(0, 0, 128, 160);
-      g.fillStyle = "#ffffff";
-      g.fillRect(8, 8, 112, 144);
-      g.fillStyle = "#e10600";
-      g.font = "bold 40px sans-serif";
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      g.fillText("เบรก", 64, 56);
-      g.beginPath();
-      g.moveTo(34, 96);
-      g.lineTo(94, 96);
-      g.lineTo(64, 136);
-      g.closePath();
-      g.fill();
-    },
-    false,
-  );
-  const boardGeo = keep(new THREE.PlaneGeometry(1.8, 2.25));
-  const boardMat = keep(new THREE.MeshBasicMaterial({ map: boardTex, side: THREE.DoubleSide }));
-  const boards = [-1, 1].map(() => {
-    const m = new THREE.Mesh(boardGeo, boardMat);
-    brake.add(m);
-    return m;
-  });
-  brake.visible = false;
-  scene.add(brake);
   let accelSmooth = 0;
   /** วางลูกศรข้างหน้า: มองไกลราว 2.3 วินาทีของความเร็ว (60–215 ม.) · สีคิดจากความเร็วที่จะมีตอนไปถึงแต่ละจุด */
   const drawGuide = (s: number, speed: number, accel: number, dt: number, g: DriveSceneGuide | undefined) => {
     accelSmooth += (accel - accelSmooth) * Math.min(1, dt * 4);
     if (!g || !lineOn || guideMode === "static") {
       guideMesh.count = 0;
-      brake.visible = false;
       return;
     }
     const reach = Math.max(60, Math.min(GUIDE_N * GUIDE_GAP, speed * 2.3));
     const vtop = VSM * g.grip;
-    // จุดเบรก
-    const bp = brakePoint(t, s, g.lat, speed, accelSmooth, g.grip, vtop, reach);
-    if (bp !== null && bp > 4) {
-      const ss = s + bp;
-      // ขวางเต็มความกว้างถนน
-      const wl = sample(t, t.wl, ss);
-      const wr = sample(t, t.wr, ss);
-      const mid = (wr - wl) / 2;
-      const p = poseAt(t, ss, mid);
-      const half = (wl + wr) / 2;
-      brake.visible = true;
-      // หมุนกลุ่ม: แกน x = ขวางถนน · ป้าย (แกน z) หันเข้าหารถ
-      brake.position.set(p.x, surfaceAt(t, ss, mid) + 0.05, p.z);
-      brake.rotation.set(0, -p.heading - Math.PI / 2, 0);
-      brakeBar.scale.set(wl + wr - 0.6, 1, 1);
-      boards[0].position.set(-half - 1.3, 1.35, 0);
-      boards[1].position.set(half + 1.3, 1.35, 0);
-    } else brake.visible = false;
     let n = 0;
     for (let d = 5; d <= reach && n < GUIDE_N; d += GUIDE_GAP) {
       const ss = s + d;

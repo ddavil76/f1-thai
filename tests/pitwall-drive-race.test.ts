@@ -4,7 +4,7 @@ import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
 import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
-import { brakePoint, cornerMap, GUIDE_RED, guideColor, guideFade, guideNeeded, guideRisk, learnCorner, projectedSpeed, type Mastery } from "@/lib/pitwall/drive/guide";
+import { cornerMap, GUIDE_RED, guideColor, guideFade, guideNeeded, guideRisk, learnCorner, projectedSpeed, type Mastery } from "@/lib/pitwall/drive/guide";
 import { TEAMS } from "@/lib/pitwall/teams";
 
 let monza: DriveTrack;
@@ -360,23 +360,11 @@ describe("โหมดนักขับ: เส้นช่วยไดนา�
   });
 });
 
-describe("โหมดนักขับ: จุดเบรก / คาดความเร็ว / โหมดฝึก", () => {
+describe("โหมดนักขับ: คาดความเร็ว / โหมดฝึก", () => {
   it("คาดความเร็ว: เร่ง = เร็วขึ้น (ไม่เกิน vtop) · เบรก = ช้าลง (ไม่ติดลบ)", () => {
     expect(projectedSpeed(50, 10, 100, 95)).toBeCloseTo(Math.sqrt(50 * 50 + 2000), 5);
     expect(projectedSpeed(90, 10, 500, 95)).toBe(95);
     expect(projectedSpeed(50, -40, 100, 95)).toBe(0);
-  });
-
-  it("จุดเบรก: เร็วเข้าหาชิเคนแรกต้องเบรกก่อนถึงโค้ง · กำลังเร่ง = จุดเบรกมาเร็วกว่า · ช้าพอแล้วไม่ต้องเบรก", () => {
-    let apex = 0;
-    for (let i = 0; i < monza.n * 0.2; i++) if (monza.vref[i] < monza.vref[apex]) apex = i;
-    const s = apex * DS - 300;
-    const coast = brakePoint(monza, s, 0, 85, 0, 1, 97, 300);
-    const push = brakePoint(monza, s, 0, 85, 5, 1, 97, 300);
-    expect(coast).not.toBeNull();
-    expect(coast!).toBeLessThan(300);
-    expect(push!).toBeLessThan(coast!);
-    expect(brakePoint(monza, s, 0, monza.vref[apex] * 0.95, 0, 1, 97, 300)).toBeNull();
   });
 
   it("แบ่งโค้ง: ทุกจุดมีเลขโค้ง เลขต่อเนื่อง และสนามมีหลายโค้ง", () => {
