@@ -4,6 +4,7 @@
  * — ของรอบสนามต้องไม่บังถนนที่กำลังจะขับไปจากมุมกล้อง
  */
 import { DS, heightAt, poseAt, sample, surfaceAt, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { GARAGE_D, PIT_IN, PIT_OUT, PIT_W, pitLateral, type PitLane } from "@/lib/pitwall/drive/pit";
 
 /** อัฒจันทร์หนึ่งชุด: กึ่งกลางด้านหน้า (ติดถนน) · ทิศถนน · ฝั่ง · ความยาว */
 export type Stand = { x: number; z: number; y: number; heading: number; side: number; len: number };
@@ -88,8 +89,9 @@ export function inStand(st: Stand, x: number, y: number, z: number) {
   return Math.abs(a) <= st.len / 2 && b >= -0.5 && b <= STAND_TIERS * STAND_DEPTH + 1 && y >= st.y - 1 && y <= st.y + STAND_TIERS * STAND_RISE + STAND_ROOF;
 }
 
-export function buildTerrain(t: DriveTrack, opts: { high: boolean; hillSeed: number }): Terrain {
-  const { high, hillSeed } = opts;
+/** pit = พิทเลน (โหมดแข่ง) — พื้นที่พิทเลน + อู่นับเป็นถนน (พื้นเรียบ ไม่มีต้นไม้/อัฒจันทร์) */
+export function buildTerrain(t: DriveTrack, opts: { high: boolean; hillSeed: number; pit?: PitLane }): Terrain {
+  const { high, hillSeed, pit } = opts;
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
   for (let i = 0; i < t.n; i++) {
     minX = Math.min(minX, t.x[i]);
@@ -101,11 +103,34 @@ export function buildTerrain(t: DriveTrack, opts: { high: boolean; hillSeed: num
   for (let i = 0; i < t.n; i++) maxEdge = Math.max(maxEdge, t.wl[i], t.wr[i]);
   maxEdge += t.runoff;
 
-  // ตารางค้นหาจุดสนามใกล้ ๆ (กันวางของทับถนน)
+  // จุดของถนน (ทุก 2 จุดของเส้นกลาง) + พื้นที่พิท · low = ระดับที่พื้นต้องต่ำกว่า (ถนนเอียง: ขอบด้านในต่ำกว่ากลางถนน)
+  const SINK = 1.1;
+  const px: number[] = [];
+  const pz: number[] = [];
+  const plow: number[] = [];
+  for (let i = 0; i < t.n; i += 2) {
+    px.push(t.x[i]);
+    pz.push(t.z[i]);
+    plow.push(t.y[i] - SINK - Math.abs(Math.tan(t.bank[i])) * Math.max(t.wl[i], t.wr[i]));
+  }
+  if (pit) {
+    const edge = (s: number) => pit.side * sample(t, pit.side > 0 ? t.wr : t.wl, s);
+    for (let d = -PIT_IN; d <= PIT_OUT; d += DS * 2) {
+      const c = pitLateral(pit, d, edge(d), edge(d));
+      const out = Math.abs(pit.offset) + PIT_W / 2;
+      for (const lat of [c, pit.side * out, pit.side * (out + GARAGE_D / 2), pit.side * (out + GARAGE_D)]) {
+        const q = poseAt(t, d, lat);
+        px.push(q.x);
+        pz.push(q.z);
+        plow.push(heightAt(t, d) - 0.3);
+      }
+    }
+  }
+  // ตารางค้นหาจุดใกล้ ๆ (กันวางของทับถนน)
   const CELL = 40;
   const grid = new Map<string, number[]>();
-  for (let i = 0; i < t.n; i += 2) {
-    const k = `${Math.floor(t.x[i] / CELL)},${Math.floor(t.z[i] / CELL)}`;
+  for (let i = 0; i < px.length; i++) {
+    const k = `${Math.floor(px[i] / CELL)},${Math.floor(pz[i] / CELL)}`;
     const list = grid.get(k);
     if (list) list.push(i);
     else grid.set(k, [i]);
@@ -116,7 +141,7 @@ export function buildTerrain(t: DriveTrack, opts: { high: boolean; hillSeed: num
     const reach = Math.ceil(d / CELL);
     for (let a = -reach; a <= reach; a++)
       for (let b = -reach; b <= reach; b++) {
-        for (const i of grid.get(`${cx + a},${cz + b}`) ?? []) if (Math.hypot(t.x[i] - x, t.z[i] - z) < d) return true;
+        for (const i of grid.get(`${cx + a},${cz + b}`) ?? []) if (Math.hypot(px[i] - x, pz[i] - z) < d) return true;
       }
     return false;
   };
@@ -193,7 +218,6 @@ export function buildTerrain(t: DriveTrack, opts: { high: boolean; hillSeed: num
   };
   /** รัศมีที่พื้นต้องอิงระดับถนน (เมตร) · ความชันคันดินข้างสนามสูงสุด */
   const NEAR = 120;
-  const SINK = 1.1;
   const BANK = 0.3;
   const SEG = high ? 24 : 40;
   const FLAT = Math.max(maxEdge + 6, SEG * 1.5);
@@ -292,10 +316,9 @@ export function buildTerrain(t: DriveTrack, opts: { high: boolean; hillSeed: num
     for (let a = -3; a <= 3; a++)
       for (let b = -3; b <= 3; b++)
         for (const i of grid.get(`${cx + a},${cz + b}`) ?? []) {
-          const d = Math.hypot(t.x[i] - x, t.z[i] - z);
+          const d = Math.hypot(px[i] - x, pz[i] - z);
           if (d >= NEAR) continue;
-          // ถนนเอียง: ขอบด้านในต่ำกว่ากลางถนน
-          const low = t.y[i] - SINK - Math.abs(Math.tan(t.bank[i])) * Math.max(t.wl[i], t.wr[i]);
+          const low = plow[i];
           const room = Math.max(0, d - FLAT) * BANK;
           upper = Math.min(upper, low + room);
           if (d < best) {
