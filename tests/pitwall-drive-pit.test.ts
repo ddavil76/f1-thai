@@ -163,6 +163,29 @@ describe("เข้าพิท", { timeout: 30000 }, () => {
     expect(jump).toBeLessThan(0.2);
   });
 
+  it("ออกจากพิท: ระบบช่วยขับจนพ้นโค้งแรก (กดคันเร่งค้างไว้ก็ไม่หลุดโค้ง) แล้วคืนการควบคุมบนทางตรง — ทุกสนาม", async () => {
+    for (const c of CIRCUITS) {
+      const t = buildDriveTrack(c.id, hasRealTrack(c.id) ? await loadRawTrack(c.id) : null);
+      if (!t) continue;
+      const race = createRace(t, field(1, 0), { laps: 3, difficulty: "normal", seed: 3 });
+      const me = race.cars[0];
+      const ev: RaceEvent[] = [];
+      let out = false;
+      let control = false;
+      let offs = 0;
+      for (let k = 0; k < 120 * 60 * 6 && !control; k++) {
+        ev.length = 0;
+        const base = out ? { throttle: true, brake: false, sm: true } : idealInput(t, me.car, 1, tyreGrip(me.tyre));
+        stepRace(race, { ...base, pitReq: me.pits === 0 && !me.pit && me.pitWant === null ? "hard" : undefined, pitStop: me.pit?.phase === "lane" && stopError(me) >= 0, pitGo: !!me.pit?.ready }, ev);
+        if (ev.some((e) => e.kind === "pitOut")) out = true;
+        if (out && ev.some((e) => e.kind === "offtrack")) offs++;
+        if (ev.some((e) => e.kind === "control")) control = true;
+      }
+      expect(control, c.id).toBe(true);
+      expect(offs, c.id).toBe(0);
+    }
+  });
+
   it("กดจอดเร็วไป/ไม่กดเลย = จอดนานกว่า", () => {
     const mine = (r: ReturnType<typeof soloPit>) => r.all.find((e) => e.kind === "pitStop" && e.id === r.me.id);
     const perfect = mine(soloPit(-0.2));

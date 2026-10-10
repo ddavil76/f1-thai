@@ -43,6 +43,13 @@ const HOLD_DECEL_CLOSE = 90;
 /** แซงได้เมื่อห่างคันหน้าไม่เกินกี่วินาที · ต้องเหลือทางตรงก่อนจุดเบรกอย่างน้อยกี่เมตร · แซงนานเกินนี้ (วินาที) = ยกเลิก */
 export const PASS_WINDOW = 0.28;
 const PASS_STRAIGHT = 250;
+/** แซงในโค้ง (ดำเข้าด้านใน): ต้องเหลือระยะก่อนจุดเบรกอย่างน้อยเท่านี้ (เมตร) · ถึงจุดเบรกแล้วต้องตามหลังไม่เกินกี่ส่วนของคัน */
+const CORNER_MIN = 70;
+const CORNER_LEAD = 0.6;
+/** แบต OT ตอนตามติด (ห่างไม่เกิน OT_HIT_GAP วิ): คันหน้าเสียกำลังชั่วครู่ (ความเร็วสูงสุด/แรงเร่งลดลง OT_SLOW) */
+export const OT_HIT_GAP = 0.15;
+const OT_HIT_TIME = 0.3;
+export const OT_SLOW = 0.03;
 const PASS_TIMEOUT = 12;
 /** ลมดูดที่พาออกมาตอนออกแซง หายไปกี่ส่วนต่อวินาที */
 const CARRY_FADE = 0.3;
@@ -75,11 +82,13 @@ export type RaceCar = Entrant & {
   dirty: number;
   blocked: boolean;
   /** กำลังแซง: คันเป้าหมาย เลนที่ใช้ และเวลาที่แซงมาแล้ว */
-  pass: { target: string; lane: number; t: number } | null;
+  pass: { target: string; lane: number; t: number; corner?: boolean } | null;
   /** ฝั่งที่แซงได้ตอนนี้ (เลน) · null = ยังแซงไม่ได้ */
   passLane: number | null;
   /** สถานะปุ่มแซง: none = ไม่ได้ตามติด · wait = ตามติดแต่ยังแซงไม่ได้ (ใกล้โค้ง/ถนนแคบ/ข้างไม่ว่าง) · ready = กดได้ */
   passState: "none" | "wait" | "ready";
+  /** ปุ่มแซงตอนนี้เป็นการดำเข้าด้านในโค้ง (ไม่ใช่แซงบนทางตรง) */
+  passCorner: boolean;
   /** ลมดูดที่พาออกมาตอนออกแซง (0..1 ค่อย ๆ หาย) */
   carry: number;
   /** หลุดโค้งไปกี่ครั้ง · กันนับซ้ำ */
@@ -111,6 +120,10 @@ export type RaceCar = Entrant & {
   box: number;
   /** AI: แผนเข้าพิท (จบรอบที่เท่าไร · ยางที่จะเปลี่ยน) */
   plan: { lap: number; next: Compound } | null;
+  /** เพิ่งออกจากพิท: ระบบช่วยขับต่อจนพ้นโค้งแรก (ผู้เล่นได้คุมเองบนทางตรง) */
+  rejoin: boolean;
+  /** โดนรถคันหลังใช้แบต OT ตามติด: เสียกำลังอีกกี่วินาที */
+  otHit: number;
 };
 
 /**
@@ -151,7 +164,9 @@ export type RaceEvent =
   | { kind: "pitEarly"; id: string }
   | { kind: "pitOut"; id: string }
   | { kind: "pitMiss"; id: string; penalty: number }
-  | { kind: "tyreLow"; id: string };
+  | { kind: "tyreLow"; id: string }
+  | { kind: "control"; id: string }
+  | { kind: "otHit"; by: string; on: string };
 
 export type Race = {
   track: DriveTrack;
@@ -210,6 +225,7 @@ export function createRace(track: DriveTrack, entrants: Entrant[], opts: { laps:
       pass: null,
       passLane: null,
       passState: "none",
+      passCorner: false,
       carry: 0,
       offs: 0,
       offCool: 0,
@@ -228,6 +244,8 @@ export function createRace(track: DriveTrack, entrants: Entrant[], opts: { laps:
       pitOff: null,
       box: lane.boxes[team] ?? 0,
       plan: e.player || e.remote ? null : planStop(start, opts.laps, rng),
+      rejoin: false,
+      otHit: 0,
     };
   });
   return { track, laps: opts.laps, cars, t: 0, lights: 4.2 + rng() * 1.2, order: cars.map((_, i) => i), finished: false, rng, pitLane: lane };
@@ -336,17 +354,25 @@ function roomToRun(t: DriveTrack, s: number, lane: number, other: number, dist: 
  * แซงได้ไหม (กติกาเดียวกันทั้งผู้เล่นและ AI)
  * — none: ไม่ได้ตามติดคันไหน · wait: ตามติดแต่ทางตรงเหลือไม่พอ / ถนนแคบ / ข้างไม่ว่าง · ready: แซงได้ (ฝั่งที่จะไป · เลนในของโค้งถัดไปก่อน)
  */
-function passCheck(race: Race, i: number): { state: "none" | "wait" } | { state: "ready"; lane: number; target: number } {
+function passCheck(race: Race, i: number): { state: "none" | "wait" } | { state: "ready"; lane: number; target: number; corner?: boolean } {
   const t = race.track;
   const rc = race.cars[i];
   const c = rc.car;
   const f = frontInBand(race, i);
   if (f.j < 0 || gapSec(f.gap, c.v) > PASS_WINDOW || c.v < 25) return { state: "none" };
   const toBrake = brakeAhead(t, c.s);
-  if (toBrake < PASS_STRAIGHT) return { state: "wait" };
   // คันหน้ากำลังแซงคันอื่นอยู่ (ขบวนรถติดกัน) → รอให้เขาจบก่อน ไม่งั้นจะเบียดเข้าเลนเดียวกัน
   if (race.cars[f.j].pass) return { state: "wait" };
   const T = race.cars[f.j].car;
+  if (toBrake < PASS_STRAIGHT) {
+    // แซงในโค้ง: ดำเข้าด้านในของโค้งถัดไป — ต้องยังมีระยะก่อนจุดเบรก ด้านในว่าง และถนนกว้างพอวิ่งเคียงกันจนพ้นโค้ง
+    if (toBrake < CORNER_MIN) return { state: "wait" };
+    const inside = turnAhead(t, c.s, toBrake, toBrake + 150) > 0 ? 1 : -1;
+    if (Math.round(c.lat) === inside) return { state: "wait" };
+    // คันหน้าต้องเว้นที่ (ขยับไปเลนด้านนอก) → ถนนต้องกว้างพอให้เลนในกับเลนนอกห่างกันเกินความกว้างรถจนพ้นโค้ง
+    if (laneClear(race, i, inside, f.gap + CAR_LEN * 2) && roomToRun(t, T.s, inside, -inside, toBrake + 150)) return { state: "ready", lane: inside, target: f.j, corner: true };
+    return { state: "wait" };
+  }
   const cur = Math.round(c.lat);
   const inside = turnAhead(t, c.s, 40, 300) > 0 ? 1 : -1;
   const lanes = cur === 0 ? [inside, -inside] : [0, -cur];
@@ -356,9 +382,9 @@ function passCheck(race: Race, i: number): { state: "none" | "wait" } | { state:
   return { state: "wait" };
 }
 
-function startPass(race: Race, i: number, opt: { lane: number; target: number }, events: RaceEvent[]) {
+function startPass(race: Race, i: number, opt: { lane: number; target: number; corner?: boolean }, events: RaceEvent[]) {
   const rc = race.cars[i];
-  rc.pass = { target: race.cars[opt.target].id, lane: opt.lane, t: 0 };
+  rc.pass = { target: race.cars[opt.target].id, lane: opt.lane, t: 0, corner: opt.corner };
   // ออกจากท้ายคันหน้า: ลมดูดยังพาไปอีกครู่หนึ่ง
   rc.carry = 1;
   events.push({ kind: "pass", id: rc.id, on: race.cars[opt.target].id });
@@ -380,7 +406,8 @@ function passLane(race: Race, i: number, events: RaceEvent[]): number {
     events.push({ kind: "passEnd", id: rc.id, why: "done" });
     return 0;
   }
-  const late = brakeAheadAt(race.track, c.s, c.lat) < 40 && lead < -CAR_LEN / 2;
+  // ถึงจุดเบรกแล้วยังขึ้นไม่ถึง: ทางตรง = ต้องเคียงครึ่งคัน · แซงในโค้ง = หัวรถเลยล้อหลังคันหน้า (เคียงในโค้ง คันด้านนอกต้องยอม)
+  const late = rc.pass.corner ? brakeAheadAt(race.track, c.s, c.lat) < 4 && lead < -CAR_LEN * CORNER_LEAD : brakeAheadAt(race.track, c.s, c.lat) < 40 && lead < -CAR_LEN / 2;
   // คันเป้าหมายมาอยู่แนวเดียวกับเราแล้ว (เลนนั้นปิด / ถนนแคบลง) → เลิก
   const closed =
     (T && lead < 0 && Math.abs(c.lat - rc.pass.lane) < 0.1 && sameBand(race.track, T.car, c)) ||
@@ -414,11 +441,18 @@ function aiInput(race: Race, i: number, events: RaceEvent[]): Input {
   let lane: number;
   if (rc.pass) lane = passLane(race, i, events);
   else if (aiPitCall(race, rc) && approachingPit(race, c.s)) lane = race.pitLane.side; // จะเข้าพิท: ชิดเลนฝั่งพิท
-  else if (passedBy(race, rc.id)) lane = c.lat; // โดนแซงอยู่: อยู่ตรงนั้น ไม่ขยับปิดทาง
+  else if (passedBy(race, rc.id)) {
+    // โดนแซงอยู่: ทางตรง = อยู่ตรงนั้น ไม่ขยับปิดทาง · แซงในโค้ง = เว้นด้านในให้ (ไปเลนด้านนอก)
+    const by = passedBy(race, rc.id)!;
+    lane = by.pass?.corner ? -by.pass.lane : c.lat;
+  }
   else {
     // ออกแซง: ค้างหลังคันหน้ามานานพอ และยังมีทางตรงให้แซงก่อนถึงจุดเบรก
     const chk = rc.heldT > AI_PATIENCE && c.v > 40 && toBrake > 400 && bend < 0.006 && c.v >= 0 ? passCheck(race, i) : null;
-    const opt = chk?.state === "ready" ? chk : null;
+    // แซงในโค้ง: ค้างหลังคันหน้านาน ก่อนถึงโค้ง บางครั้งดำเข้าด้านใน (ฝีมือดีลองบ่อยกว่า)
+    const dive =
+      !chk && rc.heldT > AI_PATIENCE * 1.5 && toBrake >= CORNER_MIN && toBrake < 200 && race.rng() < 0.0025 * Math.max(0.3, 1 - rc.slack * 15) ? passCheck(race, i) : null;
+    const opt = chk?.state === "ready" ? chk : dive?.state === "ready" ? dive : null;
     if (opt) {
       startPass(race, i, opt, events);
       lane = opt.lane;
@@ -624,7 +658,7 @@ function stepPit(race: Race, rc: RaceCar, press: { stop: boolean; go: boolean },
       break;
     case "out":
       // พ้นเส้นจำกัดความเร็ว: เร่งออกไปรวมกับสนาม
-      v = Math.min(sample(t, t.vref, c.s), v + accelFor(v, VMAX) * rc.perf.accel * STEP);
+      v = Math.min(laneValue(t, "vref", c.s, race.pitLane.side) * tyreGrip(rc.tyre), v + accelFor(v, VMAX) * rc.perf.accel * STEP);
       follow();
       break;
   }
@@ -638,6 +672,7 @@ function stepPit(race: Race, rc: RaceCar, press: { stop: boolean; go: boolean },
     c.lat = race.pitLane.side;
     rc.lane = c.lat;
     c.slide = 0;
+    rc.rejoin = !!rc.player;
     events.push({ kind: "pitOut", id: rc.id });
     return;
   }
@@ -668,6 +703,15 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     rc.tow = 0;
     rc.dirty = 0;
     if (inPit(rc)) return;
+    // ใช้แบต OT ตอนตามติดคันหน้า (≤ OT_HIT_GAP วิ): คันหน้าเสียกำลังชั่วครู่ ให้แซงง่ายขึ้น
+    if (rc.car.ot) {
+      const fb = frontInBand(race, i);
+      if (fb.j >= 0 && gapSec(fb.gap, rc.car.v) <= OT_HIT_GAP) {
+        const o = cars[fb.j];
+        if (o.otHit <= 0) events.push({ kind: "otHit", by: rc.id, on: o.id });
+        o.otHit = OT_HIT_TIME;
+      }
+    }
     const f = ahead(race, i);
     if (f.j < 0) return;
     const o = cars[f.j].car;
@@ -732,14 +776,36 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
         }
       }
       // ขอเข้าพิทไว้: ช่วงก่อนทางเข้ารถชิดเลนฝั่งพิทเอง
-      const lane = rc.pass ? passLane(race, i, events) : rc.pitWant && approachingPit(race, rc.car.s) ? race.pitLane.side : (player.lane ?? 0);
+      const by = passedBy(race, rc.id);
+      const lane = rc.pass
+        ? passLane(race, i, events)
+        : rc.pitWant && approachingPit(race, rc.car.s)
+          ? race.pitLane.side
+          : by?.pass?.corner
+            ? -by.pass.lane // โดนดำเข้าด้านในโค้ง: ระบบขยับไปเลนนอกเว้นที่ให้ (ไม่งั้นชนกัน)
+            : (player.lane ?? 0);
       input = { ...player, lane };
+      // เพิ่งออกจากพิท: ระบบช่วยเบรก/เร่งต่อจนพ้นโค้งแรก แล้วคืนการควบคุมบนทางตรง (กดคันเร่งค้างไว้ตอนในพิทก็ไม่หลุดโค้ง)
+      if (rc.rejoin) {
+        if (laneZone(t, rc.car.s, rc.car.lat) === "throttle" && brakeAheadAt(t, rc.car.s, rc.car.lat) > 220) {
+          rc.rejoin = false;
+          events.push({ kind: "control", id: rc.id });
+        } else {
+          const help = idealInput(t, rc.car, 1, tyreGrip(rc.tyre));
+          input = { ...input, throttle: help.throttle, brake: help.brake };
+        }
+      }
     } else input = aiInput(race, i, events);
     rc.braking = input.brake;
     // เพิ่งออกจากท้ายคันหน้า: ลมดูดยังพาไปอีกครู่ (ค่อย ๆ หาย)
     if (rc.carry > 0) {
       rc.carry = rc.pass ? Math.max(0, rc.carry - CARRY_FADE * STEP) : 0;
       mods = { tow: Math.max(rc.tow, rc.carry), dirty: rc.dirty };
+    }
+    // โดนคันหลังใช้แบต OT ตามติด: เสียกำลังชั่วครู่
+    if (rc.otHit > 0) {
+      rc.otHit -= STEP;
+      mods = { ...mods, boost: -OT_SLOW };
     }
     const want = input.lane ?? rc.lane;
     // กันชนท้าย: ความเร็วสูงสุดที่ยังค้างระยะ HOLD_GAP วินาทีหลังคันหน้าได้ (คำนวณก่อนขยับ)
@@ -824,6 +890,7 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     const chk = rc.pass || rc.pit || rc.finish !== null ? ({ state: "none" } as const) : passCheck(race, i);
     rc.passState = chk.state;
     rc.passLane = chk.state === "ready" ? chk.lane : null;
+    rc.passCorner = chk.state === "ready" && !!chk.corner;
   }
 
   // กันทับกัน: กันชนท้ายรั้งไม่ทัน (ไม่เบรกเองเข้าโค้ง) หรือถนนแคบลงตอนวิ่งเคียงกัน → ดันคันหลังไปอยู่ท้ายคันหน้า
