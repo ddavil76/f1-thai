@@ -1189,8 +1189,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             cornerDirty = false;
           }
         }
-        // ในพิท: ไม่แสดงเส้นช่วย (รถวิ่งเอง)
-        const guide = race?.cars[pi].pit ? undefined : { lat: car.lat, grip, fadeAt };
+        // ในพิท: ไม่แสดงเส้นช่วย (รถวิ่งเอง) · ขอเข้าพิทไว้และใกล้ทางเข้า: ลูกศรแยกเข้าพิทเลน
+        let pitGuide: { base: number; from: number } | undefined;
+        if (race?.cars[pi].pitWant && car.s > 0) {
+          const base = Math.ceil(car.s / track.length + 1e-9) * track.length;
+          if (car.s - base >= -PIT_IN - 700) pitGuide = { base, from: laneValue(track, "offset", base - PIT_IN, race.pitLane.side) };
+        }
+        const guide = race?.cars[pi].pit ? undefined : { lat: car.lat, grip, fadeAt, pit: pitGuide };
         scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot });
         scene.render();
 

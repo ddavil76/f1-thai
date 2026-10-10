@@ -112,6 +112,24 @@ describe("เข้าพิท", { timeout: 30000 }, () => {
     expect(me.pitOff).toBeNull();
   });
 
+  it("ขอเข้าพิทไว้: ก่อนถึงทางเข้ารถชิดเลนฝั่งพิทเอง แล้วเลี้ยวเข้าพิทเลนต่อเนื่อง (ระยะเยื้องไม่กระโดด)", () => {
+    const race = createRace(monza, field(1, 0), { laps: 2, difficulty: "normal", seed: 2 });
+    const me = race.cars[0];
+    let atEntry: number | null = null;
+    let lastLat: number | null = null;
+    let jump = 0;
+    for (let k = 0; k < 120 * 60 * 3 && me.pits === 0; k++) {
+      stepRace(race, { ...idealInput(monza, me.car, 1, tyreGrip(me.tyre)), pitReq: me.pitWant === null && !me.pit ? "hard" : undefined, pitStop: me.pit?.phase === "lane" && stopError(me) >= 0, pitGo: !!me.pit?.ready });
+      if (me.pit && atEntry === null) atEntry = me.car.lat;
+      const lat = me.pitOff ?? null;
+      if (lat !== null && lastLat !== null) jump = Math.max(jump, Math.abs(lat - lastLat));
+      lastLat = lat;
+    }
+    expect(me.pits).toBe(1);
+    expect(atEntry).toBeCloseTo(race.pitLane.side, 1);
+    expect(jump).toBeLessThan(0.2);
+  });
+
   it("กดจอดเร็วไป/ไม่กดเลย = จอดนานกว่า", () => {
     const mine = (r: ReturnType<typeof soloPit>) => r.all.find((e) => e.kind === "pitStop" && e.id === r.me.id);
     const perfect = mine(soloPit(-0.2));

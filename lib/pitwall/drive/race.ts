@@ -413,6 +413,7 @@ function aiInput(race: Race, i: number, events: RaceEvent[]): Input {
   if (bend > 0.012) rc.defended = false;
   let lane: number;
   if (rc.pass) lane = passLane(race, i, events);
+  else if (aiPitCall(race, rc) && approachingPit(t, c.s)) lane = race.pitLane.side; // จะเข้าพิท: ชิดเลนฝั่งพิท
   else if (passedBy(race, rc.id)) lane = c.lat; // โดนแซงอยู่: อยู่ตรงนั้น ไม่ขยับปิดทาง
   else {
     // ออกแซง: ค้างหลังคันหน้ามานานพอ และยังมีทางตรงให้แซงก่อนถึงจุดเบรก
@@ -463,6 +464,15 @@ export type RaceInput = Input & { pass?: boolean; pitReq?: Compound | null; pitS
 
 /** ระยะ (สะสม) ของเส้นชัยถัดไปที่รถจะข้าม */
 const nextLine = (t: DriveTrack, s: number) => Math.ceil(s / t.length + 1e-9) * t.length;
+
+/** ระยะก่อนทางเข้าพิทที่รถเริ่มชิดเลนฝั่งพิท (เมตร) */
+export const PIT_APPROACH = 350;
+/** กำลังจะเข้าพิท: อยู่ในช่วงก่อนทางเข้า (ให้ชิดเลนฝั่งพิทไว้ก่อน แล้วเลี้ยวเข้าได้เนียน) */
+export const approachingPit = (t: DriveTrack, s: number) => {
+  if (s <= 0) return false;
+  const rel = s - nextLine(t, s);
+  return rel >= -PIT_IN - PIT_APPROACH && rel < -PIT_IN;
+};
 
 /** AI ควรเข้าพิทรอบนี้ไหม (ตามแผน · ยางใกล้หมด · ยังไม่เข้าเลยแล้วเหลือรอบเดียว) → ยางที่จะเปลี่ยน */
 function aiPitCall(race: Race, rc: RaceCar): Compound | null {
@@ -726,7 +736,8 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
           rc.passWant = 0;
         }
       }
-      const lane = rc.pass ? passLane(race, i, events) : player.lane ?? 0;
+      // ขอเข้าพิทไว้: ช่วงก่อนทางเข้ารถชิดเลนฝั่งพิทเอง
+      const lane = rc.pass ? passLane(race, i, events) : rc.pitWant && approachingPit(t, rc.car.s) ? race.pitLane.side : (player.lane ?? 0);
       input = { ...player, lane };
     } else input = aiInput(race, i, events);
     rc.braking = input.brake;

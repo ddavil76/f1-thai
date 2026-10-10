@@ -49,7 +49,8 @@ function rng(seed: number) {
 const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7);
 
 export type GuideMode = "dynamic" | "corners" | "static";
-export type DriveSceneGuide = { lat: number; grip: number; fadeAt?: (s: number) => number };
+/** pit = ขอเข้าพิทไว้: ลูกศรแยกเข้าพิทเลน (base = ระยะสะสมของเส้นชัยที่พิทคร่อม · from = ระยะเยื้องตอนเริ่มเลี้ยวเข้า) */
+export type DriveSceneGuide = { lat: number; grip: number; fadeAt?: (s: number) => number; pit?: { base: number; from: number } };
 
 /** ตัวถังจากไฟล์ .glb (ผ่าน normaliseBody แล้ว) · tint = ย้อมสีทีมทับ (โมเดลสีขาวกลาง) */
 export type BodyModel = { scene: Obj; tint: boolean };
@@ -211,6 +212,13 @@ export function createDriveScene(opts: {
   let maxEdge = 0;
   for (let i = 0; i < t.n; i++) maxEdge = Math.max(maxEdge, t.wl[i], t.wr[i]);
   maxEdge += RUN;
+  // ระยะเทียบเส้นชัย (−ครึ่งรอบ..ครึ่งรอบ) · ทางเลี้ยวเข้า/ออกพิท (ฝั่งพิท): กำแพง kerb ทราย ป้าย เปิดทางให้ถนนพิท
+  const relOf = (i: number) => (i * DS > t.length / 2 ? i * DS - t.length : i * DS);
+  const pitGap = (i: number, side: number) => {
+    if (!opts.pit || side !== opts.pit.lane.side) return false;
+    const rel = relOf(i);
+    return (rel >= -PIT_IN && rel <= PIT_WALL_FROM) || (rel >= PIT_WALL_TO && rel <= PIT_OUT);
+  };
   const strip = (a: (i: number) => number, b: (i: number) => number, y: number, colorOf: (i: number) => number | null, vScale = 8) => {
     const pos: number[] = [];
     const col: number[] = [];
@@ -273,16 +281,18 @@ export function createDriveScene(opts: {
   scene.add(new THREE.Mesh(strip((i) => -L(i) + 0.2, (i) => -L(i) + 0.45, 0.006, () => 0xf2f2f2), flat(-1)));
   // kerb แดง/ขาวในโค้ง ทั้งสองฝั่ง · ทางวิ่งนอกถนน (runoff) สีทราย/หญ้าเทียม — สนามกำแพงชิด (โมนาโก) มีแค่ kerb แคบ ๆ
   const KW = Math.min(1.4, RUN - 0.1);
-  const kerb = (i: number) => (corner(i) ? (i % 2 ? 0xd71920 : 0xf4f4f4) : null);
-  addFlat(new THREE.Mesh(strip(R, (i) => R(i) + KW, 0.03, kerb), lit()));
-  addFlat(new THREE.Mesh(strip((i) => -L(i) - KW, (i) => -L(i), 0.03, kerb), lit()));
+  const kerb = (side: number) => (i: number) => (corner(i) && !pitGap(i, side) ? (i % 2 ? 0xd71920 : 0xf4f4f4) : null);
+  addFlat(new THREE.Mesh(strip(R, (i) => R(i) + KW, 0.03, kerb(1)), lit()));
+  addFlat(new THREE.Mesh(strip((i) => -L(i) - KW, (i) => -L(i), 0.03, kerb(-1)), lit()));
   if (RUN > 2) {
     const VG = Math.min(9, RUN - 1);
     const SD = Math.min(12, RUN);
-    addFlat(new THREE.Mesh(strip(R, (i) => R(i) + VG, 0.002, (i) => (corner(i) ? null : 0x5f6d59)), lit()));
-    addFlat(new THREE.Mesh(strip((i) => -L(i) - VG, (i) => -L(i), 0.002, (i) => (corner(i) ? null : 0x5f6d59)), lit()));
-    addFlat(new THREE.Mesh(strip((i) => R(i) + KW, (i) => R(i) + SD, 0.002, (i) => (corner(i) ? 0xcdb68d : null)), lit()));
-    addFlat(new THREE.Mesh(strip((i) => -L(i) - SD, (i) => -L(i) - KW, 0.002, (i) => (corner(i) ? 0xcdb68d : null)), lit()));
+    const verge = (side: number) => (i: number) => (corner(i) || pitGap(i, side) ? null : 0x5f6d59);
+    const sand = (side: number) => (i: number) => (corner(i) && !pitGap(i, side) ? 0xcdb68d : null);
+    addFlat(new THREE.Mesh(strip(R, (i) => R(i) + VG, 0.002, verge(1)), lit()));
+    addFlat(new THREE.Mesh(strip((i) => -L(i) - VG, (i) => -L(i), 0.002, verge(-1)), lit()));
+    addFlat(new THREE.Mesh(strip((i) => R(i) + KW, (i) => R(i) + SD, 0.002, sand(1)), lit()));
+    addFlat(new THREE.Mesh(strip((i) => -L(i) - SD, (i) => -L(i) - KW, 0.002, sand(-1)), lit()));
   }
 
   // เส้นช่วยสามสีของแต่ละเลน (แสดงเฉพาะเลนที่รถอยู่) — เลนกลาง = racing line
@@ -335,17 +345,21 @@ export function createDriveScene(opts: {
     let n = 0;
     for (let d = 5; d <= reach && n < GUIDE_N; d += GUIDE_GAP) {
       const ss = s + d;
-      const risk = guideRisk(t, ss, g.lat, projectedSpeed(speed, accelSmooth, d, vtop), g.grip);
-      if (guideMode === "corners" && !guideNeeded(t, ss, g.lat, risk)) continue;
-      const off = laneValue(t, "offset", ss, g.lat);
+      // เส้นแยกเข้าพิท: เลยทางเข้าไปแล้ว ลูกศรตามพิทเลน (สีฟ้า — รถวิ่งเองในพิท)
+      const pr = g.pit && opts.pit ? ss - g.pit.base : null;
+      const inPitPath = pr !== null && pr >= -PIT_IN && pr <= PIT_WALL_FROM;
+      if (pr !== null && pr > PIT_WALL_FROM) break;
+      const risk = inPitPath ? 0 : guideRisk(t, ss, g.lat, projectedSpeed(speed, accelSmooth, d, vtop), g.grip);
+      if (!inPitPath && guideMode === "corners" && !guideNeeded(t, ss, g.lat, risk)) continue;
+      const off = inPitPath ? pitLateral(opts.pit!.lane, pr!, g.pit!.from, g.pit!.from) : laneValue(t, "offset", ss, g.lat);
       const p = poseAt(t, ss, off);
       gFwd.set(Math.cos(p.heading), 0, Math.sin(p.heading));
       gRight.set(-Math.sin(p.heading), 0, Math.cos(p.heading));
       gMat.makeBasis(gFwd, gUp, gRight).setPosition(p.x, surfaceAt(t, ss, off) + 0.04, p.z);
       guideMesh.setMatrixAt(n, gMat);
-      gCol.setHex(guideColor(risk));
+      gCol.setHex(inPitPath ? 0x38bdf8 : guideColor(risk));
       // โหมดฝึก: โค้งที่จำได้แล้ว เส้นจางกลืนกับถนน
-      if (g.fadeAt) gCol.lerp(ROAD, guideFade(g.fadeAt(ss), risk));
+      if (g.fadeAt && !inPitPath) gCol.lerp(ROAD, guideFade(g.fadeAt(ss), risk));
       guideMesh.setColorAt(n, gCol);
       n++;
     }
@@ -375,13 +389,6 @@ export function createDriveScene(opts: {
   }
 
   /* ---------- กำแพง + รั้วกันเศษ ---------- */
-  // ระยะเทียบเส้นชัย (−ครึ่งรอบ..ครึ่งรอบ) · ทางเลี้ยวเข้า/ออกพิท: กำแพงสนามฝั่งพิทเปิดช่อง
-  const relOf = (i: number) => (i * DS > t.length / 2 ? i * DS - t.length : i * DS);
-  const pitGap = (i: number, side: number) => {
-    if (!opts.pit || side !== opts.pit.lane.side) return false;
-    const rel = relOf(i);
-    return (rel >= -PIT_IN && rel <= PIT_WALL_FROM) || (rel >= PIT_WALL_TO && rel <= PIT_OUT);
-  };
   const wallStrip = (side: number, y0: number, y1: number, colorOf: (i: number) => [number, number, number], vScale = 4) => {
     const pos: number[] = [];
     const col: number[] = [];
@@ -443,10 +450,11 @@ export function createDriveScene(opts: {
     const center = (rel: number) => pitLateral(lane, rel, edge(rel), edge(rel));
     const outer = Math.abs(lane.offset) + PIT_W / 2;
     // แถบตามพิทเลนช่วง rel0..rel1 ระหว่างระยะเยื้อง a(rel)..b(rel) ที่ความสูงถนน + dy
-    const pitStrip = (rel0: number, rel1: number, a: (r: number) => number, b: (r: number) => number, dy: number) => {
+    const pitStrip = (rel0: number, rel1: number, a: (r: number) => number, b: (r: number) => number, dy: number, show: (r: number) => boolean = () => true) => {
       const pos: number[] = [];
       for (let r = rel0; r < rel1; r += DS) {
         const r1 = Math.min(rel1, r + DS);
+        if (!show(r)) continue;
         const q = [poseAt(t, r, a(r)), poseAt(t, r1, a(r1)), poseAt(t, r, b(r)), poseAt(t, r1, b(r1))];
         const y0 = heightAt(t, r) + dy;
         const y1 = heightAt(t, r1) + dy;
@@ -462,9 +470,12 @@ export function createDriveScene(opts: {
     const road = new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, (r) => center(r) - PIT_W / 2, (r) => center(r) + PIT_W / 2, 0.01), lit(asphalt));
     (road.material as THREE_NS.MeshStandardMaterial).vertexColors = false;
     addFlat(road);
-    // ขอบขาวสองข้าง · เส้นแบ่งเลนวิ่งกับช่องจอด (ช่วงอู่)
-    scene.add(new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, (r) => center(r) - PIT_W / 2, (r) => center(r) - PIT_W / 2 + 0.2, 0.02), solid(0xf2f2f2)));
-    scene.add(new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, (r) => center(r) + PIT_W / 2 - 0.2, (r) => center(r) + PIT_W / 2, 0.02), solid(0xf2f2f2)));
+    // ขอบขาวสองข้าง (ขอบด้านสนามเริ่มวาดเมื่อพ้นขอบถนนแล้ว = เส้นแยกทางเข้า/ออกพิท ไม่ลากตัดถนน) · เส้นแบ่งเลนวิ่งกับช่องจอด (ช่วงอู่)
+    const inner = (r: number) => center(r) - (side * PIT_W) / 2;
+    const out = (r: number) => center(r) + (side * PIT_W) / 2;
+    const offRoad = (r: number) => Math.abs(inner(r)) > Math.abs(edge(r)) + 0.3;
+    scene.add(new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, inner, (r) => inner(r) + side * 0.25, 0.02, offRoad), solid(0xf2f2f2)));
+    scene.add(new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, (r) => out(r) - side * 0.2, out, 0.02), solid(0xf2f2f2)));
     const b0 = lane.boxes[0] - 12;
     const b1 = lane.boxes[lane.boxes.length - 1] + 12;
     scene.add(new THREE.Mesh(pitStrip(b0, b1, (r) => center(r) + side * 1.4, (r) => center(r) + side * 1.55, 0.02), solid(0xf2f2f2)));
@@ -560,6 +571,7 @@ export function createDriveScene(opts: {
       for (const [d, label] of [[150, "150"], [100, "100"], [50, "50"]] as const) {
         for (const side of [-1, 1]) {
           const k = ((Math.round((i * DS - d) / DS) % t.n) + t.n) % t.n;
+          if (pitGap(k, side)) continue;
           const edge = side > 0 ? R(k) : L(k);
           // สนามกำแพงชิดถนน: ป้ายอยู่หลังกำแพง
           const off = side * (RUN > 4 ? edge + 3.5 : edge + RUN + 0.7);
@@ -603,6 +615,7 @@ export function createDriveScene(opts: {
       holder.add(ln);
       scene.add(holder);
       for (const side of [-1, 1]) {
+        if (pitGap(i, side)) continue;
         const off = side * ((side > 0 ? R(i) : L(i)) + Math.min(3, RUN));
         const q = poseAt(t, i * DS, off);
         const m = new THREE.Mesh(boardGeo, boardMat);
@@ -870,7 +883,18 @@ export function createDriveScene(opts: {
   let baseFov = 66;
 
   /** วางรถ: หันหัวตามทิศของ racing line (ไม่ใช่เส้นกลางถนน) — ระยะเยื้องจากไลน์ (ไถล) คงที่ตลอดช่วงที่ดูทิศ */
+  // หันหัวรถตามการเคลื่อนด้านข้าง (เปลี่ยนเลน · เลี้ยวเข้า/ออกพิท) — ไม่ไถลข้างแบบปู
+  const sideYaw = new WeakMap<Obj, { s: number; lat: number; yaw: number }>();
   const place = (obj: Obj, s: number, lateral: number, yaw = 0) => {
+    const prev = sideYaw.get(obj);
+    let turn = prev?.yaw ?? 0;
+    if (prev && Math.abs(s - prev.s) < 50) {
+      const ds = s - prev.s;
+      const want = ds > 0.05 ? Math.max(-0.5, Math.min(0.5, Math.atan2(lateral - prev.lat, ds))) : ds >= 0 ? turn * 0.9 : 0;
+      turn += (want - turn) * 0.35;
+    } else turn = 0;
+    sideYaw.set(obj, { s, lat: lateral, yaw: turn });
+    yaw += turn;
     const p = poseAt(t, s, lateral);
     const rel = lateral - sample(t, t.lineOffset, s);
     const a = poseAt(t, s - 3, sample(t, t.lineOffset, s - 3) + rel);
