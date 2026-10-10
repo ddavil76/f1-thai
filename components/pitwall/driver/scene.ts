@@ -14,7 +14,8 @@ import { buildCar, type Livery } from "./carModel";
 type Three = typeof THREE_NS;
 type Obj = THREE_NS.Object3D;
 
-export type CameraMode = "tv" | "chase";
+/** orbit = กล้องรีเพลย์ วนรอบรถช้า ๆ */
+export type CameraMode = "tv" | "chase" | "orbit";
 export type Gfx = "high" | "low";
 
 const ZONE_COLOR: Record<Zone, number> = { throttle: 0x22c55e, lift: 0xfacc15, brake: 0xef4444 };
@@ -65,6 +66,8 @@ export type DriveScene = {
     rivals?: { s: number; lateral: number; speed: number; aero: number }[];
     /** เส้นช่วยไดนามิก: เลนที่รถอยู่ (lat) · ตัวคูณการเกาะถนน (ทีม × อากาศเสีย) · fadeAt = โหมดฝึก ความจำของโค้งที่ระยะ s (0..1) */
     guide?: DriveSceneGuide;
+    /** กำลังใช้แบต Overtake (มุมกล้องกว้างขึ้น ให้รู้สึกพุ่ง) */
+    boost?: boolean;
   }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
@@ -877,13 +880,14 @@ export function createDriveScene(opts: {
   });
 
   let mode: CameraMode = "tv";
+  let orbitAngle = 0;
   const camPos = new THREE.Vector3();
   const camLook = new THREE.Vector3();
   const tmp = new THREE.Vector3();
   const fwd = new THREE.Vector3();
   const chaseDir = new THREE.Vector3();
   // การเคลื่อนไหวของตัวรถ (เกลี่ยให้นุ่ม)
-  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0 };
+  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0, boost: 0 };
   let baseFov = 66;
 
   /** วางรถ: หันหัวตามทิศของ racing line (ไม่ใช่เส้นกลางถนน) — ระยะเยื้องจากไลน์ (ไถล) คงที่ตลอดช่วงที่ดูทิศ */
@@ -914,7 +918,7 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false }) {
       drawGuide(s, speed, accel, dt, guide);
       // ปีกพับ/กาง ใช้เวลาราว 0.3 วินาที
       const ka = Math.min(1, dt * 7);
@@ -975,7 +979,8 @@ export function createDriveScene(opts: {
 
       // ความรู้สึกเร็ว: มุมกล้องกว้างขึ้นตามความเร็ว + สั่นเล็กน้อย (มากขึ้นตอนขึ้น kerb)
       const sp01 = Math.min(1, speed / VMAX);
-      const fov = baseFov + sp01 * 9;
+      motion.boost += ((boost ? 1 : 0) - motion.boost) * Math.min(1, dt * 5);
+      const fov = baseFov + sp01 * 9 + motion.boost * 7;
       if (Math.abs(camera.fov - fov) > 0.05) {
         camera.fov += (fov - camera.fov) * Math.min(1, dt * 3);
         camera.updateProjectionMatrix();
@@ -986,7 +991,18 @@ export function createDriveScene(opts: {
       const sy = (Math.random() - 0.5) * amp;
 
       fwd.set(0, 0, 1).applyQuaternion(car.root.quaternion);
-      if (mode === "tv") {
+      if (mode === "orbit") {
+        // รีเพลย์: วนรอบรถช้า ๆ เห็นรถคันอื่นรอบ ๆ
+        orbitAngle += dt * 0.35;
+        const r = 11;
+        camPos.copy(car.root.position);
+        camPos.x += Math.cos(orbitAngle) * r;
+        camPos.z += Math.sin(orbitAngle) * r;
+        camPos.y = Math.max(heightAt(t, s), car.root.position.y) + 3.2;
+        camera.position.copy(camPos);
+        camLook.copy(car.root.position).setY(car.root.position.y + 0.6);
+        camera.lookAt(camLook);
+      } else if (mode === "tv") {
         // เหนือหัวนักขับ เห็นหมวก จมูกรถ และล้อหน้าด้านล่างจอ · เอียงตามตัวรถนิดหน่อย
         camPos.copy(car.root.position).addScaledVector(fwd, 0.15).setY(car.root.position.y + 1.32 + sy);
         camLook.copy(car.root.position).addScaledVector(fwd, 16).setY(heightAt(t, s + 16) + 0.35);

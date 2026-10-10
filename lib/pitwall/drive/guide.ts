@@ -83,3 +83,12 @@ export function learnCorner(m: Mastery, corner: number, clean: boolean): Mastery
 }
 /** เส้นจางลงตามความจำ (เหลือเห็นราง ๆ) — แต่ถ้าเร็วเกินมาก (เสี่ยงหลุด) แสดงเต็มเสมอ */
 export const guideFade = (mastery: number, risk: number) => (risk > 0.6 ? 0 : Math.max(0, Math.min(1, mastery)) * 0.85);
+
+/**
+ * ระยะถึงจุดที่ต้องเริ่มเบรก (เมตร) — จุดแรกข้างหน้าที่ความเร็วที่คาดไว้เกินความเร็วเป้าหมาย (คิดแบบเดียวกับสีลูกศร)
+ * · null = ยังไม่ต้องเบรกภายใน reach
+ */
+export function brakeDistance(t: DriveTrack, s: number, lat: number, v: number, accel: number, grip: number, vtop: number, reach: number, step = 2) {
+  for (let d = 0; d <= reach; d += step) if (projectedSpeed(v, accel, d, vtop) > laneValue(t, "vref", s + d, lat) * grip) return d;
+  return null;
+}
