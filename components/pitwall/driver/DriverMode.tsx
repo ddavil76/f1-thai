@@ -8,11 +8,10 @@ import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
-import { buildDriveTrack, DS, laneValue, poseAt, sample as sampleAt, VSM, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { buildDriveTrack, DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceEvent } from "@/lib/pitwall/drive/race";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
-import { brakeDistance, cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
-import { cornerAhead } from "@/lib/pitwall/drive/corners";
+import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
 import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
 import type { BodyModel, CameraMode, DriveScene, Gfx, GuideMode } from "./scene";
@@ -362,7 +361,7 @@ function Setup({
         {best && <p className="text-xs text-white/60">รอบดีสุดของคุณที่สนามนี้ {fmtTime(best.time)}</p>}
         <p className="text-[11px] text-white/55">
           {hasRealTrack(settings.circuit)
-            ? `ผังสนามและความกว้างถนนตามจริง · มีชื่อโค้งดัง · ความสูงเนินเป็นค่าประมาณ — ${TRACK_DATA_CREDIT}`
+            ? `ผังสนามและความกว้างถนนตามจริง · ความสูงเนินเป็นค่าประมาณ — ${TRACK_DATA_CREDIT}`
             : "ผังสนามแบบคร่าว ๆ (© OpenStreetMap contributors) · ความสูงเนินเป็นค่าประมาณ"}
         </p>
       </Card>
@@ -636,10 +635,8 @@ type Hud = {
   gear: HTMLSpanElement | null;
   thr: HTMLDivElement | null;
   brk: HTMLDivElement | null;
-  hint: HTMLSpanElement | null;
   dot: SVGCircleElement | null;
   lap: HTMLSpanElement | null;
-  corner: HTMLParagraphElement | null;
   sm: HTMLSpanElement | null;
   /** แข่ง: แบตเตอรี่ · ลมดูด · มีรถข้าง ๆ · เลน · ไฟสตาร์ท · จุดคู่แข่งบนแผนที่ */
   battery: HTMLDivElement | null;
@@ -684,7 +681,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const [tower, setTower] = useState<TowerRow[]>([]);
   const [result, setResult] = useState<TowerRow[] | null>(null);
   const [runId, setRunId] = useState(0);
-  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, hint: null, dot: null, lap: null, corner: null, sm: null, battery: null, tow: null, side: null, lane: null, pass: null, lights: null, dots: [] });
+  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, dot: null, lap: null, sm: null, battery: null, tow: null, side: null, lane: null, pass: null, lights: null, dots: [] });
   const sceneRef = useRef<DriveScene | null>(null);
   const [camera, setCamera] = useState<CameraMode>(settings.camera);
   const [line, setLine] = useState(settings.line);
@@ -889,7 +886,6 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       let wasInvalid = false;
       let prevV = car.v;
       // อัตราเร่งแบบเรียบ (ใช้คาดความเร็วตอนไปถึงโค้ง ให้ข้อความเบรกตรงกับสีเส้นช่วย)
-      let accelEma = 0;
       // โหมดฝึก: ความจำของแต่ละโค้ง (เก็บในเครื่องแยกตามสนาม) · ผ่านโค้งโดยไม่หลุด = จำได้มากขึ้น
       const corners = cornerMap(track);
       const cornerAt = (ss: number) => corners[Math.floor((((ss / DS) % track.n) + track.n) % track.n)];
@@ -1075,7 +1071,6 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         const b = bestRef.current;
         const ghost = b && car.lapStart !== null ? ghostDistance(b.trace, car.t - car.lapStart) + car.lap * track.length : null;
         const accel = dt > 0 ? (car.v - prevV) / dt : 0;
-        accelEma += (accel - accelEma) * Math.min(1, dt * 4);
         prevV = car.v;
         const rivalStates = race
           ? rivalIdx.map((k) => {
@@ -1218,11 +1213,6 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           }
           if (h.thr) h.thr.style.opacity = i.throttle || i.touchT ? "1" : "0.18";
           if (h.brk) h.brk.style.opacity = i.brake || i.touchB ? "1" : "0.18";
-          // บอกล่วงหน้าว่าต้องเริ่มเบรกอีกกี่เมตร (คิดแบบเดียวกับสีลูกศร: ความเร็วที่จะมีตอนไปถึง vs ความเร็วที่โค้งรับได้ × การเกาะถนน)
-          if (h.hint) {
-            const dist = brakeDistance(track, car.s, car.lat, car.v, accelEma, grip, VSM * grip, 260);
-            h.hint.textContent = dist === null ? "" : dist < 8 ? "เบรก!" : `เบรกใน ${Math.round(dist)} ม.`;
-          }
           // สถานะ Straight Mode
           if (h.sm) {
             const inZone = track.smZone[Math.floor((((car.s / DS) % track.n) + track.n) % track.n)] === 1;
@@ -1234,13 +1224,6 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               h.sm.style.background = st === "on" ? "#16a34a" : "rgba(0,0,0,0.55)";
               h.sm.style.borderColor = st === "on" ? "#4ade80" : "#4ade80";
             }
-          }
-          // ชื่อโค้งดังที่กำลังจะถึง (เช่น EAU ROUGE)
-          if (h.corner) {
-            const c = d >= 0 ? cornerAhead(track.circuitId, d, track.length) : null;
-            const name = c?.name ?? "";
-            if (h.corner.textContent !== name) h.corner.textContent = name;
-            h.corner.style.opacity = name ? "1" : "0";
           }
           if (h.dot) {
             const p = poseAt(track, car.s);
@@ -1490,13 +1473,6 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         className="poster pointer-events-none absolute right-3 top-38 rounded-lg border-2 px-3 py-1 text-sm tracking-wide opacity-0 transition-opacity duration-200 sm:right-auto sm:left-1/2 sm:top-24 sm:-translate-x-1/2 sm:text-base"
       />
 
-      {/* ชื่อโค้ง */}
-      <p
-        ref={(n) => void (hud.current.corner = n)}
-        aria-live="polite"
-        className="poster pointer-events-none absolute left-3 top-16 border-l-4 border-(--color-f1) bg-black/55 px-3 py-1 text-lg uppercase tracking-wide opacity-0 backdrop-blur transition-opacity duration-300 sm:top-24 sm:text-2xl"
-      />
-
       {msg && (
         <p key={msg.id} className={`radio-toast pointer-events-none absolute inset-x-0 top-24 mx-auto w-fit rounded-xl px-4 py-2 text-center text-base font-bold sm:top-28 sm:text-lg ${msg.tone === "good" ? "bg-[#16a34a]/90" : msg.tone === "bad" ? "bg-(--color-f1)/90" : "bg-black/70"}`}>
           {msg.text}
@@ -1514,9 +1490,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         <circle ref={(n) => void (hud.current.dot = n)} r={mini.w * 2.2} fill={team.color} stroke="white" strokeWidth={mini.w * 0.6} />
       </svg>
 
-      {/* หน้าปัด: ความเร็ว เกียร์ ปุ่มที่กดอยู่ และเตือนเบรก */}
+      {/* หน้าปัด: ความเร็ว เกียร์ และปุ่มที่กดอยู่ */}
       <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-1">
-        <span ref={(n) => void (hud.current.hint = n)} className="poster text-lg text-(--color-f1-text) drop-shadow" />
         <div className="flex items-end gap-3 rounded-2xl bg-black/55 px-4 py-2 backdrop-blur">
           <div ref={(n) => void (hud.current.brk = n)} className="h-10 w-2.5 rounded-full bg-(--color-f1)" aria-hidden />
           <div className="text-center">
