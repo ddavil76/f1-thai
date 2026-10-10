@@ -3,7 +3,7 @@ import { buildDriveTrack, DS, poseAt, surfaceAt } from "@/lib/pitwall/drive/line
 import { hasRealTrack, loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { buildTerrain, forEachSight, inStand, sightHits } from "@/components/pitwall/driver/terrain";
 import { CIRCUITS, TEAMS } from "@/lib/pitwall/teams";
-import { GARAGE_D, PIT_IN, PIT_OUT, PIT_W, pitLane } from "@/lib/pitwall/drive/pit";
+import { GARAGE_D, PIT_W, pitLane, wallFrom, wallTo } from "@/lib/pitwall/drive/pit";
 
 describe("ฉากรอบสนาม: เนินเขา/อัฒจันทร์ไม่บังถนน", { timeout: 30000 }, () => {
   for (const c of CIRCUITS)
@@ -35,7 +35,7 @@ describe("ฉากรอบสนาม: เนินเขา/อัฒจั�
       const lane = pitLane(t, TEAMS.length);
       const tp = buildTerrain(t, { high: true, hillSeed: 37.3, pit: lane });
       const outer = Math.abs(lane.offset) + PIT_W / 2;
-      for (let d = -PIT_IN + 150; d <= PIT_OUT - 150; d += 8)
+      for (let d = wallFrom(lane); d <= wallTo(lane); d += 8)
         for (const lat of [lane.offset, lane.side * (outer + GARAGE_D / 2)]) {
           const q = poseAt(t, d, lat);
           expect(tp.stands.some((st) => inStand(st, q.x, st.y + 2, q.z))).toBe(false);

@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { buildDriveTrack, DS, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { buildDriveTrack, DS, laneValue, poseAt, sample, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { hasRealTrack, loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput } from "@/lib/pitwall/drive/car";
 import { createRace, packState, setRemote, stepRace, stopError, type Entrant, type Race, type RaceCar, type RaceEvent, type RaceInput } from "@/lib/pitwall/drive/race";
-import { BOX_GAP, PIT_IN, PIT_MISS_PENALTY, PIT_QUEUE, pitLane, STOP_BASE, STOP_MISS, stopExtra, stopGrade } from "@/lib/pitwall/drive/pit";
+import { BOX_GAP, pitLateral, PIT_MISS_PENALTY, PIT_QUEUE, pitLane, STOP_BASE, STOP_MISS, stopExtra, stopGrade } from "@/lib/pitwall/drive/pit";
 import { lapsLeft, newTyre, suggestCompound, TYRE_LIFE, tyreGrip, wearPerMeter, wearTyre } from "@/lib/pitwall/drive/tyres";
 import { CIRCUITS, TEAMS } from "@/lib/pitwall/teams";
 
@@ -62,7 +62,40 @@ describe("พิทเลน", () => {
       expect(Math.abs(p.side)).toBe(1);
       expect(Math.abs(p.offset)).toBeGreaterThan(p.inner);
       for (let k = 1; k < p.boxes.length; k++) expect(p.boxes[k] - p.boxes[k - 1]).toBeCloseTo(BOX_GAP);
-      expect(p.boxes[0]).toBeGreaterThan(-PIT_IN + 150);
+      expect(p.boxes[0]).toBeGreaterThan(p.entry + p.taper);
+      expect(p.boxes[p.boxes.length - 1]).toBeLessThan(p.exit - p.taper);
+      // พิทเลนไม่ทับโค้งแคบ (ความโค้ง × ระยะเยื้อง ไม่ถึงระดับที่เส้นทางจะพันเป็นวง)
+      let worst = 0;
+      for (let r = p.entry; r <= p.exit; r += DS) worst = Math.max(worst, Math.abs(sample(t, t.curve, r)) * (Math.abs(p.offset) + 20));
+      if (c.id !== "monaco") expect(worst).toBeLessThan(0.45);
+      else expect(worst).toBeLessThan(0.9);
+    }
+  });
+
+  it("ทุกสนาม: เส้นทางในพิท (เลี้ยวเข้า → พิทเลน → เลี้ยวออก) ไม่หักกลับ/ไม่พันเป็นวง (รถไม่หมุน)", async () => {
+    for (const c of CIRCUITS) {
+      const t = buildDriveTrack(c.id, hasRealTrack(c.id) ? await loadRawTrack(c.id) : null);
+      if (!t) continue;
+      const p = pitLane(t, TEAMS.length);
+      const from = laneValue(t, "offset", p.entry, p.side);
+      const to = laneValue(t, "offset", p.exit, p.side);
+      let prev: { x: number; z: number } | null = null;
+      let dir: { x: number; z: number } | null = null;
+      let worst = 1;
+      for (let r = p.entry; r <= p.exit; r += 2) {
+        const q = poseAt(t, r, pitLateral(p, r, from, to));
+        if (prev) {
+          const d = { x: q.x - prev.x, z: q.z - prev.z };
+          const L = Math.hypot(d.x, d.z);
+          expect(L).toBeGreaterThan(0.5);
+          const u = { x: d.x / L, z: d.z / L };
+          if (dir) worst = Math.min(worst, u.x * dir.x + u.z * dir.z);
+          dir = u;
+        }
+        prev = q;
+      }
+      // ทิศเปลี่ยนไม่เกิน ~25° ต่อ 2 ม.
+      expect(worst, c.id).toBeGreaterThan(0.9);
     }
   });
 

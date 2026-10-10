@@ -11,7 +11,7 @@ import { DS, VMAX, VSM, heightAt, laneValue, poseAt, sample, surfaceAt, type Dri
 import { guideColor, guideFade, guideNeeded, guideRisk, projectedSpeed } from "@/lib/pitwall/drive/guide";
 import { buildCar, type Livery } from "./carModel";
 import { buildTerrain, STAND_DEPTH, STAND_RISE, STAND_ROOF, STAND_TIERS } from "./terrain";
-import { BOX_SHIFT, GARAGE_D, PIT_IN, PIT_OUT, PIT_W, PIT_WALL_FROM, PIT_WALL_TO, pitLateral, type PitLane } from "@/lib/pitwall/drive/pit";
+import { BOX_SHIFT, GARAGE_D, PIT_W, pitLateral, wallFrom, wallTo, type PitLane } from "@/lib/pitwall/drive/pit";
 
 type Three = typeof THREE_NS;
 type Obj = THREE_NS.Object3D;
@@ -217,7 +217,8 @@ export function createDriveScene(opts: {
   const pitGap = (i: number, side: number) => {
     if (!opts.pit || side !== opts.pit.lane.side) return false;
     const rel = relOf(i);
-    return (rel >= -PIT_IN && rel <= PIT_WALL_FROM) || (rel >= PIT_WALL_TO && rel <= PIT_OUT);
+    const p = opts.pit.lane;
+    return (rel >= p.entry - 8 && rel <= wallFrom(p)) || (rel >= wallTo(p) && rel <= p.exit + 8);
   };
   const strip = (a: (i: number) => number, b: (i: number) => number, y: number, colorOf: (i: number) => number | null, vScale = 8) => {
     const pos: number[] = [];
@@ -347,8 +348,8 @@ export function createDriveScene(opts: {
       const ss = s + d;
       // เส้นแยกเข้าพิท: เลยทางเข้าไปแล้ว ลูกศรตามพิทเลน (สีฟ้า — รถวิ่งเองในพิท)
       const pr = g.pit && opts.pit ? ss - g.pit.base : null;
-      const inPitPath = pr !== null && pr >= -PIT_IN && pr <= PIT_WALL_FROM;
-      if (pr !== null && pr > PIT_WALL_FROM) break;
+      const inPitPath = pr !== null && pr >= opts.pit!.lane.entry && pr <= wallFrom(opts.pit!.lane);
+      if (pr !== null && pr > wallFrom(opts.pit!.lane)) break;
       const risk = inPitPath ? 0 : guideRisk(t, ss, g.lat, projectedSpeed(speed, accelSmooth, d, vtop), g.grip);
       if (!inPitPath && guideMode === "corners" && !guideNeeded(t, ss, g.lat, risk)) continue;
       const off = inPitPath ? pitLateral(opts.pit!.lane, pr!, g.pit!.from, g.pit!.from) : laneValue(t, "offset", ss, g.lat);
@@ -467,20 +468,20 @@ export function createDriveScene(opts: {
     };
     const solid = (color: number, offset = -1) => keep(new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: offset, polygonOffsetUnits: offset }));
     // ถนนพิทเลน (เลี้ยวเข้า → ขนานทางตรง → เลี้ยวออก)
-    const road = new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, (r) => center(r) - PIT_W / 2, (r) => center(r) + PIT_W / 2, 0.01), lit(asphalt));
+    const road = new THREE.Mesh(pitStrip(lane.entry, lane.exit, (r) => center(r) - PIT_W / 2, (r) => center(r) + PIT_W / 2, 0.01), lit(asphalt));
     (road.material as THREE_NS.MeshStandardMaterial).vertexColors = false;
     addFlat(road);
     // ขอบขาวสองข้าง (ขอบด้านสนามเริ่มวาดเมื่อพ้นขอบถนนแล้ว = เส้นแยกทางเข้า/ออกพิท ไม่ลากตัดถนน) · เส้นแบ่งเลนวิ่งกับช่องจอด (ช่วงอู่)
     const inner = (r: number) => center(r) - (side * PIT_W) / 2;
     const out = (r: number) => center(r) + (side * PIT_W) / 2;
     const offRoad = (r: number) => Math.abs(inner(r)) > Math.abs(edge(r)) + 0.3;
-    scene.add(new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, inner, (r) => inner(r) + side * 0.25, 0.02, offRoad), solid(0xf2f2f2)));
-    scene.add(new THREE.Mesh(pitStrip(-PIT_IN, PIT_OUT, (r) => out(r) - side * 0.2, out, 0.02), solid(0xf2f2f2)));
+    scene.add(new THREE.Mesh(pitStrip(lane.entry, lane.exit, inner, (r) => inner(r) + side * 0.25, 0.02, offRoad), solid(0xf2f2f2)));
+    scene.add(new THREE.Mesh(pitStrip(lane.entry, lane.exit, (r) => out(r) - side * 0.2, out, 0.02), solid(0xf2f2f2)));
     const b0 = lane.boxes[0] - 12;
     const b1 = lane.boxes[lane.boxes.length - 1] + 12;
     scene.add(new THREE.Mesh(pitStrip(b0, b1, (r) => center(r) + side * 1.4, (r) => center(r) + side * 1.55, 0.02), solid(0xf2f2f2)));
     // เส้นจำกัดความเร็ว (สุดทางเลี้ยวเข้า / ต้นทางเลี้ยวออก)
-    for (const r of [PIT_WALL_FROM, PIT_WALL_TO]) scene.add(new THREE.Mesh(pitStrip(r, r + 0.8, (x) => center(x) - PIT_W / 2, (x) => center(x) + PIT_W / 2, 0.025), solid(0xffffff, -2)));
+    for (const r of [wallFrom(lane), wallTo(lane)]) scene.add(new THREE.Mesh(pitStrip(r, r + 0.8, (x) => center(x) - PIT_W / 2, (x) => center(x) + PIT_W / 2, 0.025), solid(0xffffff, -2)));
     // ช่องจอด: กรอบสีทีมบนพื้น (ของเราสว่าง + ลูกศร) · อู่สีทีมพร้อมป้ายชื่อ
     const place = (o: THREE_NS.Object3D, rel: number, lat: number, dy = 0) => {
       const q = poseAt(t, rel, lat);

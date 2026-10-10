@@ -4,7 +4,7 @@
  * — ของรอบสนามต้องไม่บังถนนที่กำลังจะขับไปจากมุมกล้อง
  */
 import { DS, heightAt, poseAt, sample, surfaceAt, type DriveTrack } from "@/lib/pitwall/drive/line";
-import { GARAGE_D, PIT_IN, PIT_OUT, PIT_W, pitLateral, type PitLane } from "@/lib/pitwall/drive/pit";
+import { GARAGE_D, PIT_W, pitLateral, type PitLane } from "@/lib/pitwall/drive/pit";
 
 /** อัฒจันทร์หนึ่งชุด: กึ่งกลางด้านหน้า (ติดถนน) · ทิศถนน · ฝั่ง · ความยาว */
 export type Stand = { x: number; z: number; y: number; heading: number; side: number; len: number };
@@ -115,7 +115,7 @@ export function buildTerrain(t: DriveTrack, opts: { high: boolean; hillSeed: num
   }
   if (pit) {
     const edge = (s: number) => pit.side * sample(t, pit.side > 0 ? t.wr : t.wl, s);
-    for (let d = -PIT_IN; d <= PIT_OUT; d += DS * 2) {
+    for (let d = pit.entry; d <= pit.exit; d += DS * 2) {
       const c = pitLateral(pit, d, edge(d), edge(d));
       const out = Math.abs(pit.offset) + PIT_W / 2;
       for (const lat of [c, pit.side * out, pit.side * (out + GARAGE_D / 2), pit.side * (out + GARAGE_D)]) {

@@ -10,7 +10,7 @@ import { useDriveLink, type DriveLink } from "./driveSession";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { buildDriveTrack, DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
-import { PIT_IN, PIT_MISS_PENALTY, STOP_MISS, STOP_WINDOW } from "@/lib/pitwall/drive/pit";
+import { nextPitEntry, PIT_MISS_PENALTY, STOP_MISS, STOP_WINDOW } from "@/lib/pitwall/drive/pit";
 import { COMPOUND_INFO, COMPOUNDS, suggestCompound, tyreGrip, type Compound } from "@/lib/pitwall/drive/tyres";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
 import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
@@ -1192,8 +1192,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         // ในพิท: ไม่แสดงเส้นช่วย (รถวิ่งเอง) · ขอเข้าพิทไว้และใกล้ทางเข้า: ลูกศรแยกเข้าพิทเลน
         let pitGuide: { base: number; from: number } | undefined;
         if (race?.cars[pi].pitWant && car.s > 0) {
-          const base = Math.ceil(car.s / track.length + 1e-9) * track.length;
-          if (car.s - base >= -PIT_IN - 700) pitGuide = { base, from: laneValue(track, "offset", base - PIT_IN, race.pitLane.side) };
+          const entry = nextPitEntry(track, race.pitLane, car.s);
+          if (entry - car.s <= 700) pitGuide = { base: entry - race.pitLane.entry, from: laneValue(track, "offset", entry, race.pitLane.side) };
         }
         const guide = race?.cars[pi].pit ? undefined : { lat: car.lat, grip, fadeAt, pit: pitGuide };
         scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot });
@@ -1299,8 +1299,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             if (h.wearTxt) h.wearTxt.textContent = `${Math.round(left * 100)}%`;
             // ปุ่ม PIT: ขอแล้ว = รอบนี้/รอบหน้า (ผ่านทางเข้าไปแล้ว) · ต้องเข้าแต่ยังไม่เข้า = กะพริบเตือนช่วงท้าย
             if (h.pitBtn) {
-              const into = me.car.s > 0 ? me.car.s - Math.floor(me.car.s / track.length) * track.length : 0;
-              const nextLap = into > track.length - PIT_IN;
+              // ทางเข้าถัดไปอยู่หลังเส้นชัยถัดไป (ผ่านทางเข้าของรอบนี้ไปแล้ว) = รอบหน้า
+              const lineAhead = Math.ceil(Math.max(0, me.car.s) / track.length + 1e-9) * track.length;
+              const nextLap = nextPitEntry(track, race.pitLane, Math.max(0, me.car.s)) > lineAhead + Math.max(0, race.pitLane.entry);
               const st = me.pit ? "in" : me.finish !== null ? "off" : me.pitWant ? (nextLap ? "next" : "on") : "idle";
               const label = st === "in" ? "ในพิท" : st === "on" ? `PIT รอบนี้ · ${COMPOUND_INFO[me.pitWant!].short}` : st === "next" ? `PIT รอบหน้า · ${COMPOUND_INFO[me.pitWant!].short}` : "PIT";
               if (h.pitBtn.textContent !== label) h.pitBtn.textContent = label;
