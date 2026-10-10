@@ -2,7 +2,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { buildDriveTrack, DS, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
-import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, stopError, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { PIT_MISS_PENALTY } from "@/lib/pitwall/drive/pit";
+import { tyreGrip } from "@/lib/pitwall/drive/tyres";
 import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
 import { frameAt, Recorder } from "@/components/pitwall/driver/replay";
 import { cornerMap, GUIDE_RED, GUIDE_WARN, guideColor, guideFade, guideNeeded, guideRisk, learnCorner, projectedSpeed, type Mastery } from "@/lib/pitwall/drive/guide";
@@ -17,6 +19,13 @@ const field = (n: number, playerAt = -1): Entrant[] =>
   TEAMS.flatMap((t) => t.drivers.map((d, k) => ({ id: `${t.id}-${k}`, name: d.name, team: t.id, num: d.num, colour: t.color, ink: t.ink, pace: t.pace, skill: d.skill })))
     .slice(0, n)
     .map((e, i) => ({ ...e, player: i === playerAt }));
+
+/** ผู้เล่นขอเข้าพิทตั้งแต่ต้น (ยาง Hard) แล้วกดจอดตอนจุดหยุดตรงกรอบ · ไฟเขียวกดไป */
+const pitPress = (me: RaceCar) => ({
+  pitReq: me.pits === 0 && !me.pit && me.pitWant === null ? ("hard" as const) : undefined,
+  pitStop: me.pit?.phase === "lane" && stopError(me) >= -0.2,
+  pitGo: !!me.pit?.ready,
+});
 
 /** วิ่งการแข่งจนจบ (ผู้เล่น = ขับตามเส้นช่วย ถ้ามี) */
 function run(race: ReturnType<typeof createRace>, pick?: (s: number) => { pass?: boolean; ot?: boolean }) {
@@ -114,9 +123,11 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
     expect(race.cars.every((c) => c.finish !== null)).toBe(true);
     const times = race.order.map((i) => race.cars[i].finish! + race.cars[i].penalty);
     for (let k = 1; k < times.length; k++) expect(times[k]).toBeGreaterThanOrEqual(times[k - 1]);
-    // ผู้ชนะใช้เวลาใกล้ ๆ 2 รอบอ้างอิง (+ออกตัวจากหยุดนิ่ง และเสียเวลาดวลกันรอบแรก)
+    // ผู้ชนะใช้เวลาใกล้ ๆ 2 รอบอ้างอิง (+ออกตัวจากหยุดนิ่ง เสียเวลาดวลกันรอบแรก และเข้าพิท 1 ครั้ง ~25 วิ)
     expect(times[0]).toBeGreaterThan(monza.refLap * 2);
-    expect(times[0]).toBeLessThan(monza.refLap * 2 + 18);
+    expect(times[0]).toBeLessThan(monza.refLap * 2 + 18 + 32);
+    // ทุกคันเข้าพิทตามกติกา ไม่มีใครโดนโทษไม่เข้าพิท
+    expect(race.cars.every((c) => c.pits >= 1)).toBe(true);
   });
 
   it("AI แซงกันได้จริง (ลำดับเปลี่ยนจากกริด) และทีมเร็วไปข้างหน้า", () => {
@@ -134,9 +145,9 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
   it("ผู้เล่นขับตามเส้นช่วย แซงจากท้ายกริดได้", () => {
     const n = 8;
     const race = createRace(monza, field(n, n - 1), { laps: 3, difficulty: "easy", seed: 9 });
-    // กดแซงทุกครั้งที่ปุ่มพร้อม แล้วกด OT ระหว่างแซง (แบบที่ผู้เล่นจะทำ)
+    // กดแซงทุกครั้งที่ปุ่มพร้อม แล้วกด OT ระหว่างแซง (แบบที่ผู้เล่นจะทำ) · เข้าพิทรอบแรก จอดตรงกรอบ
     const me = race.cars.find((c) => c.player)!;
-    const ev = run(race, () => ({ pass: me.passState === "ready", ot: me.pass !== null }));
+    const ev = run(race, () => ({ pass: me.passState === "ready", ot: me.pass !== null, ...pitPress(me) }));
     const pi = race.cars.findIndex((c) => c.player);
     expect(race.order.indexOf(pi)).toBeLessThan(n - 1);
     expect(ev.some((e) => e.kind === "overtake" && e.by === race.cars[pi].id)).toBe(true);
@@ -252,7 +263,8 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
       const all: RaceEvent[] = [];
       for (let k = 0; k < 120 * 60 * 6 && me.finish === null; k++) {
         ev.length = 0;
-        stepRace(race, full ? { throttle: true, brake: false } : idealInput(monza, me.car), ev);
+        // ขับตามเส้นช่วย (เข้าโค้งช้าลงตามยางที่สึก แบบที่เส้นช่วยบอก)
+        stepRace(race, full ? { throttle: true, brake: false } : idealInput(monza, me.car, 1, tyreGrip(me.tyre)), ev);
         all.push(...ev);
       }
       return { time: me.finish! + me.penalty, offs: all.filter((e) => e.kind === "offtrack").length, pen: me.penalty };
@@ -261,7 +273,9 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
     const bad = solo(true);
     expect(good.offs).toBe(0);
     expect(bad.offs).toBeGreaterThan(TRACK_LIMITS);
-    expect(bad.pen).toBe((bad.offs - TRACK_LIMITS) * OFF_PENALTY);
+    // ทั้งสองไม่เข้าพิท = โดนโทษไม่เข้าพิทด้วย
+    expect(good.pen).toBe(PIT_MISS_PENALTY);
+    expect(bad.pen).toBe((bad.offs - TRACK_LIMITS) * OFF_PENALTY + PIT_MISS_PENALTY);
     expect(bad.time).toBeGreaterThan(good.time + 20);
   });
 

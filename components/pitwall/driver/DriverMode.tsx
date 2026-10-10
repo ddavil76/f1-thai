@@ -9,7 +9,9 @@ import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { buildDriveTrack, DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
-import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { nextPitEntry, PIT_MISS_PENALTY, STOP_MISS, STOP_WINDOW } from "@/lib/pitwall/drive/pit";
+import { COMPOUND_INFO, COMPOUNDS, suggestCompound, tyreGrip, type Compound } from "@/lib/pitwall/drive/tyres";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
 import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
 import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
@@ -42,6 +44,8 @@ type Settings = {
   difficulty: Difficulty;
   /** ตำแหน่งออกตัวของผู้เล่น: ท้ายกริด / กลางกริด / ตามความเร็วรถ */
   grid: "back" | "mid" | "pace";
+  /** ยางออกตัว (แข่ง/ออนไลน์) */
+  startTyre: Compound;
 };
 
 /** รถในสนามแข่ง: ผู้เล่น + นักขับคนอื่นจากทุกทีม (เรียงตามกริด) */
@@ -142,7 +146,7 @@ const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 export default function DriverMode({ name, onExit }: { name: string; onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = typeof window === "undefined" ? null : readJson<Partial<Settings>>(SETTINGS_KEY);
-    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", train: false, haptics: true, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", ...saved };
+    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", train: false, haptics: true, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", startTyre: "medium", ...saved };
   });
   const [driving, setDriving] = useState(false);
   const [room, setRoom] = useState<string | null>(null);
@@ -250,7 +254,7 @@ function Setup({
           {settings.mode !== "tt" && (
             <>
               {" "}
-              · แข่ง: <b>D</b> = แซง (เมื่อปุ่มแซงพร้อม) · <b>Q</b> (กดค้าง) = OT ใช้แบต · มือถือ: ปุ่ม “แซง” และ “OT”
+              · แข่ง: <b>D</b> = แซง (เมื่อปุ่มแซงพร้อม) · <b>Q</b> (กดค้าง) = OT ใช้แบต · <b>P</b> = ขอ/ยกเลิกเข้าพิท · <b>1</b>/<b>2</b>/<b>3</b> = เลือกยาง S/M/H · ในพิท <b>Enter</b> หรือ <b>Space</b> = จอด / ไป · มือถือ: ปุ่ม “แซง” “OT” และ “PIT”
             </>
           )}
         </p>
@@ -269,7 +273,13 @@ function Setup({
               <b className="text-white">หลุดโค้ง:</b> เข้าโค้งเร็วเกิน รถลงหญ้า ความเร็วหายเกือบครึ่ง · เตือน 3 ครั้ง ครั้งต่อไปโดน +5 วินาทีทุกครั้ง
             </li>
             <li>
-              <b className="text-white">AI:</b> ใช้กติกาเดียวกัน — แซงบนทางตรงยาว เก็บแบตไว้ใช้ตอนแซง ป้องกันได้ครั้งเดียวต่อทางตรง
+              <b className="text-white">ยาง:</b> Soft (แดง) เกาะดีสุดแต่หมดเร็ว · Medium (เหลือง) กลาง ๆ · Hard (ขาว) ทนสุด · สึกตามระยะ และสึกเร็วขึ้นเมื่อไถล/หลุดโค้ง · ใกล้หมดเกาะถนนลดลงเร็ว (เส้นช่วยแดงเร็วขึ้นตาม) · ยางใหม่จากพิทยังเย็นช่วงครึ่งรอบแรก
+            </li>
+            <li>
+              <b className="text-white">เข้าพิท (ต้องเข้าอย่างน้อย 1 ครั้ง ไม่งั้นโทษ +{PIT_MISS_PENALTY} วิ):</b> กด PIT แล้วเลือกยาง → ถึงทางเข้าพิท (ก่อนเส้นชัย) รถวิ่งเองที่ 80 กม./ชม. → กด “จอด!” ให้รถหยุดตรงกรอบอู่ทีม (แถบเลื่อนเข้าช่องเขียว — อู่แต่ละทีมอยู่คนละตำแหน่ง จังหวะจึงต่างกัน) จอดตรง = เปลี่ยนยาง ~2.3 วิ · ก่อน/เลยกรอบ = ช้าลง · ไฟเขียวแล้วกด “ไป!” (กดก่อนไฟเขียว เสียเวลาเพิ่ม)
+            </li>
+            <li>
+              <b className="text-white">AI:</b> ใช้กติกาเดียวกัน — แซงบนทางตรงยาว เก็บแบตไว้ใช้ตอนแซง ป้องกันได้ครั้งเดียวต่อทางตรง · วางแผนเข้าพิทตามยาง
             </li>
               </ul>
             )}
@@ -278,6 +288,11 @@ function Setup({
       </Card>
 
       {online && <JoinCard onRoom={onRoom} />}
+      {online && (
+        <Card>
+          <TyrePick value={settings.startTyre} onChange={(v) => set({ startTyre: v })} />
+        </Card>
+      )}
 
       {settings.mode === "race" && !online && (
         <Card>
@@ -303,6 +318,7 @@ function Setup({
                 ]}
               />
             </label>
+            <TyrePick value={settings.startTyre} onChange={(v) => set({ startTyre: v })} />
             <label className="space-y-1">
               <span className="text-xs font-bold text-white/70">ออกตัว</span>
               <Seg<Settings["grid"]>
@@ -646,9 +662,33 @@ type Hud = {
   pass: HTMLButtonElement | null;
   lights: HTMLDivElement | null;
   dots: (SVGCircleElement | null)[];
+  /** ยาง: ตัวอักษรชนิด · แถบเหลือ · % · ปุ่ม PIT · แผงในพิท (แถบจังหวะ เครื่องหมาย ปุ่ม ข้อความ ไฟ) */
+  tyre: HTMLSpanElement | null;
+  wear: HTMLDivElement | null;
+  wearTxt: HTMLSpanElement | null;
+  pitBtn: HTMLButtonElement | null;
+  pitPanel: HTMLDivElement | null;
+  pitMark: HTMLDivElement | null;
+  pitAct: HTMLButtonElement | null;
+  pitInfo: HTMLParagraphElement | null;
+  pitBar: HTMLDivElement | null;
 };
 
-type TowerRow = { id: string; pos: number; num: number; name: string; colour: string; gap: string; me: boolean; pen: number };
+type TowerRow = { id: string; pos: number; num: number; name: string; colour: string; gap: string; me: boolean; pen: number; tyre?: Compound; pit?: boolean; strategy?: string };
+
+/** กลยุทธ์ยางของรถคันหนึ่ง เช่น "M → H (จอด 2.4 วิ)" */
+const strategyOf = (c: RaceCar) =>
+  c.stints.map((x) => COMPOUND_INFO[x.c].short).join(" → ") + (c.stints.some((x) => x.stop !== null) ? ` · จอด ${c.stints.filter((x) => x.stop !== null).map((x) => x.stop!.toFixed(1)).join("/")} วิ` : "");
+
+/** เลือกยางออกตัว */
+function TyrePick({ value, onChange }: { value: Compound; onChange: (v: Compound) => void }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs font-bold text-white/70">ยางออกตัว</span>
+      <Seg<Compound> value={value} onChange={onChange} options={COMPOUNDS.map((c) => ({ v: c, label: COMPOUND_INFO[c].label }))} />
+    </label>
+  );
+}
 
 /** แข่งออนไลน์: ลิงก์ห้อง · รายชื่อบนกริด · เวลาไฟดับ (นาฬิกาเซิร์ฟเวอร์) */
 type Net = { link: DriveLink; entrants: Entrant[]; startAt: number; host: boolean; phase: DriveSnap["phase"] };
@@ -674,14 +714,28 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const team = TEAMS[settings.team] ?? TEAMS[0];
   const driver = team.drivers[settings.driver] ?? team.drivers[0];
   const host = useRef<HTMLDivElement>(null);
-  const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false, smArm: false, pass: false, ot: false, touchO: false });
+  const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false, smArm: false, pass: false, ot: false, touchO: false, pitReq: undefined as Compound | null | undefined, pitAct: false });
   const isRace = settings.mode === "race";
+  // พิท: ยางที่เลือกจะเปลี่ยน · ขอเข้าพิทอยู่ไหม (ฝั่งจอ — ค่าจริงอยู่ใน race)
+  const [pitTyre, setPitTyre] = useState<Compound>("hard");
+  const [pitOn, setPitOn] = useState(false);
+  const pitRef = useRef({ tyre: pitTyre, on: pitOn });
+  useEffect(() => {
+    pitRef.current = { tyre: pitTyre, on: pitOn };
+  }, [pitTyre, pitOn]);
+  /** ขอ/ยกเลิกเข้าพิท หรือเปลี่ยนยางที่จะใส่ */
+  const requestPit = (on: boolean, tyre = pitRef.current.tyre) => {
+    setPitOn(on);
+    setPitTyre(tyre);
+    pitRef.current = { tyre, on };
+    input.current.pitReq = on ? tyre : null;
+  };
   const netEntrants = net?.entrants;
   const field = useMemo(() => netEntrants ?? (isRace ? buildField(settings) : []), [netEntrants, isRace, settings]);
   const [tower, setTower] = useState<TowerRow[]>([]);
   const [result, setResult] = useState<TowerRow[] | null>(null);
   const [runId, setRunId] = useState(0);
-  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, dot: null, lap: null, sm: null, battery: null, tow: null, side: null, lane: null, pass: null, lights: null, dots: [] });
+  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, dot: null, lap: null, sm: null, battery: null, tow: null, side: null, lane: null, pass: null, lights: null, dots: [], tyre: null, wear: null, wearTxt: null, pitBtn: null, pitPanel: null, pitMark: null, pitAct: null, pitInfo: null, pitBar: null });
   const sceneRef = useRef<DriveScene | null>(null);
   const [camera, setCamera] = useState<CameraMode>(settings.camera);
   const [line, setLine] = useState(settings.line);
@@ -751,7 +805,11 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
     const keys = (e: KeyboardEvent, down: boolean) => {
       const k = e.key;
       if (k === "ArrowUp" || k === "w" || k === "W") input.current.throttle = down;
-      else if (k === "ArrowDown" || k === "s" || k === "S" || k === " ") input.current.brake = down;
+      else if (k === "ArrowDown" || k === "s" || k === "S" || k === " ") {
+        input.current.brake = down;
+        // ในพิท: Space = จอด / ไป (รถวิ่งเอง ไม่ต้องเบรก)
+        if (k === " " && down && !e.repeat) input.current.pitAct = true;
+      }
       else if (down && (k === "c" || k === "C")) setCamera((m) => (m === "tv" ? "chase" : "tv"));
       else if (k === "e" || k === "E" || k === "Shift") {
         // กดหนึ่งครั้ง = เตรียมเปิด/ปิด Straight Mode (โหมดกดเอง)
@@ -761,7 +819,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         // กดแซง (ทำงานเมื่อปุ่มแซงพร้อม)
         if (down && !e.repeat) input.current.pass = true;
       } else if (k === "q" || k === "Q") input.current.ot = down;
-      else if (down && k === "Escape") setPaused((p) => !p);
+      else if (k === "p" || k === "P") {
+        if (down && !e.repeat) requestPit(!pitRef.current.on);
+      } else if (k === "1" || k === "2" || k === "3") {
+        if (down && !e.repeat) requestPit(pitRef.current.on, COMPOUNDS[Number(k) - 1]);
+      } else if (k === "Enter") {
+        if (down && !e.repeat) input.current.pitAct = true;
+      } else if (down && k === "Escape") setPaused((p) => !p);
       else return;
       e.preventDefault();
     };
@@ -818,7 +882,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       const livery = { team: team.id, colour: team.color, ink: team.ink, num: driver.num };
       // โหมดแข่ง: สร้างการแข่ง (ผู้เล่นอยู่ในกริด) · รถคันอื่น = คู่แข่ง
       const n0 = netRef.current;
-      const race: Race | null = isRace ? createRace(track, field, { laps: settings.raceLaps, difficulty: settings.difficulty, seed: (Date.now() & 0xffff) + runId }) : null;
+      const race: Race | null = isRace ? createRace(track, field, { laps: settings.raceLaps, difficulty: settings.difficulty, seed: (Date.now() & 0xffff) + runId, startTyre: settings.startTyre }) : null;
       // ออนไลน์: ไฟดับตามนาฬิกาเซิร์ฟเวอร์ (ทุกเครื่องออกตัวพร้อมกัน)
       const lightsLeft = () => (n0 ? Math.max(1e-6, (n0.startAt - n0.link.serverNow()) / 1000) : 0);
       if (race && n0) race.lights = lightsLeft();
@@ -826,7 +890,10 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       const rivalIdx = race ? race.cars.map((_, k) => k).filter((k) => k !== pi) : [];
       const rivals = race ? rivalIdx.map((k) => ({ team: race.cars[k].team, colour: race.cars[k].colour, ink: race.cars[k].ink, num: race.cars[k].num })) : undefined;
       const lightsTotal = n0 ? NET_LIGHTS : (race?.lights ?? 0);
-      const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment }, merge: mergeGeometries, body, el, track, livery, gfx, rivals });
+      const pit = race ? { lane: race.pitLane, teams: TEAMS.map((x) => ({ color: x.color, name: x.name })), mine: settings.team } : undefined;
+      const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment }, merge: mergeGeometries, body, el, track, livery, gfx, rivals, pit });
+      // เริ่มใหม่: ยังไม่ได้ขอเข้าพิท · ยางแนะนำ = ชนิดที่วิ่งได้ครึ่งหลังของการแข่ง
+      if (race) requestPit(false, suggestCompound(race.laps / 2, race.laps));
       sceneRef.current = scene;
       scene.setCamera(camera);
       scene.setLine(line);
@@ -875,6 +942,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                     : `+${g.toFixed(1)}`,
             me: !!c.player,
             pen: c.penalty,
+            tyre: c.tyre.c,
+            pit: c.pitOff !== null,
+            strategy: strategyOf(c),
           };
         });
       };
@@ -945,10 +1015,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           const wasLights = race.lights > 0;
           while (acc >= RACE_STEP) {
             acc -= RACE_STEP;
-            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB, sm: settings.sm === "auto" || i.smArm, pass: i.pass, ot: i.ot || i.touchO };
+            const inPitNow = race.cars[pi].pit !== null;
+            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB, sm: settings.sm === "auto" || i.smArm, pass: i.pass, ot: i.ot || i.touchO, pitReq: i.pitReq, pitStop: inPitNow && i.pitAct, pitGo: inPitNow && i.pitAct };
             i.pass = false;
+            i.pitReq = undefined;
+            i.pitAct = false;
             if (settings.autoBrake) {
-              const ideal = idealInput(track, car);
+              const ideal = idealInput(track, car, 1, tyreGrip(race.cars[pi].tyre));
               want.brake = want.brake || ideal.brake;
               if (ideal.brake) want.throttle = false;
             }
@@ -978,7 +1051,20 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               else if (e.kind === "yield" && e.id === me.id && now - yieldMsgAt > 2500) {
                 yieldMsgAt = now;
                 setMsg({ id: now + 5, text: "อยู่ด้านนอกโค้ง ต้องยอมให้คันใน", tone: "bad" });
-              } else if (e.kind === "lap" && e.id === me.id && me.finish === null) setMsg({ id: now + 6, text: `รอบ ${e.lap} · ${fmtTime(e.time)}`, tone: "info" });
+              } else if (e.kind === "lap" && e.id === me.id && me.finish === null) {
+                // รอบสุดท้ายแล้วยังไม่เข้าพิท: เตือน
+                if (me.pits === 0 && !me.pit && e.lap === race.laps - 1) setMsg({ id: now + 6, text: `รอบสุดท้าย! ยังไม่เข้าพิท · ไม่เข้าโทษ +${PIT_MISS_PENALTY} วิ`, tone: "bad" });
+                else setMsg({ id: now + 6, text: `รอบ ${e.lap} · ${fmtTime(e.time)}`, tone: "info" });
+              } else if (e.kind === "pitIn" && e.id === me.id) {
+                setPitOn(false);
+                pitRef.current.on = false;
+                setMsg({ id: now + 12, text: "เข้าพิท · กด “จอด!” ให้ตรงกรอบอู่", tone: "info" });
+              } else if (e.kind === "pitStop" && e.id === me.id) {
+                const label = { perfect: "PERFECT!", good: "ดี", early: "จอดก่อนกรอบ", late: "จอดเลยกรอบ" }[e.grade];
+                setMsg({ id: now + 13, text: `เปลี่ยนยาง ${COMPOUND_INFO[e.c].label} · ${e.time.toFixed(1)} วิ · ${label}`, tone: e.grade === "perfect" || e.grade === "good" ? "good" : "bad" });
+              } else if (e.kind === "pitEarly" && e.id === me.id) setMsg({ id: now + 14, text: "กดไปก่อนไฟเขียว! ช่างยังไม่เสร็จ +0.6 วิ", tone: "bad" });
+              else if (e.kind === "pitMiss" && e.id === me.id) setMsg({ id: now + 15, text: `ไม่ได้เข้าพิท · โทษ +${PIT_MISS_PENALTY} วิ`, tone: "bad" });
+              else if (e.kind === "tyreLow" && e.id === me.id && me.finish === null) setMsg({ id: now + 16, text: me.pits === 0 ? "ยางเริ่มหมด · กด PIT เข้าพิทได้เลย" : "ยางเริ่มหมด · เกาะถนนน้อยลง", tone: "bad" });
               else if (e.kind === "finish" && e.id === me.id) {
                 recRef.current?.markFinish(race.t);
                 setMsg({ id: now + 7, text: `เข้าเส้นชัย P${race.order.indexOf(pi) + 1}`, tone: "good" });
@@ -1067,7 +1153,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         }
 
         const d = lapDistance(track, car);
-        const lateral = laneValue(track, "offset", car.s, car.lat) + car.slide;
+        const lateralOf = (rc: RaceCar) => rc.pitOff ?? laneValue(track, "offset", rc.car.s, rc.car.lat) + rc.car.slide;
+        const lateral = race ? lateralOf(race.cars[pi]) : laneValue(track, "offset", car.s, car.lat) + car.slide;
         const b = bestRef.current;
         const ghost = b && car.lapStart !== null ? ghostDistance(b.trace, car.t - car.lapStart) + car.lap * track.length : null;
         const accel = dt > 0 ? (car.v - prevV) / dt : 0;
@@ -1075,7 +1162,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         const rivalStates = race
           ? rivalIdx.map((k) => {
               const c = race.cars[k].car;
-              return { s: c.s, lateral: laneValue(track, "offset", c.s, c.lat) + c.slide, speed: c.v, aero: c.sm ? 1 : 0 };
+              return { s: c.s, lateral: lateralOf(race.cars[k]), speed: c.v, aero: c.sm ? 1 : 0, tyre: COMPOUND_INFO[race.cars[k].tyre.c].color };
             })
           : undefined;
         // บันทึกรีเพลย์ (แข่งเท่านั้น หลังไฟดับ)
@@ -1086,8 +1173,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           if (rec.clips.length + (rec.finish ? 1 : 0) !== before) setClipCount({ finish: !!rec.finish, highlights: rec.clips.length });
         }
         scene.setLane(car.lat);
-        // เส้นช่วยไดนามิก: การเกาะถนนของรถเรา (ทีม × อากาศเสียจากคันหน้า)
-        const grip = race ? race.cars[pi].perf.grip * (1 - DIRTY_GRIP * race.cars[pi].dirty) : perf.grip;
+        // เส้นช่วยไดนามิก: การเกาะถนนของรถเรา (ทีม × ยาง × อากาศเสียจากคันหน้า)
+        const grip = race ? race.cars[pi].perf.grip * tyreGrip(race.cars[pi].tyre) * (1 - DIRTY_GRIP * race.cars[pi].dirty) : perf.grip;
         if (settings.train) {
           if (car.offT > 0) cornerDirty = true;
           const c = cornerAt(car.s);
@@ -1102,7 +1189,14 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             cornerDirty = false;
           }
         }
-        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide: { lat: car.lat, grip, fadeAt }, boost: car.ot });
+        // ในพิท: ไม่แสดงเส้นช่วย (รถวิ่งเอง) · ขอเข้าพิทไว้และใกล้ทางเข้า: ลูกศรแยกเข้าพิทเลน
+        let pitGuide: { base: number; from: number } | undefined;
+        if (race?.cars[pi].pitWant && car.s > 0) {
+          const entry = nextPitEntry(track, race.pitLane, car.s);
+          if (entry - car.s <= 700) pitGuide = { base: entry - race.pitLane.entry, from: laneValue(track, "offset", entry, race.pitLane.side) };
+        }
+        const guide = race?.cars[pi].pit ? undefined : { lat: car.lat, grip, fadeAt, pit: pitGuide };
+        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot, tyre: race ? COMPOUND_INFO[race.cars[pi].tyre.c].color : undefined });
         scene.render();
 
         const kmh = car.v * 3.6;
@@ -1188,6 +1282,61 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                 h.pass.style.pointerEvents = ready ? "auto" : "none";
                 h.pass.style.filter = st === "wait" ? "grayscale(1) brightness(0.8)" : "";
                 h.pass.classList.toggle("animate-pulse", ready);
+              }
+            }
+            // ยาง: ชนิด + ที่เหลือ (เขียว → เหลือง → แดง)
+            if (h.tyre) {
+              const info = COMPOUND_INFO[me.tyre.c];
+              h.tyre.textContent = info.short;
+              h.tyre.style.color = info.color;
+              h.tyre.style.borderColor = info.color;
+            }
+            const left = Math.max(0, 1 - me.tyre.wear);
+            if (h.wear) {
+              h.wear.style.width = `${Math.round(left * 100)}%`;
+              h.wear.style.background = left > 0.45 ? "#4ade80" : left > 0.25 ? "#facc15" : "#ef4444";
+            }
+            if (h.wearTxt) h.wearTxt.textContent = `${Math.round(left * 100)}%`;
+            // ปุ่ม PIT: ขอแล้ว = รอบนี้/รอบหน้า (ผ่านทางเข้าไปแล้ว) · ต้องเข้าแต่ยังไม่เข้า = กะพริบเตือนช่วงท้าย
+            if (h.pitBtn) {
+              // ทางเข้าถัดไปอยู่หลังเส้นชัยถัดไป (ผ่านทางเข้าของรอบนี้ไปแล้ว) = รอบหน้า
+              const lineAhead = Math.ceil(Math.max(0, me.car.s) / track.length + 1e-9) * track.length;
+              const nextLap = nextPitEntry(track, race.pitLane, Math.max(0, me.car.s)) > lineAhead + Math.max(0, race.pitLane.entry);
+              const st = me.pit ? "in" : me.finish !== null ? "off" : me.pitWant ? (nextLap ? "next" : "on") : "idle";
+              const label = st === "in" ? "ในพิท" : st === "on" ? `PIT รอบนี้ · ${COMPOUND_INFO[me.pitWant!].short}` : st === "next" ? `PIT รอบหน้า · ${COMPOUND_INFO[me.pitWant!].short}` : "PIT";
+              if (h.pitBtn.textContent !== label) h.pitBtn.textContent = label;
+              h.pitBtn.style.opacity = st === "off" || st === "in" ? "0" : "1";
+              h.pitBtn.style.pointerEvents = st === "off" || st === "in" ? "none" : "auto";
+              const urge = st === "idle" && me.pits === 0 && me.car.lap >= race.laps - 1;
+              h.pitBtn.classList.toggle("animate-pulse", urge || st === "on");
+              h.pitBtn.dataset.on = st === "on" || st === "next" ? "1" : "";
+            }
+            // แผงในพิท: แถบจังหวะจอด (จุดหยุดถ้ากดตอนนี้ เทียบกรอบ) → เปลี่ยนยาง → ไฟเขียวกดไป
+            if (h.pitPanel) {
+              const p = me.pit;
+              const show = !!p && (p.phase === "in" || p.phase === "lane" || p.phase === "brake" || p.phase === "stop");
+              h.pitPanel.style.opacity = show ? "1" : "0";
+              h.pitPanel.style.pointerEvents = show ? "auto" : "none";
+              if (p && show) {
+                const err = p.phase === "in" || p.phase === "lane" ? stopError(me) : p.err;
+                // แถบ: ซ้ายสุด = ยังไกล (−30 ม.) · กลาง = ตรงกรอบ · ขวาสุด = เลยกรอบ (+STOP_MISS)
+                const x = Math.max(0, Math.min(1, (err + 30) / (30 + STOP_MISS)));
+                if (h.pitMark) h.pitMark.style.left = `${(x * 100).toFixed(1)}%`;
+                const canStop = (p.phase === "in" || p.phase === "lane") && err >= -STOP_WINDOW;
+                const stopping = p.phase === "brake" || p.phase === "stop";
+                if (h.pitBar) h.pitBar.style.width = p.phase === "stop" ? `${Math.min(100, (p.t / Math.max(0.1, p.need)) * 100).toFixed(0)}%` : "0%";
+                if (h.pitAct) {
+                  const t = p.phase === "stop" ? (p.ready ? "ไป!" : "กำลังเปลี่ยนยาง…") : p.phase === "brake" ? "กำลังจอด…" : canStop ? "จอด!" : "รอ…";
+                  if (h.pitAct.textContent !== t) h.pitAct.textContent = t;
+                  const live = canStop || (p.phase === "stop" && p.ready);
+                  h.pitAct.style.background = p.phase === "stop" ? (p.ready ? "#16a34a" : "#7f1d1d") : live ? "#facc15" : "rgba(255,255,255,0.12)";
+                  h.pitAct.style.color = live && p.phase !== "stop" ? "#08080A" : "#fff";
+                  h.pitAct.classList.toggle("animate-pulse", live);
+                }
+                if (h.pitInfo) {
+                  const t = stopping ? `ยาง ${COMPOUND_INFO[p.c].label} · ${p.phase === "stop" ? `${p.t.toFixed(1)} วิ` : ""}` : `พิทเลน 80 กม./ชม. · ใส่ยาง ${COMPOUND_INFO[p.c].label}`;
+                  if (h.pitInfo.textContent !== t) h.pitInfo.textContent = t;
+                }
               }
             }
             if (h.lights) {
@@ -1334,7 +1483,12 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                 <span className="min-w-0 flex-1 truncate">
                   #{r.num} {r.name}
                 </span>
-                <span className="text-white/75">{r.gap}</span>
+                <span className="text-white/75">{r.pit ? "PIT" : r.gap}</span>
+                {r.tyre && (
+                  <span className="w-3 text-center font-black" style={{ color: COMPOUND_INFO[r.tyre].color }}>
+                    {COMPOUND_INFO[r.tyre].short}
+                  </span>
+                )}
                 {r.pen > 0 && <span className="text-(--color-f1-text)">+{r.pen}</span>}
               </li>
             ))}
@@ -1352,6 +1506,15 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                 <div ref={(n) => void (hud.current.battery = n)} className="h-full rounded-full bg-[#38bdf8]" style={{ width: "60%" }} />
               </div>
               <span ref={(n) => void (hud.current.lane = n)} className="w-16 text-center text-white/80" />
+            </div>
+            {/* ยาง: ชนิด + ที่เหลือ */}
+            <div className="flex items-center gap-2 rounded-full bg-black/55 px-3 py-1 text-[10px] tabular-nums backdrop-blur">
+              <span ref={(n) => void (hud.current.tyre = n)} className="flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-black" />
+              <span className="text-white/70">ยาง</span>
+              <div className="h-2 w-20 overflow-hidden rounded-full bg-white/15">
+                <div ref={(n) => void (hud.current.wear = n)} className="h-full rounded-full bg-[#4ade80]" style={{ width: "100%" }} />
+              </div>
+              <span ref={(n) => void (hud.current.wearTxt = n)} className="w-8 text-right text-white/80" />
             </div>
           </div>
 
@@ -1391,6 +1554,66 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             OT
           </button>
 
+          {/* PIT: แตะเพื่อขอ/ยกเลิกเข้าพิท · เลือกยางที่จะใส่ */}
+          <div className="absolute right-3 top-40 flex flex-col items-end gap-1 sm:top-44">
+            <button
+              ref={(n) => void (hud.current.pitBtn = n)}
+              type="button"
+              onClick={() => requestPit(!pitOn)}
+              aria-pressed={pitOn}
+              className="poster min-h-11 rounded-xl border-2 border-white/70 bg-black/55 px-3 text-sm tracking-wide backdrop-blur data-[on=1]:border-[#facc15] data-[on=1]:bg-[#facc15]/25 data-[on=1]:text-[#facc15]"
+            >
+              PIT
+            </button>
+            {pitOn && (
+              <div className="flex gap-1" role="group" aria-label="ยางที่จะเปลี่ยน">
+                {COMPOUNDS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={pitTyre === c}
+                    aria-label={`ยาง ${COMPOUND_INFO[c].label}`}
+                    onClick={() => requestPit(true, c)}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full border-2 bg-black/60 text-sm font-black ${pitTyre === c ? "ring-2 ring-white" : "opacity-70"}`}
+                    style={{ color: COMPOUND_INFO[c].color, borderColor: COMPOUND_INFO[c].color }}
+                  >
+                    {COMPOUND_INFO[c].short}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ในพิท: แถบจังหวะจอด (ช่องเขียว = หยุดตรงกรอบอู่) · เปลี่ยนยาง · ไฟเขียวกดไป */}
+          <div
+            ref={(n) => void (hud.current.pitPanel = n)}
+            style={{ opacity: 0, pointerEvents: "none" }}
+            className="absolute inset-x-0 bottom-46 z-[1] mx-auto w-[min(92vw,26rem)] space-y-2 rounded-2xl bg-black/75 p-3 backdrop-blur transition-opacity sm:bottom-28"
+          >
+            <p ref={(n) => void (hud.current.pitInfo = n)} className="text-center text-xs font-bold text-white/85" />
+            <div className="relative h-5 overflow-hidden rounded-full bg-white/10" aria-hidden>
+              {/* ช่วงที่กดได้: −STOP_WINDOW..STOP_MISS · เหลือง = ดี · เขียว = ตรงกรอบ */}
+              <div className="absolute inset-y-0 bg-white/15" style={{ left: `${((30 - STOP_WINDOW) / (30 + STOP_MISS)) * 100}%`, right: 0 }} />
+              <div className="absolute inset-y-0 bg-[#facc15]/60" style={{ left: `${((30 - 2.5) / (30 + STOP_MISS)) * 100}%`, width: `${(5 / (30 + STOP_MISS)) * 100}%` }} />
+              <div className="absolute inset-y-0 bg-[#16a34a]" style={{ left: `${((30 - 0.75) / (30 + STOP_MISS)) * 100}%`, width: `${(1.5 / (30 + STOP_MISS)) * 100}%` }} />
+              <div ref={(n) => void (hud.current.pitMark = n)} className="absolute inset-y-0 -ml-1 w-2 rounded-full bg-white shadow-[0_0_8px_#fff]" style={{ left: "0%" }} />
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden>
+              <div ref={(n) => void (hud.current.pitBar = n)} className="h-full bg-[#4ade80]" style={{ width: "0%" }} />
+            </div>
+            <button
+              ref={(n) => void (hud.current.pitAct = n)}
+              type="button"
+              onPointerDown={() => {
+                input.current.pitAct = true;
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              className="poster h-14 w-full touch-none select-none rounded-2xl text-xl tracking-wide"
+            >
+              รอ…
+            </button>
+          </div>
+
           {/* ผลการแข่ง */}
           {/* กำลังเล่นรีเพลย์ */}
           {replaying && (
@@ -1414,6 +1637,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                       <span className="min-w-0 flex-1 truncate">
                         #{r.num} {r.name}
                       </span>
+                      {r.strategy && <span className="hidden text-[11px] text-white/60 sm:inline">{r.strategy}</span>}
                       <span className="text-white/75">{r.gap}</span>
                       {r.pen > 0 && <span className="text-xs text-(--color-f1-text)">(โทษ +{r.pen} วิ)</span>}
                     </li>
