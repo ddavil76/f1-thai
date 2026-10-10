@@ -37,7 +37,7 @@ const REGEN_BRAKE = 0.07;
 const REGEN_LIFT = 0.02;
 /** ลมดูดเพิ่มความเร็วสูงสุดได้ · อากาศเสียลดการเกาะถนน */
 const TOW_TOP = 0.035;
-const DIRTY_GRIP = 0.06;
+export const DIRTY_GRIP = 0.06;
 export type Perf = { accel: number; grip: number; top: number };
 
 export type CarState = {

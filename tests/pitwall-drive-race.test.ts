@@ -4,6 +4,7 @@ import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
 import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
+import { GUIDE_RED, guideColor, guideNeeded, guideRisk } from "@/lib/pitwall/drive/guide";
 import { TEAMS } from "@/lib/pitwall/teams";
 
 let monza: DriveTrack;
@@ -330,5 +331,31 @@ describe("โหมดนักขับ: แข่งออนไลน์", ()
     setRemote(race, friend.id, [310, 50, 0, 0, 0, 0, 0, 0, -1], 0);
     expect(friend.car.s).toBeGreaterThan(305);
     expect(friend.car.s).toBeLessThan(310);
+  });
+});
+
+describe("โหมดนักขับ: เส้นช่วยไดนามิก", () => {
+  it("สีไล่ เขียว → เหลือง → แดง", () => {
+    expect(guideColor(0)).toBe(0x22c55e);
+    expect(guideColor(0.5)).toBe(0xfacc15);
+    expect(guideColor(1)).toBe(0xef4444);
+  });
+
+  it("สีตามความเร็วตอนนี้: เร็วเกินโค้ง = แดง · ความเร็วที่โค้งรับได้ = เขียว · ทางตรงไกลโค้ง = เขียว", () => {
+    // จุดที่ช้าที่สุดของชิเคนแรกมอนซา
+    let apex = 0;
+    for (let i = 0; i < monza.n * 0.2; i++) if (monza.vref[i] < monza.vref[apex]) apex = i;
+    const s = apex * DS;
+    const vApex = monza.vref[apex];
+    expect(guideRisk(monza, s, 0, 85)).toBe(1);
+    expect(guideRisk(monza, s, 0, vApex)).toBe(0);
+    const mid = guideRisk(monza, s, 0, vApex * (1 + GUIDE_RED / 2));
+    expect(mid).toBeGreaterThan(0.3);
+    expect(mid).toBeLessThan(0.7);
+    // ทางตรงหลังเส้นสตาร์ท ที่ความเร็วสูงสุดยังเป็นเขียว และโหมดเฉพาะโค้งซ่อนไว้
+    expect(guideRisk(monza, 100, 0, 85)).toBe(0);
+    expect(guideNeeded(monza, 100, 0, 0)).toBe(false);
+    // อากาศเสีย (เกาะถนนน้อยลง) ทำให้แดงเร็วขึ้น
+    expect(guideRisk(monza, s, 0, vApex, 0.94)).toBeGreaterThan(0);
   });
 });

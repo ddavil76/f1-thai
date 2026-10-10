@@ -7,7 +7,8 @@
  * ผู้เรียกโหลด three และ addon แบบ dynamic แล้วส่งเข้ามา (ไม่ให้ three เข้า bundle หลักของหน้า)
  */
 import type * as THREE_NS from "three";
-import { DS, VMAX, heightAt, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
+import { DS, VMAX, heightAt, laneValue, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
+import { guideColor, guideNeeded, guideRisk } from "@/lib/pitwall/drive/guide";
 import { buildCar, type Livery } from "./carModel";
 
 type Three = typeof THREE_NS;
@@ -44,6 +45,8 @@ function rng(seed: number) {
 }
 const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7);
 
+export type GuideMode = "dynamic" | "corners" | "static";
+
 /** ตัวถังจากไฟล์ .glb (ผ่าน normaliseBody แล้ว) · tint = ย้อมสีทีมทับ (โมเดลสีขาวกลาง) */
 export type BodyModel = { scene: Obj; tint: boolean };
 
@@ -59,9 +62,13 @@ export type DriveScene = {
     aero?: number;
     /** รถคู่แข่ง (ลำดับเดียวกับ opts.rivals) · s = ระยะสะสม · lateral = ระยะเยื้องจากเส้นกลาง (ม.) */
     rivals?: { s: number; lateral: number; speed: number; aero: number }[];
+    /** เส้นช่วยไดนามิก: เลนที่รถอยู่ (lat) · ตัวคูณการเกาะถนน (ทีม × อากาศเสีย) */
+    guide?: { lat: number; grip: number };
   }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
+  /** แบบเส้นช่วย: dynamic = สีตามความเร็วตอนนี้ · corners = ไดนามิกเฉพาะช่วงโค้ง · static = สามสีตายตัว */
+  setGuide(mode: GuideMode): void;
   /** เส้นช่วยของเลนไหน (−1 ซ้าย · 0 racing line · 1 ขวา) */
   setLane(lane: number): void;
   resize(): void;
@@ -279,8 +286,58 @@ export function createDriveScene(opts: {
   });
   let lineOn = true;
   let laneShown = 1;
-  const showLines = () => laneMeshes.forEach((m, k) => (m.visible = lineOn && k === laneShown));
+  let guideMode: GuideMode = "dynamic";
+  const showLines = () => laneMeshes.forEach((m, k) => (m.visible = lineOn && guideMode === "static" && k === laneShown));
   showLines();
+
+  // เส้นช่วยไดนามิก: ลูกศรบั้งข้างหน้ารถ สีคำนวณใหม่ทุกเฟรมจากความเร็วตอนนี้ (lib/pitwall/drive/guide.ts)
+  const GUIDE_N = 64;
+  const GUIDE_GAP = 3.4;
+  const chevron = keep(new THREE.BufferGeometry());
+  {
+    // หัวลูกศรชี้ไปข้างหน้า (แกน x = หน้า · z = ขวา) ยาว ~1.7 ม. กว้าง 1.2 ม.
+    const P = [[-0.8, -0.6], [0.2, -0.6], [0.9, 0], [-0.1, 0], [0.2, 0.6], [-0.8, 0.6]];
+    const tri = [0, 1, 2, 0, 2, 3, 3, 2, 4, 3, 4, 5];
+    chevron.setAttribute("position", new THREE.Float32BufferAttribute(tri.flatMap((k) => [P[k][0], 0, P[k][1]]), 3));
+  }
+  const guideMesh = new THREE.InstancedMesh(
+    chevron,
+    keep(new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 })),
+    GUIDE_N,
+  );
+  guideMesh.frustumCulled = false;
+  guideMesh.count = 0;
+  scene.add(guideMesh);
+  const gMat = new THREE.Matrix4();
+  const gFwd = new THREE.Vector3();
+  const gRight = new THREE.Vector3();
+  const gUp = new THREE.Vector3(0, 1, 0);
+  const gCol = new THREE.Color();
+  /** วางลูกศรข้างหน้า: มองไกลราว 2.3 วินาทีของความเร็ว (60–215 ม.) */
+  const drawGuide = (s: number, speed: number, g: { lat: number; grip: number } | undefined) => {
+    if (!g || !lineOn || guideMode === "static") {
+      guideMesh.count = 0;
+      return;
+    }
+    const reach = Math.max(60, Math.min(GUIDE_N * GUIDE_GAP, speed * 2.3));
+    let n = 0;
+    for (let d = 5; d <= reach && n < GUIDE_N; d += GUIDE_GAP) {
+      const ss = s + d;
+      const risk = guideRisk(t, ss, g.lat, speed, g.grip);
+      if (guideMode === "corners" && !guideNeeded(t, ss, g.lat, risk)) continue;
+      const off = laneValue(t, "offset", ss, g.lat);
+      const p = poseAt(t, ss, off);
+      gFwd.set(Math.cos(p.heading), 0, Math.sin(p.heading));
+      gRight.set(-Math.sin(p.heading), 0, Math.cos(p.heading));
+      gMat.makeBasis(gFwd, gUp, gRight).setPosition(p.x, surfaceAt(t, ss, off) + 0.04, p.z);
+      guideMesh.setMatrixAt(n, gMat);
+      guideMesh.setColorAt(n, gCol.setHex(guideColor(risk)));
+      n++;
+    }
+    guideMesh.count = n;
+    guideMesh.instanceMatrix.needsUpdate = true;
+    if (guideMesh.instanceColor) guideMesh.instanceColor.needsUpdate = true;
+  };
 
   // เส้นสตาร์ท/เส้นชัยลายตาหมากรุก
   {
@@ -849,7 +906,8 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide }) {
+      drawGuide(s, speed, guide);
       // ปีกพับ/กาง ใช้เวลาราว 0.3 วินาที
       const ka = Math.min(1, dt * 7);
       if (Math.abs(aero - motion.aero) > 0.001) {
@@ -954,6 +1012,10 @@ export function createDriveScene(opts: {
     },
     setLine(on) {
       lineOn = on;
+      showLines();
+    },
+    setGuide(m) {
+      guideMode = m;
       showLines();
     },
     setLane(lane) {

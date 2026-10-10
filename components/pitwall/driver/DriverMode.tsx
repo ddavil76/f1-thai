@@ -7,20 +7,22 @@ import { Btn, Card, Head, Seg } from "@/components/pitwall/ui";
 import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
-import { deltaTo, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
+import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { buildDriveTrack, DS, laneValue, laneZone, poseAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceEvent } from "@/lib/pitwall/drive/race";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
 import { cornerAhead } from "@/lib/pitwall/drive/corners";
 import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
-import type { BodyModel, CameraMode, DriveScene, Gfx } from "./scene";
+import type { BodyModel, CameraMode, DriveScene, Gfx, GuideMode } from "./scene";
 
 type Settings = {
   team: number;
   driver: number;
   circuit: string;
   line: boolean;
+  /** แบบเส้นช่วย: ไดนามิก (สีตามความเร็วตอนนี้) · เฉพาะโค้ง · คงที่ (สามสีตายตัว) */
+  guide: GuideMode;
   autoBrake: boolean;
   camera: CameraMode;
   gfx: "auto" | Gfx;
@@ -133,7 +135,7 @@ const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 export default function DriverMode({ name, onExit }: { name: string; onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = typeof window === "undefined" ? null : readJson<Partial<Settings>>(SETTINGS_KEY);
-    return { team: 0, driver: 0, circuit: "monza", line: true, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", ...saved };
+    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", ...saved };
   });
   const [driving, setDriving] = useState(false);
   const [room, setRoom] = useState<string | null>(null);
@@ -193,17 +195,35 @@ function Setup({
           onChange={(v) => set({ mode: v })}
           options={[{ v: "tt", label: "Time Trial" }, { v: "race", label: "แข่งกับ AI" }, ...(onlineReady() ? [{ v: "online" as const, label: "แข่งกับเพื่อน" }] : [])]}
         />
-        <div className="grid gap-2 rounded-xl bg-[#08080A] p-3 text-xs text-white/75 sm:grid-cols-3">
-          <p>
-            <b className="text-[#4ade80]">เส้นเขียว</b> กดคันเร่ง
-          </p>
-          <p>
-            <b className="text-[#facc15]">เส้นเหลือง</b> ปล่อยคันเร่ง ประคองผ่านโค้ง
-          </p>
-          <p>
-            <b className="text-(--color-f1-text)">เส้นแดง</b> กดเบรก
-          </p>
-        </div>
+        {settings.guide === "static" ? (
+          <div className="grid gap-2 rounded-xl bg-[#08080A] p-3 text-xs text-white/75 sm:grid-cols-3">
+            <p>
+              <b className="text-[#4ade80]">เส้นเขียว</b> กดคันเร่ง
+            </p>
+            <p>
+              <b className="text-[#facc15]">เส้นเหลือง</b> ปล่อยคันเร่ง ประคองผ่านโค้ง
+            </p>
+            <p>
+              <b className="text-(--color-f1-text)">เส้นแดง</b> กดเบรก
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2 rounded-xl bg-[#08080A] p-3 text-xs text-white/75">
+            <div className="h-2 rounded-full bg-gradient-to-r from-[#22c55e] via-[#facc15] to-[#ef4444]" aria-hidden />
+            <div className="grid gap-2 sm:grid-cols-3">
+              <p>
+                <b className="text-[#4ade80]">เขียว</b> ความเร็วนี้ผ่านโค้งได้
+              </p>
+              <p>
+                <b className="text-[#facc15]">เหลือง → ส้ม</b> เร็วเสี่ยงหลุด ผ่อน/เริ่มเบรก
+              </p>
+              <p>
+                <b className="text-(--color-f1-text)">แดง</b> เร็วเกิน ต้องเบรกเดี๋ยวนี้
+              </p>
+            </div>
+            <p className="text-[11px] text-white/60">ลูกศรบนถนนเปลี่ยนสีตามความเร็วตอนนี้ — เบรกแล้วสีแดงจะกลายเป็นเหลือง/เขียว · ตามติดคันหน้าในโค้ง (อากาศเสีย) สีจะแดงเร็วขึ้น</p>
+          </div>
+        )}
         <p className="text-xs text-white/60">
           คอม: <b>↑</b> หรือ <b>W</b> = คันเร่ง · <b>↓</b> <b>S</b> หรือ <b>Space</b> = เบรก · <b>E</b> หรือ <b>Shift</b> = Straight Mode · <b>C</b> = สลับกล้อง · <b>Esc</b> = ออก · มือถือ: ปุ่มเบรกซ้าย คันเร่งขวา
           {settings.mode !== "tt" && (
@@ -327,7 +347,16 @@ function Setup({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">เส้นช่วย</span>
-            <Seg value={settings.line ? 1 : 0} onChange={(v) => set({ line: v === 1 })} options={[{ v: 1, label: "แสดง" }, { v: 0, label: "ซ่อน" }]} />
+            <Seg<GuideMode | "off">
+              value={settings.line ? settings.guide : "off"}
+              onChange={(v) => set(v === "off" ? { line: false } : { line: true, guide: v })}
+              options={[
+                { v: "dynamic", label: "ไดนามิก" },
+                { v: "corners", label: "เฉพาะโค้ง" },
+                { v: "static", label: "คงที่" },
+                { v: "off", label: "ซ่อน" },
+              ]}
+            />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">เบรกอัตโนมัติ</span>
@@ -354,7 +383,7 @@ function Setup({
             />
           </label>
         </div>
-        <p className="text-[11px] text-white/60">Straight Mode: บนทางตรงที่กำหนด ปีกหน้า/หลังพับราบ แรงต้านน้อยลง วิ่งได้เร็วขึ้น — ปิดเองเมื่อเบรกหรือพ้นทางตรง (แบบกฎรถปี 2026) · เบรกอัตโนมัติ: รถเบรกให้เองในเส้นแดง กดแค่คันเร่ง เหมาะกับมือใหม่ · กราฟิกต่ำ: ไม่มีเงา ต้นไม้น้อยลง ลื่นกว่าบนมือถือ</p>
+        <p className="text-[11px] text-white/60">Straight Mode: บนทางตรงที่กำหนด ปีกหน้า/หลังพับราบ แรงต้านน้อยลง วิ่งได้เร็วขึ้น — ปิดเองเมื่อเบรกหรือพ้นทางตรง (แบบกฎรถปี 2026) · เบรกอัตโนมัติ: รถเบรกให้เองเมื่อถึงจุดเบรก กดแค่คันเร่ง เหมาะกับมือใหม่ · กราฟิกต่ำ: ไม่มีเงา ต้นไม้น้อยลง ลื่นกว่าบนมือถือ</p>
       </Card>
 
       {!online && (
@@ -739,6 +768,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       sceneRef.current = scene;
       scene.setCamera(camera);
       scene.setLine(line);
+      scene.setGuide(settings.guide);
       const onResize = () => scene.resize();
       window.addEventListener("resize", onResize);
 
@@ -936,7 +966,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             })
           : undefined;
         scene.setLane(car.lat);
-        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates });
+        // เส้นช่วยไดนามิก: การเกาะถนนของรถเรา (ทีม × อากาศเสียจากคันหน้า)
+        const grip = race ? race.cars[pi].perf.grip * (1 - DIRTY_GRIP * race.cars[pi].dirty) : perf.grip;
+        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide: { lat: car.lat, grip } });
         scene.render();
 
         const kmh = car.v * 3.6;
