@@ -66,7 +66,9 @@ export type DriveScene = {
     dt: number;
     aero?: number;
     /** รถคู่แข่ง (ลำดับเดียวกับ opts.rivals) · s = ระยะสะสม · lateral = ระยะเยื้องจากเส้นกลาง (ม.) */
-    rivals?: { s: number; lateral: number; speed: number; aero: number }[];
+    rivals?: { s: number; lateral: number; speed: number; aero: number; tyre?: string }[];
+    /** สีแก้มยางของรถเรา (ตามชนิดยางที่ใส่) */
+    tyre?: string;
     /** เส้นช่วยไดนามิก: เลนที่รถอยู่ (lat) · ตัวคูณการเกาะถนน (ทีม × อากาศเสีย) · fadeAt = โหมดฝึก ความจำของโค้งที่ระยะ s (0..1) */
     guide?: DriveSceneGuide;
     /** กำลังใช้แบต Overtake (มุมกล้องกว้างขึ้น ให้รู้สึกพุ่ง) */
@@ -273,6 +275,34 @@ export function createDriveScene(opts: {
     return m;
   };
 
+  /* ---------- พื้นดิน (คำนวณก่อน ให้ของรอบสนามตั้งบนพื้นจริง ไม่ลอย) ---------- */
+  const terra = buildTerrain(t, { high, hillSeed: r() * 100, pit: opts.pit?.lane });
+  /** ความสูงพื้นตามที่วาดจริง (ตาข่ายสามเหลี่ยม) */
+  const groundAt = terra.meshAt;
+  // สะพาน: มีถนนช่วงอื่นลอดใต้ (ต่ำกว่า 3 ม. ขึ้นไป) — ไม่ต่อกำแพงลงถึงพื้น (ไม่งั้นบังถนนข้างล่าง)
+  const bridge = new Uint8Array(t.n);
+  for (let i = 0; i < t.n; i++)
+    for (let j = 0; j < t.n; j += 2) {
+      const ds = Math.abs(i - j) * DS;
+      if (Math.min(ds, t.length - ds) < 150 || t.y[j] > t.y[i] - 3) continue;
+      if (Math.hypot(t.x[i] - t.x[j], t.z[i] - t.z[j]) < Math.max(t.wl[j], t.wr[j]) + RUN + Math.max(t.wl[i], t.wr[i]) + 4) {
+        bridge[i] = 1;
+        break;
+      }
+    }
+
+  // เสาป้าย: จากพื้น (หรือผิวข้างถนน ถ้าต่ำกว่า) ขึ้นไปถึงขอบล่างของป้าย — ป้ายไม่ลอยกลางอากาศ
+  const postMat = keep(new THREE.MeshStandardMaterial({ color: 0x8c9096, roughness: 0.6, metalness: 0.3 }));
+  const postGeo = keep(new THREE.BoxGeometry(0.1, 1, 0.1));
+  const addPost = (x: number, z: number, surface: number, top: number) => {
+    const bottom = Math.min(surface, groundAt(x, z)) - 0.3;
+    if (top <= bottom) return;
+    const m = new THREE.Mesh(postGeo, postMat);
+    m.scale.y = top - bottom;
+    m.position.set(x, (top + bottom) / 2, z);
+    scene.add(m);
+  };
+
   /* ---------- ถนนและขอบ (ความกว้างจริงต่อจุด) ---------- */
   const corner = (i: number) => Math.abs(t.curve[i]) > 0.006;
   addFlat(new THREE.Mesh(strip((i) => -L(i), R, 0, () => 0xffffff, 6), lit(asphalt)));
@@ -390,7 +420,7 @@ export function createDriveScene(opts: {
   }
 
   /* ---------- กำแพง + รั้วกันเศษ ---------- */
-  const wallStrip = (side: number, y0: number, y1: number, colorOf: (i: number) => [number, number, number], vScale = 4) => {
+  const wallStrip = (side: number, y0: number, y1: number, colorOf: (i: number) => [number, number, number], vScale = 4, toGround = false) => {
     const pos: number[] = [];
     const col: number[] = [];
     const uv: number[] = [];
@@ -401,7 +431,11 @@ export function createDriveScene(opts: {
       const b = poseAt(t, (i + 1) * DS, wallAt(j, side));
       const ha = groundY(i, wallAt(i, side));
       const hb = groundY(j, wallAt(j, side));
-      pos.push(a.x, ha + y0, a.z, b.x, hb + y0, b.z, a.x, ha + y1, a.z, a.x, ha + y1, a.z, b.x, hb + y0, b.z, b.x, hb + y1, b.z);
+      // toGround: กำแพงกันดินจากใต้ขอบกำแพง (y1) ลงถึงพื้นจริง — ข้างถนนบนเนิน/คันดิน พื้นอาจต่ำกว่าถนนมาก (ยกเว้นบนสะพาน)
+      const ba = toGround ? (bridge[i] ? ha + y1 : Math.min(ha + y1, groundAt(a.x, a.z) - 0.5)) : ha + y0;
+      const bb = toGround ? (bridge[j] ? hb + y1 : Math.min(hb + y1, groundAt(b.x, b.z) - 0.5)) : hb + y0;
+      if (toGround && ba >= ha + y1 - 0.01 && bb >= hb + y1 - 0.01) continue;
+      pos.push(a.x, ba, a.z, b.x, bb, b.z, a.x, ha + y1, a.z, a.x, ha + y1, a.z, b.x, bb, b.z, b.x, hb + y1, b.z);
       const u0 = (i * DS) / vScale;
       const u1 = ((i + 1) * DS) / vScale;
       uv.push(u0, 0, u1, 0, u0, 1, u0, 1, u1, 0, u1, 1);
@@ -422,6 +456,8 @@ export function createDriveScene(opts: {
     const w = new THREE.Mesh(wallStrip(side, -1.4, 1.1, (i) => (Math.floor(i / 3) % 2 ? [0.86, 0.86, 0.88] : [0.13, 0.32, 0.72])), wallMat);
     w.castShadow = high;
     scene.add(w);
+    // ใต้กำแพง: กำแพงกันดินคอนกรีตลงถึงพื้น (ไม่เห็นช่องโหว่ใต้สนาม)
+    scene.add(new THREE.Mesh(wallStrip(side, 0, -1.4, () => [0.55, 0.56, 0.58], 4, true), wallMat));
   }
   if (high) {
     const fence = canvasTex(64, 64, (g) => {
@@ -441,6 +477,39 @@ export function createDriveScene(opts: {
     });
     const fenceMat = keep(new THREE.MeshBasicMaterial({ map: fence, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, vertexColors: true }));
     for (const side of [-1, 1]) scene.add(new THREE.Mesh(wallStrip(side, 1.1, 4.2, () => [1, 1, 1], 3), fenceMat));
+  }
+
+  /* ---------- สะพาน (ถนนช่วงอื่นลอดใต้): ขอบสะพาน + ตอม่อลงถึงพื้น ---------- */
+  {
+    const concrete = keep(new THREE.MeshStandardMaterial({ color: 0xb9bcc2, roughness: 0.85 }));
+    const pier = keep(new THREE.BoxGeometry(1.2, 1, 1.6));
+    const deck = keep(new THREE.BoxGeometry(DS * 2 + 0.1, 1.4, 0.5));
+    for (let i = 0; i < t.n; i += 2) {
+      if (!bridge[i]) continue;
+      for (const side of [-1, 1]) {
+        const lat = wallAt(i, side);
+        const q = poseAt(t, i * DS, lat);
+        const top = groundY(i, lat);
+        // แผ่นขอบสะพาน (ใต้ผิวถนน)
+        const d = new THREE.Mesh(deck, concrete);
+        d.position.set(q.x, top - 0.7, q.z);
+        d.rotation.y = -q.heading;
+        scene.add(d);
+        // ตอม่อทุก ~24 ม.
+        if (i % 6 !== 0) continue;
+        const bottom = groundAt(q.x, q.z) - 0.5;
+        if (top - 1.4 <= bottom) continue;
+        // ห้ามตั้งตอม่อบนถนนที่ลอดใต้
+        let onRoad = false;
+        for (let j = 0; j < t.n && !onRoad; j += 2) onRoad = t.y[j] < top - 3 && Math.hypot(t.x[j] - q.x, t.z[j] - q.z) < Math.max(t.wl[j], t.wr[j]) + 3;
+        if (onRoad) continue;
+        const m = new THREE.Mesh(pier, concrete);
+        m.scale.y = top - 1.4 - bottom;
+        m.position.set(q.x, (top - 1.4 + bottom) / 2, q.z);
+        m.rotation.y = -q.heading;
+        scene.add(m);
+      }
+    }
   }
 
   /* ---------- พิทเลน: ถนน · ช่องจอดของแต่ละทีม · อู่ · เส้นจำกัดความเร็ว ---------- */
@@ -471,6 +540,24 @@ export function createDriveScene(opts: {
     const road = new THREE.Mesh(pitStrip(lane.entry, lane.exit, (r) => center(r) - PIT_W / 2, (r) => center(r) + PIT_W / 2, 0.01), lit(asphalt));
     (road.material as THREE_NS.MeshStandardMaterial).vertexColors = false;
     addFlat(road);
+    // ขอบถนนพิทยื่นลงใต้ดิน (ช่วงเลี้ยวเข้า/ออก พื้นข้าง ๆ ต่ำกว่าถนน — ไม่เห็นถนนลอย)
+    const skirt = (lat: (r: number) => number) => {
+      const pos: number[] = [];
+      for (let r = lane.entry; r < lane.exit; r += DS) {
+        const r1 = Math.min(lane.exit, r + DS);
+        const a = poseAt(t, r, lat(r));
+        const b = poseAt(t, r1, lat(r1));
+        const ya = heightAt(t, r);
+        const yb = heightAt(t, r1);
+        pos.push(a.x, ya, a.z, b.x, yb, b.z, a.x, ya - 2, a.z, a.x, ya - 2, a.z, b.x, yb, b.z, b.x, yb - 2, b.z);
+      }
+      const g = keep(new THREE.BufferGeometry());
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      g.computeVertexNormals();
+      scene.add(new THREE.Mesh(g, keep(new THREE.MeshStandardMaterial({ color: 0x5a5d63, roughness: 0.9, side: THREE.DoubleSide }))));
+    };
+    skirt((r) => center(r) - PIT_W / 2);
+    skirt((r) => center(r) + PIT_W / 2);
     // ขอบขาวสองข้าง (ขอบด้านสนามเริ่มวาดเมื่อพ้นขอบถนนแล้ว = เส้นแยกทางเข้า/ออกพิท ไม่ลากตัดถนน) · เส้นแบ่งเลนวิ่งกับช่องจอด (ช่วงอู่)
     const inner = (r: number) => center(r) - (side * PIT_W) / 2;
     const out = (r: number) => center(r) + (side * PIT_W) / 2;
@@ -518,6 +605,10 @@ export function createDriveScene(opts: {
       // อู่: ผนังหลังสีทีม + ป้ายชื่อทีมเหนือประตู
       const garage = new THREE.Group();
       const w = 14.5;
+      // ฐานอู่ลงไปใต้ดิน (พื้นข้างพิทต่ำกว่าถนนเล็กน้อย — ไม่เห็นช่องใต้อู่)
+      const slab = new THREE.Mesh(keep(new THREE.BoxGeometry(w + 0.4, 3, GARAGE_D + 0.4)), frameMat);
+      slab.position.set(0, -1.48, (side * GARAGE_D) / 2);
+      garage.add(slab);
       const back = new THREE.Mesh(keep(new THREE.BoxGeometry(w, 5.5, 0.4)), keep(new THREE.MeshStandardMaterial({ color: col.clone().multiplyScalar(0.55), roughness: 0.7 })));
       back.position.set(0, 2.75, side * GARAGE_D);
       garage.add(back);
@@ -578,7 +669,9 @@ export function createDriveScene(opts: {
           const off = side * (RUN > 4 ? edge + 3.5 : edge + RUN + 0.7);
           const p = poseAt(t, i * DS - d, off);
           const m = new THREE.Mesh(geo, mats[label]);
-          m.position.set(p.x, surfaceAt(t, i * DS - d, off) + 1.2, p.z);
+          const sy = surfaceAt(t, i * DS - d, off);
+          m.position.set(p.x, sy + 1.2, p.z);
+          addPost(p.x, p.z, sy, sy + 0.5);
           // หันหน้าป้าย (แกน z) เข้าหารถที่วิ่งมา
           m.rotation.y = Math.atan2(-Math.cos(p.heading), -Math.sin(p.heading));
           m.castShadow = high;
@@ -620,7 +713,10 @@ export function createDriveScene(opts: {
         const off = side * ((side > 0 ? R(i) : L(i)) + Math.min(3, RUN));
         const q = poseAt(t, i * DS, off);
         const m = new THREE.Mesh(boardGeo, boardMat);
-        m.position.set(q.x, surfaceAt(t, i * DS, off) + 1.4, q.z);
+        const sy = surfaceAt(t, i * DS, off);
+        m.position.set(q.x, sy + 1.4, q.z);
+        // สองเสาใต้ป้าย (ป้ายกว้าง 2.4 ม. ขวางทิศถนน)
+        for (const k of [-0.9, 0.9]) addPost(q.x + Math.cos(q.heading) * k, q.z + Math.sin(q.heading) * k, sy, sy + 0.95);
         m.rotation.y = Math.atan2(-Math.cos(q.heading), -Math.sin(q.heading));
         scene.add(m);
       }
@@ -628,8 +724,6 @@ export function createDriveScene(opts: {
   }
 
   /* ---------- ฉากรอบสนาม: พื้น ต้นไม้ อัฒจันทร์ (ไม่บังถนนข้างหน้าจากมุมกล้อง — ดู terrain.ts) ---------- */
-  const terra = buildTerrain(t, { high, hillSeed: r() * 100, pit: opts.pit?.lane });
-  const terrainAt = terra.heightAt;
   const nearTrack = terra.nearTrack;
   const MARGIN = terra.margin;
   const SEG = terra.seg;
@@ -641,7 +735,7 @@ export function createDriveScene(opts: {
     geo.rotateX(-Math.PI / 2);
     geo.translate((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
     const p = geo.attributes.position;
-    for (let k = 0; k < p.count; k++) p.setY(k, terrainAt(p.getX(k), p.getZ(k)));
+    for (let k = 0; k < p.count; k++) p.setY(k, terra.heightAt(p.getX(k), p.getZ(k)));
     geo.computeVertexNormals();
     grassTex.repeat.set(gw / 24, gh / 24);
     const ground = new THREE.Mesh(geo, keep(new THREE.MeshLambertMaterial({ map: grassTex })));
@@ -671,7 +765,7 @@ export function createDriveScene(opts: {
       const p = poseAt(t, i * DS, side * off);
       if (nearTrack(p.x, p.z, maxEdge + 10)) continue;
       const s = 0.7 + r() * 0.8;
-      const gy = terrainAt(p.x, p.z);
+      const gy = groundAt(p.x, p.z);
       // ยอดไม้ (9.5 ม. × ขนาด × ยืดสูงสุด 1.3) ต้องไม่ขึ้นมาบังเส้นสายตาไปถนนข้างหน้า
       if (gy + 9.5 * s * 1.3 > terra.sightFloor(p.x, p.z)) continue;
       pos.set(p.x, gy - 0.1, p.z);
@@ -711,6 +805,21 @@ export function createDriveScene(opts: {
       g.rotation.y = -st.heading;
       const tiers = STAND_TIERS;
       const top = tiers * STAND_RISE + STAND_ROOF;
+      // ฐานคอนกรีต: ลงไปถึงพื้นต่ำสุดใต้อัฒจันทร์ (บนเนิน ด้านหลังไม่ลอย)
+      {
+        const depth = tiers * STAND_DEPTH;
+        let low = st.y;
+        for (let a = -len / 2; a <= len / 2; a += 10)
+          for (const b of [0, depth / 2, depth]) {
+            const x = st.x + Math.cos(st.heading) * a - Math.sin(st.heading) * b * side;
+            const z = st.z + Math.sin(st.heading) * a + Math.cos(st.heading) * b * side;
+            low = Math.min(low, groundAt(x, z));
+          }
+        const h = st.y - low + 0.6;
+        const base = new THREE.Mesh(keep(new THREE.BoxGeometry(len, h, depth)), frameMat);
+        base.position.set(0, -h / 2 + 0.05, (side * depth) / 2);
+        g.add(base);
+      }
       for (let k = 0; k < tiers; k++) {
         const step = new THREE.Mesh(keep(new THREE.BoxGeometry(len, STAND_RISE, STAND_DEPTH)), k % 2 ? standMat : frameMat);
         step.position.set(0, STAND_RISE / 2 + k * STAND_RISE, side * (STAND_DEPTH / 2 + k * STAND_DEPTH));
@@ -733,7 +842,7 @@ export function createDriveScene(opts: {
   }
 
   /* ---------- รถ ---------- */
-  type Rig = { root: THREE_NS.Group; body: THREE_NS.Group; steer: THREE_NS.Group[]; spin: THREE_NS.Group[]; setAero?: (open: number) => void };
+  type Rig = { root: THREE_NS.Group; body: THREE_NS.Group; steer: THREE_NS.Group[]; spin: THREE_NS.Group[]; setAero?: (open: number) => void; setTyre: (color: string) => void };
   const tyreMat = keep(new THREE.MeshStandardMaterial({ color: 0x111113, roughness: 0.85 }));
   const rimMat = keep(new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.3, metalness: 0.85 }));
   const stripeMat = keep(new THREE.MeshStandardMaterial({ color: 0xe10600, roughness: 0.6 }));
@@ -778,7 +887,8 @@ export function createDriveScene(opts: {
     cover.rotateY(Math.PI / 2);
     const lip = keep(new THREE.TorusGeometry(RIM_R, 0.008, 6, 32));
     lip.rotateY(Math.PI / 2);
-    const ring = keep(new THREE.TorusGeometry(R * 0.8, 0.01, 6, 32));
+    // แถบสีแก้มยาง (สีตามชนิดยาง: Soft แดง · Medium เหลือง · Hard ขาว)
+    const ring = keep(new THREE.TorusGeometry(R * 0.8, 0.016, 6, 32));
     ring.rotateY(Math.PI / 2);
     return { tyre, rim, cover, lip, ring };
   };
@@ -825,7 +935,8 @@ export function createDriveScene(opts: {
     };
     const tm = ghostMat(tyreMat);
     const rm = ghostMat(rimMat);
-    const st = ghostMat(stripeMat);
+    // แถบแก้มยางของรถแต่ละคันแยกวัสดุ (เปลี่ยนสีตามยางที่ใส่)
+    const st = isGhost ? ghostMat(stripeMat) : keep(stripeMat.clone());
     const cm = ghostMat(coverMat);
     const dm = ghostMat(darkMat);
     for (const [x, z, w, front] of WHEELS) {
@@ -856,7 +967,13 @@ export function createDriveScene(opts: {
       spin.push(sp);
     }
     bodyGroup.traverse((o) => (o.castShadow = high && !isGhost));
-    return { root, body: bodyGroup, steer, spin, setAero };
+    let tyreHex = "";
+    const setTyre = (color: string) => {
+      if (color === tyreHex) return;
+      tyreHex = color;
+      st.color.set(color);
+    };
+    return { root, body: bodyGroup, steer, spin, setAero, setTyre };
   };
 
   const car = makeRig(livery, false);
@@ -922,7 +1039,8 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre }) {
+      if (tyre) car.setTyre(tyre);
       drawGuide(s, speed, accel, dt, guide);
       // ปีกพับ/กาง ใช้เวลาราว 0.3 วินาที
       const ka = Math.min(1, dt * 7);
@@ -961,6 +1079,7 @@ export function createDriveScene(opts: {
       rivalStates?.forEach((r, k) => {
         const rv = rivals[k];
         if (!rv) return;
+        if (r.tyre) rv.rig.setTyre(r.tyre);
         place(rv.rig.root, r.s, r.lateral);
         const cv = sample(t, t.curve, r.s);
         rv.rig.body.rotation.set(0, 0, Math.max(-0.05, Math.min(0.05, -r.speed * r.speed * cv * 0.0016)) - sample(t, t.bank, r.s));

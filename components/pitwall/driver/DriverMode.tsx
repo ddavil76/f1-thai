@@ -1162,7 +1162,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         const rivalStates = race
           ? rivalIdx.map((k) => {
               const c = race.cars[k].car;
-              return { s: c.s, lateral: lateralOf(race.cars[k]), speed: c.v, aero: c.sm ? 1 : 0 };
+              return { s: c.s, lateral: lateralOf(race.cars[k]), speed: c.v, aero: c.sm ? 1 : 0, tyre: COMPOUND_INFO[race.cars[k].tyre.c].color };
             })
           : undefined;
         // บันทึกรีเพลย์ (แข่งเท่านั้น หลังไฟดับ)
@@ -1196,7 +1196,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           if (entry - car.s <= 700) pitGuide = { base: entry - race.pitLane.entry, from: laneValue(track, "offset", entry, race.pitLane.side) };
         }
         const guide = race?.cars[pi].pit ? undefined : { lat: car.lat, grip, fadeAt, pit: pitGuide };
-        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot });
+        scene.update({ s: car.s, lateral, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot, tyre: race ? COMPOUND_INFO[race.cars[pi].tyre.c].color : undefined });
         scene.render();
 
         const kmh = car.v * 3.6;
