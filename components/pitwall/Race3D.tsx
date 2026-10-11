@@ -2,13 +2,15 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import OsmCredit from "@/components/OsmCredit";
-import { TyreDot, teamOf } from "@/components/pitwall/ui";
+import { TyreDot, fmtGap, fmtLap, teamOf } from "@/components/pitwall/ui";
 import { useDriveTrack } from "@/components/pitwall/driver/driveTrack";
 import type { CameraMode, DriveScene } from "@/components/pitwall/driver/scene";
-import { pitLane } from "@/lib/pitwall/drive/pit";
+import { BOX_GAP, GARAGE_D, PIT_W, pitLane } from "@/lib/pitwall/drive/pit";
 import { hasRealTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { sample } from "@/lib/pitwall/drive/line";
-import { standings } from "@/lib/pitwall/race";
+import { MODE } from "@/lib/pitwall/model";
+import { PIT_BOX, segOrder, type QCar, type QualiState } from "@/lib/pitwall/quali";
+import { standings, type RaceState } from "@/lib/pitwall/race";
 import type { Snapshot } from "@/lib/pitwall/room";
 import { TEAMS } from "@/lib/pitwall/teams";
 import type { TrackModel } from "@/lib/pitwall/track";
@@ -24,8 +26,36 @@ const CAMS: [CameraMode, string][] = [
 ];
 const CAM_KEY = "pitwall-race3d-cam";
 
-/** เป้าของรถหนึ่งคัน (ข้อมูลล่าสุดจากการจำลอง) · pos = ช่องสะสม · pitStart = ตำแหน่งตอนเข้าพิท (ไม่อยู่ในพิท = null) */
-type Target = { pos: number; pitStart: number | null; side: number; hide: boolean; tyre: string; started: boolean };
+/**
+ * เป้าของรถหนึ่งคัน (ข้อมูลล่าสุดจากการจำลอง) · pos = ช่องสะสม · pitStart = ตำแหน่งตอนเริ่มพิทเลน (ไม่อยู่ในพิทเลน = null)
+ * garage = จอดในอู่ (ควอลิฟาย) · slow = รอบอุ่นยาง/กลับพิทของควอลิฟาย (หลบออกจากเส้นแข่งให้รถรอบเร่ง) · drs = ปีกหลังเปิด
+ */
+type Target = { pos: number; pitStart: number | null; garage: boolean; side: number; hide: boolean; tyre: string; started: boolean; slow: boolean; drs: boolean };
+
+/** สถานะรถในควอลิฟาย → เป้าบนฉาก */
+function qualiTarget(q: QCar, track: TrackModel): Target {
+  const tyre = q.run ? COMPOUND_INFO[q.run.compound].color : "#3a3a40";
+  const lane = q.lane;
+  // พิทเลน: ออก = จากอู่ (กลางพิทเลน) ถึงทางออก · เข้า = จากทางเข้าถึงอู่
+  const pitStart = lane ? (lane.kind === "out" ? lane.end - track.pitCells : lane.end - PIT_BOX) : null;
+  return {
+    pos: q.pos,
+    pitStart,
+    garage: q.status === "garage",
+    side: q.id % 2 ? 1 : -1,
+    hide: q.status === "eliminated",
+    tyre,
+    started: true,
+    slow: q.status === "out" || q.status === "in",
+    drs: false,
+  };
+}
+
+/** คันที่น่าดูในควอลิฟายเมื่อคันที่เลือกจอดอยู่: รถรอบเร่งที่ใกล้จบรอบที่สุด → รถที่กำลังวิ่ง */
+function qualiStar(q: QualiState): number | null {
+  const push = q.cars.filter((c) => c.status === "push" && c.lap).sort((a, b) => (q.t - b.lap!.start) / b.lap!.time - (q.t - a.lap!.start) / a.lap!.time);
+  return push[0]?.id ?? q.cars.find((c) => c.status === "out" || c.status === "in")?.id ?? null;
+}
 type Anim = { from: number; to: number; t0: number; dur: number };
 
 /**
@@ -50,10 +80,13 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
   const map = useMemo(() => (dt && pit ? cellMapper(track, dt, pit) : null), [dt, pit, track]);
 
   const r = snap.race;
-  // รถที่ตาม: คันที่เลือก · ยังไม่เลือก/ออกจากการแข่ง/เข้าเส้นชัยแล้ว (หายจากสนาม) = คันที่ยังวิ่งอยู่อันดับดีสุด
+  const q = snap.quali;
+  // รถที่ตาม: คันที่เลือก · เรซ: ออกจากการแข่ง/เข้าเส้นชัยแล้ว (หายจากสนาม) = คันที่ยังวิ่งอยู่อันดับดีสุด
+  // ควอลิฟาย: คันที่เลือกจอดในอู่/ตกรอบ = รถรอบเร่งที่ใกล้จบรอบ
   const order = r ? standings(r, track.lapCells) : [];
-  const onTrack = (id: number) => !!r && !r.cars[id]?.out && r.cars[id]?.finished === null;
-  const focusId = focus !== null && (!r || onTrack(focus)) ? focus : (order.find((c) => onTrack(c.id))?.id ?? focus ?? 0);
+  const onTrack = (id: number) => (r ? !r.cars[id]?.out && r.cars[id]?.finished === null : !!q && q.cars[id] && q.cars[id].status !== "garage" && q.cars[id].status !== "eliminated");
+  const fallback = r ? order.find((c) => onTrack(c.id))?.id : q ? qualiStar(q) : null;
+  const focusId = focus !== null && onTrack(focus) ? focus : (fallback ?? focus ?? 0);
   const targets = useRef<Target[]>([]);
   const anims = useRef(new Map<number, Anim>());
   const shown = useRef(new Map<number, number>());
@@ -62,17 +95,23 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
   // ข้อมูลใหม่: ตั้งให้รถวิ่งจากตำแหน่งที่เห็นอยู่ไปตำแหน่งใหม่ภายในช่วงเวลาก่อนข้อมูลชุดถัดไป
   useLayoutEffect(() => {
     view.current = { focus: focusId, interval };
-    if (!r) return;
+    const list = r ? r.cars : q ? q.cars : null;
+    if (!list) return;
     const now = performance.now();
-    targets.current = r.cars.map((c) => ({
-      pos: c.pos,
-      pitStart: c.pit ? c.pit.start : null,
-      side: c.side,
-      hide: !!c.out || c.finished !== null,
-      tyre: COMPOUND_INFO[c.compound].color,
-      started: r.started,
-    }));
-    for (const c of r.cars) {
+    targets.current = r
+      ? r.cars.map((c) => ({
+          pos: c.pos,
+          pitStart: c.pit ? c.pit.start : null,
+          garage: false,
+          side: c.side,
+          hide: !!c.out || c.finished !== null,
+          tyre: COMPOUND_INFO[c.compound].color,
+          started: r.started,
+          slow: false,
+          drs: c.drs,
+        }))
+      : q!.cars.map((c) => qualiTarget(c, track));
+    for (const c of list) {
       const a = anims.current.get(c.id);
       const cur = a ? a.from + (a.to - a.from) * Math.min(1, (now - a.t0) / a.dur) : shown.current.get(c.id);
       if (cur === undefined || c.pos < cur - 0.01 || c.pos - cur > 4) {
@@ -148,6 +187,11 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
           const pos = a ? a.from + (a.to - a.from) * Math.min(1, (now - a.t0) / a.dur) : (shown.current.get(id) ?? c.pos);
           shown.current.set(id, pos);
           const team = snap.cars[id]?.team ?? 0;
+          if (c.garage) {
+            // จอดในอู่ของทีม: สองคันของทีมจอดเยื้องกันในอู่
+            const box = map.pitPose(track.pitEntry.start + track.lapCells, 0.5, team);
+            return { s: box.s + (id % 2 ? 1 : -1) * BOX_GAP * 0.2, lat: box.lat + pit.side * (PIT_W / 2 + GARAGE_D * 0.35), pit: true };
+          }
           if (c.pitStart !== null) return { ...map.pitPose(c.pitStart, (pos - c.pitStart) / track.pitCells, team), pit: true };
           return { s: map.sOf(pos), lat: NaN, pit: false };
         });
@@ -157,8 +201,9 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
           if (!p.pit) {
             // ตามเส้นแข่ง · วิ่งคู่/ต่อท้ายใกล้ ๆ = แยกฝั่งตามการจำลอง · บนกริดเยื้องสลับฝั่ง
             const line = sample(dt, dt.lineOffset, p.s);
-            const close = !c.started || poses.some((q, k) => k !== id && !q.pit && !tg[k].hide && Math.abs(q.s - p.s) < SIDE_NEAR);
-            const want = line + (close ? c.side * (c.started ? SIDE_LAT : 2.2) : 0);
+            // ควอลิฟาย: รอบอุ่นยาง/กลับพิทหลบออกข้างทางให้รถรอบเร่ง
+            const close = c.slow || !c.started || poses.some((o, k) => k !== id && !o.pit && !tg[k].hide && Math.abs(o.s - p.s) < SIDE_NEAR);
+            const want = line + (close ? c.side * (c.slow ? 3.2 : c.started ? SIDE_LAT : 2.2) : 0);
             const edge = c.side > 0 ? sample(dt, dt.wr, p.s) - 1.3 : -sample(dt, dt.wl, p.s) + 1.3;
             lat = c.side > 0 ? Math.min(edge, want) : Math.max(edge, want);
           }
@@ -173,7 +218,7 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
             prev.lat = p.pit ? lat : prev.lat + (lat - prev.lat) * Math.min(1, step * 1.6);
           }
           const st = state.get(id)!;
-          return { s: st.s, lateral: st.lat, speed: st.v, aero: 0, tyre: c.tyre, hide: c.hide };
+          return { s: st.s, lateral: st.lat, speed: st.v, aero: c.drs ? 1 : 0, tyre: c.tyre, hide: c.hide };
         });
         const f = view.current.focus;
         const me = rivals[f] ?? rivals[0];
@@ -212,10 +257,12 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
     }
   }, [cam]);
 
-  const rc = r?.cars[focusId];
   const spec = snap.cars[focusId];
   const team = spec ? teamOf(spec) : null;
-  const place = order.findIndex((c) => c.id === focusId) + 1;
+  const rc = r?.cars[focusId];
+  const qc = q?.cars[focusId];
+  const place = r ? order.findIndex((c) => c.id === focusId) + 1 : q ? segOrder(q).indexOf(focusId) + 1 : 0;
+  const compound = rc?.compound ?? qc?.run?.compound ?? null;
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-[#08080A]">
@@ -228,21 +275,27 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
           </button>
         ))}
       </div>
-      {spec && team && rc && (
-        // ป้ายชื่อแบบถ่ายทอดสด: อันดับ · หมายเลข · ชื่อ · ทีม · ยาง
-        <div className="pointer-events-none absolute left-2 top-12 z-10 flex max-w-[calc(100%-1rem)] items-stretch sm:top-2 sm:max-w-[48%] overflow-hidden rounded-md bg-[#08080A]/80 shadow-lg backdrop-blur">
-          <span className="poster flex w-9 items-center justify-center bg-white text-base text-[#08080A] tabular-nums">{place || "–"}</span>
-          <span className="w-1.5" style={{ background: team.color }} />
-          <span className="flex min-w-0 flex-col justify-center px-2 py-1">
-            <span className="truncate text-[13px] font-bold">
-              <span className="tabular-nums">#{spec.num}</span> {spec.name}
+      {spec && team && (rc || qc) && (
+        // ป้ายชื่อแบบถ่ายทอดสด: อันดับ · หมายเลข · ชื่อ · ทีม · ยาง + แถวสถานะ (เรซ: ช่องห่าง/โหมด/แบต · ควอลิฟาย: รอบ/เวลา)
+        <div className="pointer-events-none absolute left-2 top-12 z-10 max-w-[calc(100%-1rem)] overflow-hidden rounded-md bg-[#08080A]/80 shadow-lg backdrop-blur sm:top-2 sm:max-w-[48%]">
+          <div className="flex items-stretch">
+            <span className="poster flex w-9 items-center justify-center bg-white text-base text-[#08080A] tabular-nums">{place || "–"}</span>
+            <span className="w-1.5" style={{ background: team.color }} />
+            <span className="flex min-w-0 flex-col justify-center px-2 py-1">
+              <span className="truncate text-[13px] font-bold">
+                <span className="tabular-nums">#{spec.num}</span> {spec.name}
+              </span>
+              <span className="truncate text-[10px] text-white/60">{team.name}</span>
             </span>
-            <span className="truncate text-[10px] text-white/60">{team.name}</span>
-          </span>
-          {rc.pit ? <span className="poster flex items-center bg-white/15 px-2 text-[11px]">PIT</span> : null}
-          <span className="flex items-center px-2">
-            <TyreDot c={rc.compound} size={18} />
-          </span>
+            {rc?.pit || qc?.lane || qc?.status === "garage" ? <span className="poster flex items-center bg-white/15 px-2 text-[11px]">PIT</span> : null}
+            {compound && (
+              <span className="flex items-center px-2">
+                <TyreDot c={compound} size={18} />
+              </span>
+            )}
+          </div>
+          {r && rc && <RaceLine r={r} id={focusId} cars={snap.cars} />}
+          {q && qc && <QualiLine q={q} c={qc} />}
         </div>
       )}
       <p className="pointer-events-none absolute bottom-2 left-2 z-10 max-w-[60%] text-[9px] leading-tight text-white/55">
@@ -254,6 +307,47 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
         )}ไม่เกี่ยวข้องกับ Formula 1 อย่างเป็นทางการ
       </p>
       <OsmCredit className="bottom-2 right-2 z-10" />
+    </div>
+  );
+}
+
+/** แถวสถานะของรถที่ตามในเรซ: กำลังแซง/โดนแซง · ช่องห่างหน้า/หลัง · โหมดขับ · แบต · DRS */
+function RaceLine({ r, id, cars }: { r: RaceState; id: number; cars: Snapshot["cars"] }) {
+  const c = r.cars[id];
+  const by = r.cars.find((o) => o.duel?.rival === id);
+  const duel = c.duel ? `แซง #${cars[c.duel.rival].num}` : by ? `โดน #${cars[by.id].num} ขึ้นเทียบ` : null;
+  return (
+    <div className="flex items-center gap-2 border-t border-white/10 px-2 py-1 text-[10px] tabular-nums text-white/80">
+      {duel ? <span className="poster rounded bg-(--color-f1) px-1.5 py-0.5 text-[10px] text-white">{duel}</span> : null}
+      <span>หน้า {fmtGap(c.gapAhead)}</span>
+      <span>หลัง {c.gapBehind === null ? "—" : c.gapBehind.toFixed(2)}</span>
+      {c.mode !== "normal" && <span className={c.mode === "push" ? "text-[#fb923c]" : "text-[#86efac]"}>{MODE[c.mode].label}</span>}
+      <span className="flex items-center gap-1">
+        ERS
+        <span className="h-1.5 w-8 overflow-hidden rounded-full bg-white/15">
+          <span className="block h-full bg-[#38bdf8]" style={{ width: `${Math.round(c.ers * 100)}%` }} />
+        </span>
+      </span>
+      {c.drs && <span className="rounded bg-[#22c55e] px-1 font-bold text-[#08080A]">DRS</span>}
+    </div>
+  );
+}
+
+const QSTATUS: Record<QCar["status"], string> = { garage: "ในพิท", out: "รอบอุ่นยาง", push: "รอบเร่ง", in: "กลับพิท", eliminated: "ตกรอบ" };
+
+/** แถวสถานะในควอลิฟาย: ทำอะไรอยู่ · เวลารอบที่กำลังวิ่ง + เซกเตอร์ (ม่วง = ดีสุดของช่วง · เขียว = ดีสุดของตัวเอง · เหลือง = ช้ากว่า) · เวลาดีสุด */
+function QualiLine({ q, c }: { q: QualiState; c: QCar }) {
+  const status = c.lane ? (c.lane.kind === "out" ? "ออกจากพิท" : "เข้าพิท") : QSTATUS[c.status];
+  const run = c.status === "push" && c.lap ? q.t - c.lap.start : null;
+  const sessionBest = [0, 1, 2].map((k) => Math.min(...q.cars.map((o) => o.bestSec[k] ?? Infinity)));
+  const colour = (k: number, v: number) => (v <= sessionBest[k] + 1e-6 ? "#a855f7" : c.bestSec[k] === null || v <= c.bestSec[k]! + 1e-6 ? "#22c55e" : "#facc15");
+  return (
+    <div className="flex items-center gap-2 border-t border-white/10 px-2 py-1 text-[10px] tabular-nums text-white/80">
+      <span className="font-bold">{status}</span>
+      {run !== null && <span className="text-white">{fmtLap(run).replace(/\.\d{2}$/, "")}</span>}
+      {run !== null &&
+        c.shown.map((v, k) => <span key={k} className="h-1.5 w-4 rounded-full" style={{ background: v === null ? "rgba(255,255,255,0.18)" : colour(k, v) }} aria-label={`เซกเตอร์ ${k + 1}`} />)}
+      <span className="text-white/60">ดีสุด {fmtLap(c.best)}</span>
     </div>
   );
 }

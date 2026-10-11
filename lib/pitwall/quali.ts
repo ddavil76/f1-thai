@@ -33,6 +33,8 @@ export type QCar = {
   auto: boolean;
   /** เตือนแล้วว่ายังไม่มีเวลาในช่วงนี้ */
   nudged: boolean;
+  /** วิ่งในพิทเลน (ออกจากอู่ / กลับเข้าอู่) จนถึงตำแหน่ง end (ช่องสะสม) */
+  lane?: { kind: "out" | "in"; end: number } | null;
 };
 
 export type QSeg = { name: string; len: number; out: number };
@@ -68,16 +70,16 @@ export type QualiCtx = {
 };
 
 /**
- * ความยาวแต่ละช่วง (วินาทีของเกม ผูกกับเวลาต่อรอบของสนาม) — เกมเดินเร็วกว่าจริงราว 5 เท่า
- * หนึ่งครั้งที่ส่งออก (รอบอุ่นยาง + รอบเร่ง) ใช้ราว 2.2 รอบ
+ * ความยาวแต่ละช่วง (วินาทีของเกม ผูกกับเวลาต่อรอบของสนาม) — เกมเดินตามเวลาจริง (เร่งได้ ×2 ×4)
+ * หนึ่งครั้งที่ส่งออก (ออกจากพิท + รอบอุ่นยาง + รอบเร่ง) ใช้ราว 2.3 รอบ
  */
 export function segments(format: QualiFormat, n: number, lap: number): QSeg[] {
-  if (format === "single") return [{ name: "ควอลิฟาย", len: Math.round(lap * 5.5), out: 0 }];
+  if (format === "single") return [{ name: "ควอลิฟาย", len: Math.round(lap * 4.4), out: 0 }];
   const cut = Math.max(1, Math.round(n * 0.28));
   return [
-    { name: "Q1", len: Math.round(lap * 3.8), out: cut },
-    { name: "Q2", len: Math.round(lap * 3.5), out: cut },
-    { name: "Q3", len: Math.round(lap * 3.3), out: 0 },
+    { name: "Q1", len: Math.round(lap * 3.1), out: cut },
+    { name: "Q2", len: Math.round(lap * 2.9), out: cut },
+    { name: "Q3", len: Math.round(lap * 2.7), out: 0 },
   ];
 }
 
@@ -124,12 +126,8 @@ export function newQuali(ctx: QualiCtx, format: QualiFormat): QualiState {
 
 /** ตำแหน่งจอดในพิท (กลางเลนพิท) */
 export const boxPos = (t: TrackModel) => t.pitEntry.start + PIT_BOX;
-/** จุดออกจากพิทในรอบถัดไป */
-const pitExit = (t: TrackModel, from: number) => {
-  const L = t.lapCells;
-  const base = Math.floor(from / L) * L + t.pitEntry.start + t.pitCells;
-  return base;
-};
+/** ในพิทเลนรถช้ากว่าบนสนามกี่เท่า (จำกัดความเร็ว) */
+const PIT_LANE_SLOW = 2.5;
 
 /** ยังวิ่งในช่วงนี้อยู่ไหม */
 export const inSession = (q: QCar) => q.status !== "eliminated";
@@ -163,7 +161,9 @@ export function sendOut(ctx: QualiCtx, st: QualiState, id: number, run: Omit<Run
   spec.sets[set].used = true;
   q.run = { ...run, set };
   q.status = "out";
-  q.pos = pitExit(ctx.track, q.pos);
+  // ออกจากอู่: วิ่งในพิทเลนถึงทางออก แล้ววิ่งรอบอุ่นยาง
+  const t = ctx.track;
+  q.lane = { kind: "out", end: q.pos + t.pitCells - PIT_BOX };
   q.last = null;
   return null;
 }
@@ -271,7 +271,8 @@ function planAI(ctx: QualiCtx, st: QualiState) {
 export function planCar(ctx: QualiCtx, st: QualiState, q: QCar) {
   const lap = ctx.track.baseLap;
   const late = rand(ctx.seed) < 0.4;
-  const plan = [late ? lap * (2.3 + rand(ctx.seed) * 0.3) : lap * (3.25 + rand(ctx.seed) * 0.25)];
+  // ออกช้า: เหลือเวลาพอสำหรับพิทเลน + รอบอุ่นยาง + รอบเร่ง (ราว 2.4 รอบ)
+  const plan = [late ? lap * (2.6 + rand(ctx.seed) * 0.25) : lap * (3.25 + rand(ctx.seed) * 0.25)];
   if (late) plan.push(lap * 1.0);
   q.plan = plan.map((x) => Math.min(x, st.clock));
 }
@@ -326,6 +327,7 @@ function endSegment(ctx: QualiCtx, st: QualiState) {
     q.status = "garage";
     q.pos = boxPos(ctx.track);
     q.run = null;
+    q.lane = null;
     q.nudged = false;
   }
   planAI(ctx, st);
@@ -340,6 +342,7 @@ function redFlag(ctx: QualiCtx, st: QualiState, why: string) {
     if (q.status === "out" || q.status === "push" || q.status === "in") {
       q.status = "garage";
       q.pos = boxPos(ctx.track);
+      q.lane = null;
       q.lap = null;
       q.run = null;
       q.waitDrive = false;
@@ -394,7 +397,7 @@ export function stepQuali(ctx: QualiCtx, st: QualiState, dt: number, realDt: num
       const rank = order.indexOf(q.id);
       // รอบสอง: ออกเมื่อยังไม่ปลอดภัย หรือเป็นช่วงสุดท้าย
       if (q.best !== null && st.seg < st.segs.length - 1 && rank < cut - 2) continue;
-      if (st.clock < t.baseLap * 2.1) continue;
+      if (st.clock < t.baseLap * 2.4) continue;
       sendOut(ctx, st, q.id, aiRun(ctx, st, q));
     }
   }
@@ -402,7 +405,7 @@ export function stepQuali(ctx: QualiCtx, st: QualiState, dt: number, realDt: num
   // เตือนผู้เล่น: ใกล้หมดเวลาแต่รถยังไม่ได้ทำเวลา (ต้องใช้ราว 2 รอบ: อุ่นยาง + รอบเร่ง)
   for (const q of st.cars) {
     if (q.auto || q.nudged || q.status !== "garage" || q.best !== null || !ctx.human(q.id)) continue;
-    if (st.clock > 0 && st.clock <= t.baseLap * 2.8) {
+    if (st.clock > 0 && st.clock <= t.baseLap * 2.7) {
       q.nudged = true;
       ctx.say(ctx.cars[q.id].team, q.id, `${label(ctx, q.id)} ยังไม่มีเวลา — ส่งรถออกตอนนี้ ไม่งั้นจะทำรอบไม่ทัน`, "bad");
     }
@@ -428,21 +431,29 @@ export function stepQuali(ctx: QualiCtx, st: QualiState, dt: number, realDt: num
       }
       continue;
     }
-    // รอบอุ่นยาง / รอบกลับพิท: วิ่งช้ากว่ารอบเร่ง
-    const slowF = q.status === "out" ? 1.22 : 1.3;
+    // รอบอุ่นยาง / รอบกลับพิท: วิ่งช้ากว่ารอบเร่ง · ในพิทเลนช้าตามความเร็วจำกัด
+    const slowF = q.lane ? PIT_LANE_SLOW : q.status === "out" ? 1.22 : 1.3;
     const cell = cellOf(t, q.pos);
     q.pos += dt / (t.baseLap * t.share[cell] * slowF);
+    if (q.lane && q.pos >= q.lane.end) {
+      if (q.lane.kind === "in") {
+        q.status = "garage";
+        q.pos = boxPos(t);
+        q.run = null;
+        q.lane = null;
+        continue;
+      }
+      q.lane = null;
+    }
+    if (q.lane) continue;
     if (q.status === "out" && lapOf(t, q.pos) > lapOf(t, old)) {
       q.pos = Math.floor(q.pos / L) * L;
       if (st.clock > 0) startPush(ctx, st, q);
       else q.status = "in";
     } else if (q.status === "in") {
       const pe = t.pitEntry.start;
-      if (Math.floor(old) % L !== pe && cellOf(t, q.pos) === pe) {
-        q.status = "garage";
-        q.pos = boxPos(t);
-        q.run = null;
-      }
+      // ถึงทางเข้าพิท: วิ่งในพิทเลนไปจอดที่อู่ (กลางพิทเลน)
+      if (Math.floor(old) % L !== pe && cellOf(t, q.pos) === pe) q.lane = { kind: "in", end: Math.floor(q.pos) + PIT_BOX };
     }
   }
 

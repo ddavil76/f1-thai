@@ -3,7 +3,7 @@
  * ใช้ตัวเดียวกันทั้งเล่นคนเดียว (รันในเบราว์เซอร์) และห้องออนไลน์ (รันบน Cloudflare Durable Object)
  * ผู้ที่ถือห้องเรียก tick(ms) เป็นระยะ แล้วส่ง snapshot() ให้หน้าจอ
  */
-import { classify, newRace, applyLaunches, stepRace, SIM_DT, type RaceCtx, type RaceState } from "./race";
+import { classify, newRace, applyLaunches, stepRace, tryAttack, SIM_DT, type RaceCtx, type RaceState } from "./race";
 import { callIn, driveResult, expireDrive, newQuali, planCar, sendOut, stepQuali, type QualiCtx, type QualiState, type Risk } from "./quali";
 import { rand, type Seed } from "./rng";
 import { CIRCUITS, TEAMS } from "./teams";
@@ -15,11 +15,11 @@ export type RaceLength = "short" | "normal" | "long";
 export type Config = { circuits: string[]; length: RaceLength; quali: QualiFormat; ai: AiLevel };
 export type Player = { id: string; name: string; team: number | null; ready: boolean; online: boolean; host: boolean };
 
-/** เกมเดินเร็วกว่าจริงกี่เท่า */
-export const QUALI_SCALE = 5;
-export const RACE_SCALE = 3.5;
+/** เกมเดินเร็วกว่าจริงกี่เท่า (×1 = เวลาจริง ดูภาพ 3D ทัน · เร่งได้ด้วยปุ่ม ×2 ×4 ตอนเล่นคนเดียว) */
+export const QUALI_SCALE = 1;
+export const RACE_SCALE = 1;
 /** ความยาวเรซ (วินาทีของเกม) → จำนวนรอบตามสนาม */
-const RACE_SECONDS: Record<RaceLength, number> = { short: 700, normal: 1100, long: 1600 };
+export const RACE_SECONDS: Record<RaceLength, number> = { short: 420, normal: 660, long: 1020 };
 /** เวลาให้เลือก (วินาทีจริง) เฉพาะออนไลน์ */
 const PREP_SECONDS = 75;
 const GRID_SECONDS = 40;
@@ -42,6 +42,7 @@ export type Msg =
   | { t: "ers"; car: number; ers: ErsMode }
   | { t: "fight"; car: number; fight: Fight }
   | { t: "pit"; car: number; compound: Compound | null }
+  | { t: "attack"; car: number }
   | { t: "order"; order: TeamOrder }
   | { t: "auto"; car: number; v: boolean }
   | { t: "drive"; car: number; delta: number }
@@ -350,6 +351,9 @@ export class Room {
         } else c.auto = m.v;
         return null;
       }
+      case "attack":
+        if (!r || !this.carOf(p, m.car)) return "ไม่ใช่รถของคุณ";
+        return tryAttack(this.ctx(), r, r.cars[m.car]);
       case "order":
         if (!r || p.team === null) return null;
         r.orders[p.team] = m.order;

@@ -120,9 +120,9 @@ export function Lobby({ snap, me, send, code }: Props & { code: string | null })
               disabled={!host}
               onChange={(v) => set({ length: v })}
               options={[
-                { v: "short", label: "สั้น ~3 นาที" },
-                { v: "normal", label: "กลาง ~5 นาที" },
-                { v: "long", label: "ยาว ~8 นาที" },
+                { v: "short", label: "สั้น ~7 นาที" },
+                { v: "normal", label: "กลาง ~11 นาที" },
+                { v: "long", label: "ยาว ~17 นาที" },
               ]}
             />
           </Row>

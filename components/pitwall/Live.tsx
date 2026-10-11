@@ -9,12 +9,13 @@ import LaunchScreen from "@/components/pitwall/Launch";
 import PitMap, { PIT_K, SIDE, type MapCar } from "@/components/pitwall/PitMap";
 import Race3D from "@/components/pitwall/Race3D";
 import { setSoundOn, sfx, soundOn } from "@/components/pitwall/sound";
+import { commandText, ersEffect, FIGHT_EFFECT, modeEffect } from "@/components/pitwall/explain";
 import { myCars } from "@/components/pitwall/Weekend";
 import { Bar, Btn, Seg, TyreDot, fmtClock, fmtGap, fmtLap, teamOf } from "@/components/pitwall/ui";
 import { buildBoard } from "@/lib/pitwall/board";
 import { ERS, MODE } from "@/lib/pitwall/model";
 import { boxPos, segOrder, type QCar, type Risk } from "@/lib/pitwall/quali";
-import { freshSets, standings, type RaceCar } from "@/lib/pitwall/race";
+import { ATTACK_ERS, ATTACK_GAP, attackOdds, attackTarget, freshSets, standings, type RaceCar } from "@/lib/pitwall/race";
 import type { Msg, Snapshot } from "@/lib/pitwall/room";
 import { circuitName } from "@/lib/pitwall/teams";
 import { buildTrack, lapOf } from "@/lib/pitwall/track";
@@ -25,13 +26,21 @@ type Props = { snap: Snapshot; me: string; send: (m: Msg) => void; interval: num
 const SECTOR = { purple: "#a855f7", green: "#22c55e", yellow: "#facc15" } as const;
 
 export default function Live({ snap, me, send: rawSend, interval, onExit }: Props) {
-  // คำสั่งจากกำแพงพิทมีเสียงคลิกยืนยัน
-  const send = (m: Msg) => {
-    if (["mode", "ers", "fight", "pit", "order", "qsend", "qin", "auto"].includes(m.t)) sfx.select();
-    rawSend(m);
-  };
   const board = useMemo(() => buildBoard(snap.circuit, circuitName(snap.circuit)), [snap.circuit]);
   const track = useMemo(() => buildTrack(snap.circuit), [snap.circuit]);
+  // คำสั่งจากกำแพงพิทมีเสียงคลิกยืนยัน + ข้อความบอกผลของคำสั่งบนจอสักครู่
+  const [toast, setToast] = useState<{ text: string; k: number } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(null), 3200);
+    return () => window.clearTimeout(id);
+  }, [toast]);
+  const send = (m: Msg) => {
+    if (["mode", "ers", "fight", "pit", "order", "qsend", "qin", "auto", "attack"].includes(m.t)) sfx.select();
+    const text = track ? commandText(m, snap, track) : null;
+    if (text) setToast({ text, k: performance.now() });
+    rawSend(m);
+  };
   const mine = myCars(snap, me);
   const [focus, setFocus] = useState<number | null>(mine[0]?.id ?? null);
   const [zoomed, setZoomed] = useState(true);
@@ -132,7 +141,7 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
             </span>
           )}
           {q?.red && <span className="poster rounded-full bg-(--color-f1) px-2.5 py-1 text-[11px]">ธงแดง</span>}
-          {r && !no3d && (
+          {(r || q) && !no3d && (
             <button
               type="button"
               onClick={() => setView3d((v) => !v)}
@@ -172,12 +181,17 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           </button>
         </header>
         <div className="relative min-h-[34vh] flex-1">
-          {r && view3d ? (
+          {(r || q) && view3d ? (
             <Race3D snap={snap} track={track} focus={focus} team={myTeam} interval={interval} onFail={fail3d} />
           ) : (
             <PitMap board={board} track={track} cars={mapCars} focus={focus} neutral={r?.neutral?.kind ?? null} zoomed={zoomed} onToggle={() => setZoomed((z) => !z)} interval={interval} />
           )}
           <RadioTicker snap={snap} team={myTeam} />
+          {toast && (
+            <p key={toast.k} role="status" className="radio-toast pointer-events-none absolute inset-x-2 bottom-20 z-20 mx-auto max-w-md rounded-xl border-l-4 border-white bg-[#08080A]/90 px-3 py-2 text-center text-xs font-bold text-white">
+              {toast.text}
+            </p>
+          )}
           {r && !r.started && !launchCar && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
               <p className="poster text-lg text-white/80">รอรถคันอื่นพร้อมออกตัว… {snap.timer > 0 ? Math.ceil(snap.timer) : ""}</p>
@@ -473,21 +487,73 @@ const RISK_HINT: Record<Risk, string> = {
   normal: "โอกาสพลาดน้อย",
   attack: "เร็วขึ้นราว 0.2 วิ แต่รอบถูกตัดหรือพลาดง่ายขึ้น",
 };
-const MODE_HINT: Record<DriveMode, string> = {
-  save: "ช้าลงเล็กน้อย ยางสึกช้า เสี่ยงพลาดน้อย",
-  normal: "สมดุลระหว่างความเร็วกับยาง",
-  push: "เร็วขึ้น แต่ยางสึกเร็วและเสี่ยงพลาด",
-};
-const ERS_HINT: Record<ErsMode, string> = {
-  harvest: "ชาร์จแบต เสียความเร็วบนทางตรง",
-  auto: "ใช้และชาร์จแบตให้อัตโนมัติ",
-  boost: "เร็วขึ้นบนทางตรง แบตหมดไว",
-};
-const FIGHT_HINT: Record<Fight, string> = {
-  defend: "ปิดไลน์ คันหลังแซงยาก แต่ช้าลงนิดหน่อย",
-  none: "ขับตามปกติ",
-  attack: "พยายามแซงคันหน้า ใช้แบตและยางมากขึ้น",
-};
+/**
+ * การต่อสู้ของรถเรา: คันหน้า/คันหลังห่างเท่าไร กำลังใกล้ขึ้นหรือห่างออก (วินาทีต่อรอบ จากช่องห่างย้อนหลัง)
+ * + ปุ่ม "แซงเลย" เมื่อตามทัน — บอกโอกาสผ่านก่อนกด (เร็วกว่าแค่ไหน DRS ทางตรง ยาง แบต อีกคันป้องกัน)
+ */
+function BattleRow({ snap, car, send }: { snap: Snapshot; car: RaceCar; send: (m: Msg) => void }) {
+  const r = snap.race!;
+  const track = buildTrack(snap.circuit)!;
+  const ahead = r.cars.filter((o) => o !== car && !o.pit && o.out === null && o.finished === null && o.pos > car.pos).sort((a, b) => a.pos - b.pos)[0] ?? null;
+  const behind = r.cars.filter((o) => o !== car && !o.pit && o.out === null && o.finished === null && o.pos < car.pos).sort((a, b) => b.pos - a.pos)[0] ?? null;
+  // ใกล้ขึ้น/ห่างออกกี่วินาทีต่อรอบ (เฉลี่ยจากการจำลอง)
+  const trend = ahead && car.gapAhead !== null && car.aheadId === ahead.id ? (car.closing ?? 0) * track.baseLap : null;
+  const target = attackTarget(r, track, car);
+  const odds = target ? attackOdds(track, snap.cars, r, car, target) : null;
+  const cd = car.cd ?? 0;
+  const why = car.duel
+    ? "กำลังแซงอยู่…"
+    : r.neutral
+      ? "ช่วงเซฟตี้คาร์แซงไม่ได้"
+      : !target
+        ? `ตามให้ห่างไม่เกิน ${ATTACK_GAP} วิ ก่อน`
+        : car.ers < ATTACK_ERS
+          ? "แบตไม่พอ (ต้อง 20%)"
+          : cd > 0
+            ? `รออีก ${Math.ceil(cd)} วิ`
+            : null;
+  const by = r.cars.find((o) => o.duel?.rival === car.id);
+  return (
+    <div className="space-y-1.5 rounded-xl bg-[#08080A] p-2 text-[11px]">
+      <div className="flex items-center gap-2 tabular-nums">
+        <span className="w-12 flex-none text-white/55">คันหน้า</span>
+        {ahead && car.gapAhead !== null ? (
+          <span className="min-w-0 flex-1 truncate">
+            <b>#{snap.cars[ahead.id].num}</b> ห่าง {car.gapAhead.toFixed(2)} วิ
+            {trend !== null && Math.abs(trend) >= 0.05 && (
+              <span className={trend > 0 ? "text-[#4ade80]" : "text-(--color-f1-text)"}>
+                {" "}
+                · {trend > 0 ? "▼ ใกล้ขึ้น" : "▲ ห่างออก"} {Math.abs(trend).toFixed(1)} วิ/รอบ
+                {trend > 0 && car.gapAhead > ATTACK_GAP ? ` (ทันในอีก ~${Math.ceil((car.gapAhead - ATTACK_GAP) / trend)} รอบ)` : ""}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="flex-1 text-white/55">{ahead ? "ห่างเกิน 1 รอบ" : "นำอยู่ ไม่มีคันหน้า"}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 tabular-nums">
+        <span className="w-12 flex-none text-white/55">คันหลัง</span>
+        {behind && car.gapBehind !== null ? (
+          <span className={`min-w-0 flex-1 truncate ${car.gapBehind < 1 ? "text-[#facc15]" : ""}`}>
+            <b>#{snap.cars[behind.id].num}</b> ห่าง {car.gapBehind.toFixed(2)} วิ
+            {by ? " · ขึ้นเทียบอยู่!" : car.gapBehind < 1 && car.fight !== "defend" ? " · จี้มา กด ป้องกัน ได้" : ""}
+          </span>
+        ) : (
+          <span className="flex-1 text-white/55">—</span>
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={!!why}
+        onClick={() => send({ t: "attack", car: car.id })}
+        className="poster flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-(--color-f1) px-3 text-xs text-white disabled:bg-white/10 disabled:text-white/55"
+      >
+        {why ?? `แซงเลย! โอกาสผ่าน ${Math.round((odds ?? 0) * 100)}% · ใช้แบต ${Math.round(ATTACK_ERS * 100)}%`}
+      </button>
+    </div>
+  );
+}
 
 function Control({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
   return (
@@ -532,7 +598,8 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
       </div>
       {!done && (
         <>
-          <Control label="การขับ" hint={MODE_HINT[car.mode]}>
+          <BattleRow snap={snap} car={car} send={send} />
+          <Control label="การขับ" hint={modeEffect(car.mode, r, car, lapsLeft)}>
             <Seg<DriveMode>
               size="sm"
               value={car.mode}
@@ -541,7 +608,7 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
             />
           </Control>
           <div className="grid grid-cols-2 gap-1.5">
-            <Control label="แบตเตอรี่ (ERS)" hint={ERS_HINT[car.ersMode]}>
+            <Control label="แบตเตอรี่ (ERS)" hint={ersEffect(car.ersMode, track, car)}>
               <Seg<ErsMode>
                 size="sm"
                 value={car.ersMode}
@@ -549,7 +616,7 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
                 options={(["harvest", "auto", "boost"] as ErsMode[]).map((v) => ({ v, label: ERS[v].label, tone: v === "boost" ? "#38bdf8" : undefined }))}
               />
             </Control>
-            <Control label="ต่อสู้" hint={FIGHT_HINT[car.fight]}>
+            <Control label="ต่อสู้" hint={FIGHT_EFFECT[car.fight]}>
               <Seg<Fight>
                 size="sm"
                 value={car.fight}
