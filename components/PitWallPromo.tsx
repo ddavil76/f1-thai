@@ -17,7 +17,7 @@ export default function PitWallPromo() {
       </span>
       <span className="min-w-0 flex-1 text-sm">
         <span className="block font-semibold">Pit Wall · เกมแข่งรถ</span>
-        <span className="block text-white/55">2 โหมด: หัวหน้าทีมวางกลยุทธ์ หรือนักขับขับเองแบบ 3D</span>
+        <span className="block text-white/55">3 โหมด: คุมนักขับ AI แบบโรกไลต์ · หัวหน้าทีมวางกลยุทธ์ · นักขับขับเองแบบ 3D</span>
       </span>
       <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-(--color-f1) py-1 pr-2 pl-3 text-xs font-bold text-white">
         เล่นเลย

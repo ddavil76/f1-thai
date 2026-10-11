@@ -1,22 +1,23 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Gauge, Globe, LogIn, Radio, User } from "lucide-react";
+import { ChevronLeft, ChevronRight, Gauge, Globe, LogIn, Radio, Sparkles, User } from "lucide-react";
 import Live from "@/components/pitwall/Live";
 import DriverMode from "@/components/pitwall/driver/DriverMode";
+import BackseatApp from "@/components/pitwall/backseat/BackseatApp";
 import { createRoom, onlineReady, useLocalSession, useOnlineSession, type Session } from "@/components/pitwall/session";
 import { Btn, Card, Head } from "@/components/pitwall/ui";
 import { Final, Grid, Lobby, Prep, Results } from "@/components/pitwall/Weekend";
 import { NAMES_NOTE } from "@/lib/pitwall/teams";
 
-/** หน้าในเกม: เลือกโหมด → manager (หัวหน้าทีม) / driver (ขับเอง) → เกม */
-type View = "menu" | "manager" | "driver";
+/** หน้าในเกม: เลือกโหมด → manager (หัวหน้าทีม) / driver (ขับเอง) / backseat (คุมนักขับ AI แบบ roguelite) → เกม */
+type View = "menu" | "manager" | "driver" | "backseat";
 type Game = { kind: "solo" } | { kind: "online"; code: string } | null;
 
 const NAME_KEY = "pitwall-name";
-const VIEWS: View[] = ["menu", "manager", "driver"];
+const VIEWS: View[] = ["menu", "manager", "driver", "backseat"];
 
-/** โหมดที่เลือกอยู่ใน URL (?mode=manager|driver) — ปุ่มย้อนกลับของเบราว์เซอร์/มือถือพากลับหน้าเลือกโหมด */
+/** โหมดที่เลือกอยู่ใน URL (?mode=manager|driver|backseat) — ปุ่มย้อนกลับของเบราว์เซอร์/มือถือพากลับหน้าเลือกโหมด */
 function viewFromUrl(): View {
   if (typeof window === "undefined") return "menu";
   const v = new URLSearchParams(window.location.search).get("mode");
@@ -74,6 +75,7 @@ export default function PitWallApp() {
   if (game?.kind === "solo") return <SoloGame name={nick} onExit={() => setGame(null)} />;
   if (game?.kind === "online") return <OnlineGame code={game.code} name={nick} onExit={() => setGame(null)} />;
   if (view === "driver") return <DriverMode name={nick} onExit={() => go("menu")} />;
+  if (view === "backseat") return <BackseatApp onExit={() => go("menu")} />;
 
   if (view === "manager")
     return (
@@ -169,7 +171,15 @@ export default function PitWallApp() {
         </label>
       </Card>
       <h2 className="poster text-sm text-white/70">เลือกโหมด</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ModeCard
+          kicker="ROGUELITE · AUTO RACE"
+          title="คุมนักขับ AI"
+          icon={<Sparkles className="h-6 w-6" aria-hidden />}
+          sub="นักขับ AI ขับเอง — คุณคือทีมข้างหลัง อัปเกรดรถกลางเรซ ไต่แผนที่ 2 ช่วงให้ถึงแชมป์"
+          points={["แซง/จบรอบ → เลเวลอัป เลือกการ์ด", "สั่งเข้าพิท · เลือกยาง 3 แบบ", "การ์ดเสี่ยง: แรงขึ้นแต่อาจพัง", "แผนที่ · โรงงาน · อีเวนต์ · บอส"]}
+          onClick={() => go("backseat")}
+        />
         <ModeCard
           kicker="MANAGER"
           title="หัวหน้าทีม"
