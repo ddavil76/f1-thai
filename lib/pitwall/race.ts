@@ -20,6 +20,16 @@ const STOP_BASE = 2.3;
 export const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 /** ไม่เข้าพิทเลยทั้งเรซ = บวกเวลา (ยางชนิดไหนก็ได้) */
 export const NO_STOP_PENALTY = 20;
+/** การแซงใช้เวลา (วินาทีของเกม): ขึ้นเทียบข้างแล้วค่อย ๆ นำ (ไม่วาบข้ามคันหน้า) · แซงคันที่ช้ากว่ารอบ */
+export const DUEL_TIME = 2.6;
+const LAP_DUEL_TIME = 1.4;
+/** ปุ่ม "แซงเลย": ต้องห่างคันหน้าไม่เกินกี่วินาที · ใช้แบตเท่าไร · ต้องรอกี่วินาทีถึงลองใหม่ได้ */
+export const ATTACK_GAP = 0.8;
+export const ATTACK_ERS = 0.2;
+export const ATTACK_COOLDOWN = 12;
+
+/** กำลังแซง: rival = คันที่ถูกแซง · from = ระยะห่างตอนเริ่ม (ช่อง) · win = แซงผ่านไหม (ตัดสินตอนเริ่ม) · called = ผู้เล่นสั่งเอง */
+export type Duel = { rival: number; t: number; dur: number; from: number; win: boolean; called: boolean };
 
 export type PitState = { start: number; t: number; drive: number; stop: number; compound: Compound; changed: boolean };
 
@@ -67,6 +77,12 @@ export type RaceCar = {
   ct: number;
   clean: number;
   warned: number;
+  /** กำลังแซงคันหน้าอยู่ (null = ไม่) · รอใช้ปุ่มแซงอีกกี่วินาที */
+  duel?: Duel | null;
+  cd?: number;
+  /** คันหน้าคันไหน · ช่องห่างกับคันหน้าหดลงกี่วินาทีต่อวินาที (เฉลี่ยราว 10 วินาที · ลบ = ห่างออก) */
+  aheadId?: number | null;
+  closing?: number;
 };
 
 export type RaceState = {
@@ -152,6 +168,8 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
       ct: 0,
       clean: 0,
       warned: 0,
+      duel: null,
+      cd: 0,
     };
   });
   cars.sort((a, b) => a.id - b.id);
@@ -242,6 +260,83 @@ function passChance(ctx: RaceCtx, st: RaceState, x: RaceCar, a: RaceCar): number
   return Math.min(0.3, p);
 }
 
+/** ระยะคนแซงเทียบคันที่ถูกแซง (ช่อง) ตามเวลาของการแซง: ผ่าน = ขึ้นเทียบแล้วนำ · ไม่ผ่าน = ขึ้นเทียบแล้วหลุดกลับไปข้างหลัง */
+function duelRel(d: Duel): number {
+  const u = Math.min(1, d.t / d.dur);
+  const ease = (x: number) => {
+    const v = Math.max(0, Math.min(1, x));
+    return v * v * (3 - 2 * v);
+  };
+  if (d.win) return d.from + (MIN_GAP + 0.02 - d.from) * ease(u);
+  const side = -0.01;
+  return u < 0.55 ? d.from + (side - d.from) * ease(u / 0.55) : side + (-MIN_GAP * 1.2 - side) * ease((u - 0.55) / 0.45);
+}
+
+function startDuel(st: RaceState, c: RaceCar, rival: RaceCar, win: boolean, dur: number, called: boolean) {
+  c.duel = { rival: rival.id, t: 0, dur, from: Math.min(-0.02, c.pos - rival.pos), win, called };
+  // ขึ้นเทียบอีกฝั่งของถนน
+  c.side = rival.side === 1 ? -1 : 1;
+}
+
+function endDuel(ctx: RaceCtx, st: RaceState, c: RaceCar) {
+  const d = c.duel!;
+  c.duel = null;
+  const a = st.cars[d.rival];
+  const t = ctx.track;
+  const lapping = lapOf(t, a.pos) < lapOf(t, c.pos);
+  const sa = ctx.cars[a.id];
+  const sc = ctx.cars[c.id];
+  if (!d.win) {
+    c.delay += 0.15;
+    if (ctx.human(c.id)) ctx.say(sc.team, c.id, `${label(ctx, c.id)} แซง ${label(ctx, a.id)} ไม่ผ่าน — ถูกปิดไลน์ เสียจังหวะ`, "bad");
+    if (ctx.human(a.id)) ctx.say(sa.team, a.id, `${label(ctx, a.id)} ป้องกัน ${label(ctx, c.id)} ไว้ได้!`, "good");
+    return;
+  }
+  if (lapping) return;
+  st.overtakes++;
+  if (sa.team === sc.team && st.orders[sc.team] === "swap") st.orders[sc.team] = "free";
+  if (ctx.human(c.id)) ctx.say(sc.team, c.id, `${label(ctx, c.id)} แซง ${label(ctx, a.id)} ได้!`, "good");
+  if (ctx.human(a.id)) ctx.say(sa.team, a.id, `${label(ctx, a.id)} โดน ${label(ctx, c.id)} แซง`, "bad");
+}
+
+/** คันที่อยู่ข้างหน้าบนสนามที่จะแซงได้ (ห่างไม่เกิน ATTACK_GAP วินาที ไม่ใช่รถที่กำลังแซง/ถูกแซงอยู่) */
+export function attackTarget(st: RaceState, track: TrackModel, c: RaceCar): RaceCar | null {
+  if (!onTrack(c) || c.duel || c.gapAhead === null || c.gapAhead > ATTACK_GAP) return null;
+  const a = st.cars.filter((o) => o !== c && onTrack(o) && o.pos > c.pos).sort((x, y) => x.pos - y.pos)[0];
+  if (!a || a.duel || st.cars.some((o) => o.duel?.rival === a.id)) return null;
+  return lapOf(track, a.pos) - lapOf(track, c.pos) <= 1 ? a : null;
+}
+
+/** โอกาสที่กด "แซงเลย" แล้วผ่าน: เร็วกว่าแค่ไหน · DRS · ทางตรง/โค้ง · ยาง · แบต · อีกคันป้องกัน */
+export function attackOdds(track: TrackModel, cars: Car[], st: RaceState, x: RaceCar, a: RaceCar): number {
+  const sx = cars[x.id];
+  const sa = cars[a.id];
+  if (sx.team === sa.team) {
+    if (st.orders[sx.team] === "swap") return 1;
+    if (st.orders[sx.team] === "hold") return 0;
+  }
+  const rel = (a.clean - x.clean) / Math.max(1e-6, a.clean);
+  const straight = track.kinds[cellOf(track, x.pos)] === "straight";
+  let p = 0.3 + rel * 30 + (x.drs ? 0.2 : 0) + (straight ? 0.08 : -0.15) + (a.fight === "defend" ? -0.15 : 0) + (a.wear - x.wear) * 0.35 + (x.ers - a.ers) * 0.1;
+  p *= 1 + (sa.downforce - sx.downforce) * 0.3;
+  return Math.max(0.05, Math.min(0.9, p));
+}
+
+/** ผู้เล่นกด "แซงเลย": ใช้แบต ทอยตามโอกาส แล้วขึ้นเทียบ (ผลออกตอนจบการแซง) */
+export function tryAttack(ctx: RaceCtx, st: RaceState, c: RaceCar): string | null {
+  if (!st.started || st.neutral) return "แซงไม่ได้ช่วงนี้";
+  if ((c.cd ?? 0) > 0) return `รออีก ${Math.ceil(c.cd ?? 0)} วิ`;
+  if (c.ers < ATTACK_ERS) return "แบตไม่พอ";
+  const a = attackTarget(st, ctx.track, c);
+  if (!a) return `ต้องตามคันหน้าไม่เกิน ${ATTACK_GAP} วิ`;
+  const odds = attackOdds(ctx.track, ctx.cars, st, c, a);
+  c.ers -= ATTACK_ERS;
+  c.cd = ATTACK_COOLDOWN;
+  startDuel(st, c, a, rand(ctx.seed) < odds, DUEL_TIME, true);
+  ctx.say(ctx.cars[c.id].team, c.id, `${label(ctx, c.id)} พุ่งขึ้นเทียบ ${label(ctx, a.id)}! (โอกาส ${Math.round(odds * 100)}%)`, "info");
+  return null;
+}
+
 function enterPit(ctx: RaceCtx, c: RaceCar, compound: Compound) {
   const t = ctx.track;
   const stop = STOP_BASE + rand(ctx.seed) * 0.9 + (rand(ctx.seed) < 0.05 ? 3 : 0);
@@ -249,6 +344,7 @@ function enterPit(ctx: RaceCtx, c: RaceCar, compound: Compound) {
   c.pit = { start: c.pos, t: 0, drive, stop, compound, changed: false };
   c.pitReq = null;
   c.drs = false;
+  c.duel = null;
 }
 
 function changeTyres(ctx: RaceCtx, c: RaceCar) {
@@ -354,30 +450,39 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
     want.set(c.id, c.pos + step / c.ct);
   }
 
-  // 2) จัดลำดับจากหน้าไปหลัง แล้วจำกัดไม่ให้ทะลุคันหน้า (เว้นแต่แซงสำเร็จ)
+  // 2) จัดลำดับจากหน้าไปหลัง แล้วจำกัดไม่ให้ทะลุคันหน้า
+  //    แซงสำเร็จ = เริ่ม "ขึ้นเทียบ" (duel): คู่นั้นไม่บังกันเอง คนแซงเดินตามจังหวะแซงเทียบกับคันที่ถูกแซง
   const order = st.cars.filter(onTrack).sort((a, b) => b.pos - a.pos);
   const placed: { car: RaceCar; pos: number }[] = [];
+  const placedOf = new Map<number, number>();
+  // ยกเลิกการแซงที่อีกคันเข้าพิท/ออกจากการแข่ง
+  for (const c of order) if (c.duel && !onTrack(st.cars[c.duel.rival])) c.duel = null;
+  for (const c of order) c.cd = Math.max(0, (c.cd ?? 0) - dt);
+  const attackerOf = new Map<number, number>();
+  for (const c of order) if (c.duel) attackerOf.set(c.duel.rival, c.id);
   for (const c of order) {
     let np = want.get(c.id)!;
-    const ahead = placed.filter((p) => p.pos >= c.pos).sort((a, b) => a.pos - b.pos)[0];
-    if (ahead && np > ahead.pos - (st.neutral?.kind === "sc" ? SC_GAP : MIN_GAP)) {
-      const gap = st.neutral?.kind === "sc" ? SC_GAP : MIN_GAP;
+    const gap = st.neutral?.kind === "sc" ? SC_GAP : MIN_GAP;
+    const d = c.duel;
+    const skip = d ? d.rival : (attackerOf.get(c.id) ?? -1);
+    const ahead = placed.filter((p) => p.pos >= c.pos && p.car.id !== skip).sort((a, b) => a.pos - b.pos)[0];
+    if (d) {
+      d.t += dt;
+      const rp = placedOf.get(d.rival) ?? want.get(d.rival) ?? st.cars[d.rival].pos;
+      np = Math.max(c.pos, rp + duelRel(d));
+      if (ahead && ahead.pos > c.pos) np = Math.min(np, Math.max(c.pos, ahead.pos - gap));
+      if (d.t >= d.dur) endDuel(ctx, st, c);
+    } else if (ahead && np > ahead.pos - gap) {
       const lapping = lapOf(t, ahead.car.pos) < lapOf(t, c.pos);
-      let passed = false;
-      if (!st.neutral && (lapping || rand(ctx.seed) < passChance(ctx, st, c, ahead.car) * (dt / SIM_DT))) passed = true;
-      if (passed) {
-        np = Math.max(np, ahead.pos + 0.02);
-        if (!lapping) {
-          st.overtakes++;
-          const sa = ctx.cars[ahead.car.id];
-          const sc = ctx.cars[c.id];
-          if (sa.team === sc.team && st.orders[sc.team] === "swap") st.orders[sc.team] = "free";
-          if (ctx.human(c.id)) ctx.say(sc.team, c.id, `${label(ctx, c.id)} แซง ${label(ctx, ahead.car.id)} ได้!`, "good");
-          if (ctx.human(ahead.car.id)) ctx.say(sa.team, ahead.car.id, `${label(ctx, ahead.car.id)} โดน ${label(ctx, c.id)} แซง`, "bad");
-        }
-      } else np = Math.max(c.pos, ahead.pos - gap);
+      const free = !ahead.car.duel && !attackerOf.has(ahead.car.id);
+      if (free && !st.neutral && (lapping || rand(ctx.seed) < passChance(ctx, st, c, ahead.car) * (dt / SIM_DT))) {
+        startDuel(st, c, ahead.car, true, lapping ? LAP_DUEL_TIME : DUEL_TIME, false);
+        attackerOf.set(ahead.car.id, c.id);
+      }
+      np = Math.max(c.pos, ahead.pos - gap);
     }
     placed.push({ car: c, pos: np });
+    placedOf.set(c.id, np);
   }
 
   // 3) รถในเลนพิท
@@ -492,7 +597,12 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
   run.forEach((c, i) => {
     const a = run[i - 1];
     const b = run[i + 1];
+    const prev = c.gapAhead;
     c.gapAhead = a && lapOf(t, a.pos) - lapOf(t, c.pos) <= 1 ? (a.pos - c.pos) * lapSec : null;
+    // ใกล้ขึ้น/ห่างออก (คันหน้าคันเดิมเท่านั้น)
+    if (a && c.gapAhead !== null && prev !== null && c.aheadId === a.id) c.closing = (c.closing ?? 0) + ((prev - c.gapAhead) / dt - (c.closing ?? 0)) * Math.min(1, dt / 10);
+    else c.closing = 0;
+    c.aheadId = a ? a.id : null;
     c.gapBehind = b ? (c.pos - b.pos) * lapSec : null;
     if (c.auto) aiFight(c);
   });

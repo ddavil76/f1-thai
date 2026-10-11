@@ -10,14 +10,17 @@ import type * as THREE_NS from "three";
 import { DS, VMAX, VSM, heightAt, laneValue, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
 import { guideColor, guideFade, guideNeeded, guideRisk, projectedSpeed } from "@/lib/pitwall/drive/guide";
 import { buildCar, type Livery } from "./carModel";
-import { buildTerrain, STAND_DEPTH, STAND_RISE, STAND_ROOF, STAND_TIERS } from "./terrain";
+import { buildTerrain, inStand, sightHits, STAND_DEPTH, STAND_RISE, STAND_ROOF, STAND_TIERS } from "./terrain";
 import { BOX_SHIFT, GARAGE_D, PIT_W, pitLateral, wallFrom, wallTo, type PitLane } from "@/lib/pitwall/drive/pit";
 
 type Three = typeof THREE_NS;
 type Obj = THREE_NS.Object3D;
 
-/** orbit = กล้องรีเพลย์ วนรอบรถช้า ๆ */
-export type CameraMode = "tv" | "chase" | "orbit";
+/**
+ * orbit = กล้องรีเพลย์ วนรอบรถช้า ๆ
+ * broadcast = กล้องถ่ายทอดสดข้างสนาม (ตั้งอยู่กับที่ หมุน/ซูมตามรถ ตัดภาพไปกล้องถัดไปเมื่อรถพ้นระยะ) · heli = เฮลิคอปเตอร์ตามหลังสูง ๆ
+ */
+export type CameraMode = "tv" | "chase" | "orbit" | "broadcast" | "heli";
 export type Gfx = "high" | "low";
 
 const ZONE_COLOR: Record<Zone, number> = { throttle: 0x22c55e, lift: 0xfacc15, brake: 0xef4444 };
@@ -66,7 +69,9 @@ export type DriveScene = {
     dt: number;
     aero?: number;
     /** รถคู่แข่ง (ลำดับเดียวกับ opts.rivals) · s = ระยะสะสม · lateral = ระยะเยื้องจากเส้นกลาง (ม.) */
-    rivals?: { s: number; lateral: number; speed: number; aero: number; tyre?: string }[];
+    rivals?: { s: number; lateral: number; speed: number; aero: number; tyre?: string; hide?: boolean }[];
+    /** โหมดผู้ชม: กล้องตามรถคู่แข่งคันที่เท่านี้ (s/lateral/speed ข้างบน = ของคันนั้น) */
+    focus?: number;
     /** สีแก้มยางของรถเรา (ตามชนิดยางที่ใส่) */
     tyre?: string;
     /** เส้นช่วยไดนามิก: เลนที่รถอยู่ (lat) · ตัวคูณการเกาะถนน (ทีม × อากาศเสีย) · fadeAt = โหมดฝึก ความจำของโค้งที่ระยะ s (0..1) */
@@ -98,6 +103,8 @@ export function createDriveScene(opts: {
   rivals?: Livery[];
   /** พิทเลน (โหมดแข่ง): อู่ของแต่ละทีมตามลำดับ (สี + ชื่อทีมของเกม) · mine = อู่ของเรา */
   pit?: { lane: PitLane; teams: { color: string; name: string }[]; mine: number };
+  /** โหมดผู้ชม (ผู้จัดการทีมดูการแข่ง): ไม่มีรถของผู้เล่น · รถทุกคันอยู่ใน rivals · กล้องตาม update.focus */
+  spectator?: boolean;
 }): DriveScene {
   const { THREE, addons, merge, el, track: t, livery, gfx } = opts;
   const high = gfx === "high";
@@ -977,7 +984,7 @@ export function createDriveScene(opts: {
   };
 
   const car = makeRig(livery, false);
-  scene.add(car.root);
+  if (!opts.spectator) scene.add(car.root);
   const ghost = makeRig({ team: "", colour: "#ffffff", ink: "#ffffff", num: 0 }, true);
   ghost.root.visible = false;
   scene.add(ghost.root);
@@ -991,11 +998,112 @@ export function createDriveScene(opts: {
 
   let mode: CameraMode = "tv";
   let orbitAngle = 0;
+  /* ---------- กล้องถ่ายทอดสดข้างสนาม ---------- */
+  type Station = { x: number; y: number; z: number; from: number; to: number };
+  const stations: Station[] = [];
+  let stationsDone = false;
+  /** ตั้งกล้องข้างสนามทุก 50 ม. ทั้งสองฝั่ง (นอกพื้นที่หนีภัย สูงกว่าพื้น/ถนน 9 ม. — มองข้ามกำแพง) · ช่วงที่กล้องเห็นรถ = ไม่ถูกเนิน/อัฒจันทร์/กำแพงบัง และไม่ไกลเกิน */
+  function* buildStations() {
+    const out = stations;
+    const VIEW = 260;
+    // ระดับถนน (+ กำแพง) ใกล้จุด (x, z): ถนนบนคันดิน/เนินมีกำแพงกันดินทึบลงถึงพื้น — เส้นสายตาที่ต่ำกว่านี้ถูกบัง
+    const CELL = 24;
+    const grid = new Map<string, number[]>();
+    for (let i = 0; i < t.n; i += 2) {
+      const k = `${Math.floor(t.x[i] / CELL)},${Math.floor(t.z[i] / CELL)}`;
+      const g = grid.get(k);
+      if (g) g.push(i);
+      else grid.set(k, [i]);
+    }
+    const reach = terra.maxEdge + 1;
+    /** ความสูงที่เส้นสายตาต้องสูงกว่า เหนือจุด (x, z) ใกล้ถนน: บนผิวถนน = ผิวถนน · ขอบถนนถึงกำแพง = ยอดกำแพง (กำแพงกันดินทึบลงถึงพื้น) */
+    const roadTop = (x: number, z: number) => {
+      let best = reach;
+      let k = -1;
+      const cx = Math.floor(x / CELL);
+      const cz = Math.floor(z / CELL);
+      for (let a = -1; a <= 1; a++)
+        for (let b = -1; b <= 1; b++)
+          for (const i of grid.get(`${cx + a},${cz + b}`) ?? []) {
+            const d = Math.hypot(t.x[i] - x, t.z[i] - z);
+            if (d < best) {
+              best = d;
+              k = i;
+            }
+          }
+      if (k < 0) return -Infinity;
+      return t.y[k] + (best < Math.min(t.wl[k], t.wr[k]) - 0.3 ? 0.3 : 1.25);
+    };
+    for (let s0 = 0; s0 < t.length; s0 += 50) {
+      for (const side of [-1, 1]) {
+        const edge = side > 0 ? sample(t, t.wr, s0) : sample(t, t.wl, s0);
+        const lat = side * (edge + t.runoff + 10);
+        const p = poseAt(t, s0, lat);
+        if (terra.nearTrack(p.x, p.z, Math.abs(lat) - 3)) continue;
+        const c = { x: p.x, y: Math.max(groundAt(p.x, p.z), heightAt(t, s0)) + 9, z: p.z };
+        const near = terra.stands.filter((st) => Math.hypot(st.x - c.x, st.z - c.z) < VIEW + st.len);
+        const vis = (s: number) => {
+          const l = sample(t, t.lineOffset, s);
+          const q = poseAt(t, s, l);
+          const qq = { x: q.x, y: surfaceAt(t, s, l) + 0.8, z: q.z };
+          if (Math.hypot(qq.x - c.x, qq.z - c.z) > VIEW) return false;
+          return !sightHits(c, qq, (x, y, z) => y < groundAt(x, z) + 0.2 || y < roadTop(x, z) || near.some((st) => inStand(st, x, y, z)));
+        };
+        if (!vis(s0)) continue;
+        let a = s0;
+        let b = s0;
+        while (b - s0 < 480 && vis(b + 12)) b += 12;
+        while (s0 - a < 480 && vis(a - 12)) a -= 12;
+        if (b - a >= 90) out.push({ ...c, from: a, to: b });
+      }
+      yield;
+    }
+  }
+  let stationGen: Generator | null = null;
+  /** คำนวณกล้องข้างสนามทีละนิดต่อเฟรม (ไม่ให้ภาพกระตุก) — ระหว่างยังไม่ครบใช้ภาพมุมสูงแทนช่วงที่ไม่มีกล้อง */
+  const growStations = () => {
+    if (stationsDone) return;
+    stationGen ??= buildStations();
+    const t0 = performance.now();
+    while (performance.now() - t0 < 4)
+      if (stationGen.next().done) {
+        stationsDone = true;
+        return;
+      }
+  };
+  let station: Station | null = null;
+  let cutAt = 0;
+  let clock = 0;
+  /** ระยะของรถในกรอบที่กล้องนี้เห็น (ปรับรอบให้ตรงกับช่วงของกล้อง) */
+  const inStation = (st: Station, s: number) => {
+    const u = ((s % t.length) + t.length) % t.length;
+    for (const k of [0, -1, 1]) {
+      const v = u + k * t.length;
+      if (v >= st.from && v <= st.to) return v - st.from;
+    }
+    return -1;
+  };
+  /** เลือกกล้องที่เห็นรถตอนนี้และยังตามได้ไกลที่สุดข้างหน้า */
+  const pickStation = (s: number) => {
+    let best: Station | null = null;
+    let left = 70;
+    for (const st of stations) {
+      const at = inStation(st, s);
+      if (at < 0 || st === station) continue;
+      const remain = st.to - st.from - at;
+      if (remain > left) {
+        best = st;
+        left = remain;
+      }
+    }
+    return best;
+  };
   const camPos = new THREE.Vector3();
   const camLook = new THREE.Vector3();
   const tmp = new THREE.Vector3();
   const fwd = new THREE.Vector3();
   const chaseDir = new THREE.Vector3();
+  const heliWant = new THREE.Vector3();
   // การเคลื่อนไหวของตัวรถ (เกลี่ยให้นุ่ม)
   const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0, boost: 0 };
   let baseFov = 66;
@@ -1039,7 +1147,8 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus }) {
+      clock += dt;
       if (tyre) car.setTyre(tyre);
       drawGuide(s, speed, accel, dt, guide);
       // ปีกพับ/กาง ใช้เวลาราว 0.3 วินาที
@@ -1079,6 +1188,8 @@ export function createDriveScene(opts: {
       rivalStates?.forEach((r, k) => {
         const rv = rivals[k];
         if (!rv) return;
+        rv.rig.root.visible = !r.hide;
+        if (r.hide) return;
         if (r.tyre) rv.rig.setTyre(r.tyre);
         place(rv.rig.root, r.s, r.lateral);
         const cv = sample(t, t.curve, r.s);
@@ -1113,22 +1224,60 @@ export function createDriveScene(opts: {
       const sx = (Math.random() - 0.5) * amp;
       const sy = (Math.random() - 0.5) * amp;
 
-      fwd.set(0, 0, 1).applyQuaternion(car.root.quaternion);
-      if (mode === "orbit") {
+      // โหมดผู้ชม: กล้องตามรถคันที่เลือก
+      const tg = opts.spectator ? (rivals[focus ?? 0]?.rig.root ?? car.root) : car.root;
+      fwd.set(0, 0, 1).applyQuaternion(tg.quaternion);
+      if (mode === "broadcast" || mode === "heli") {
+        // กล้องข้างสนาม: ตัดไปกล้องใหม่เมื่อรถพ้นช่วงที่เห็น (หรือเปลี่ยนรถที่ตาม) · ไม่มีกล้องเห็น = เฮลิคอปเตอร์
+        // เล็งที่หัวรถ (ตำแหน่งรถเกลี่ยมาแล้ว ไม่ต้องหน่วงกล้อง — ซูมแคบ หน่วงนิดเดียวรถก็หลุดกรอบ)
+        const look = tmp.copy(tg.position).addScaledVector(fwd, 1).setY(tg.position.y + 0.7);
+        if (mode === "broadcast") {
+          growStations();
+          const at = station ? inStation(station, s) : -1;
+          const gone = !station || at < 0 || station.to - station.from - at < 4 || Math.hypot(tg.position.x - station.x, tg.position.z - station.z) > 300;
+          if (gone && clock - cutAt > 0.4) {
+            const next = pickStation(s);
+            station = next;
+            cutAt = clock;
+          }
+        }
+        const st = mode === "broadcast" ? station : null;
+        if (st) {
+          // ช่างกล้องหมุนตามรถ · ซูมให้ภาพสูงราว 14 ม. ที่ตัวรถ (รถกว้างราวหนึ่งในห้าของจอ)
+          camLook.copy(look);
+          camera.position.set(st.x, st.y, st.z);
+          camera.lookAt(camLook);
+          const d = camera.position.distanceTo(camLook);
+          camera.fov = Math.max(4, Math.min(48, THREE.MathUtils.radToDeg(2 * Math.atan(7 / Math.max(1, d)))));
+        } else {
+          // เฮลิคอปเตอร์: ตามหลังสูง ๆ เลี้ยวช้า ๆ เห็นรถรอบ ๆ และโค้งข้างหน้า
+          if (chaseDir.lengthSq() === 0) chaseDir.copy(fwd);
+          else chaseDir.lerp(fwd, 1 - Math.exp(-dt * 1.2)).normalize();
+          const want = heliWant.copy(tg.position).addScaledVector(chaseDir, -38);
+          want.y = Math.max(tg.position.y, heightAt(t, s - 38)) + 26;
+          if (camPos.lengthSq() === 0 || camPos.distanceTo(want) > 80) camPos.copy(want);
+          else camPos.lerp(want, 1 - Math.exp(-dt * 3));
+          camera.position.copy(camPos);
+          camLook.copy(tg.position).addScaledVector(fwd, 12);
+          camera.lookAt(camLook);
+          camera.fov = 34;
+        }
+        camera.updateProjectionMatrix();
+      } else if (mode === "orbit") {
         // รีเพลย์: วนรอบรถช้า ๆ เห็นรถคันอื่นรอบ ๆ
         orbitAngle += dt * 0.35;
         const r = 11;
-        camPos.copy(car.root.position);
+        camPos.copy(tg.position);
         camPos.x += Math.cos(orbitAngle) * r;
         camPos.z += Math.sin(orbitAngle) * r;
-        camPos.y = Math.max(heightAt(t, s), car.root.position.y) + 3.2;
+        camPos.y = Math.max(heightAt(t, s), tg.position.y) + 3.2;
         camera.position.copy(camPos);
-        camLook.copy(car.root.position).setY(car.root.position.y + 0.6);
+        camLook.copy(tg.position).setY(tg.position.y + 0.6);
         camera.lookAt(camLook);
       } else if (mode === "tv") {
         // เหนือหัวนักขับ เห็นหมวก จมูกรถ และล้อหน้าด้านล่างจอ · เอียงตามตัวรถนิดหน่อย
-        camPos.copy(car.root.position).addScaledVector(fwd, 0.15).setY(car.root.position.y + 1.32 + sy);
-        camLook.copy(car.root.position).addScaledVector(fwd, 16).setY(heightAt(t, s + 16) + 0.35);
+        camPos.copy(tg.position).addScaledVector(fwd, 0.15).setY(tg.position.y + 1.32 + sy);
+        camLook.copy(tg.position).addScaledVector(fwd, 16).setY(heightAt(t, s + 16) + 0.35);
         camera.position.copy(camPos);
         camera.position.x += sx;
         camera.lookAt(camLook);
@@ -1138,9 +1287,9 @@ export function createDriveScene(opts: {
         const back = Math.min(9.5, 7 + speed * 0.03);
         if (chaseDir.lengthSq() === 0) chaseDir.copy(fwd);
         else chaseDir.lerp(fwd, 1 - Math.exp(-dt * 5)).normalize();
-        camPos.copy(car.root.position).addScaledVector(chaseDir, -back);
-        camPos.y = Math.max(heightAt(t, s - back), car.root.position.y) + 2.7;
-        camLook.copy(car.root.position).addScaledVector(fwd, 6).setY(heightAt(t, s + 6) + 0.9);
+        camPos.copy(tg.position).addScaledVector(chaseDir, -back);
+        camPos.y = Math.max(heightAt(t, s - back), tg.position.y) + 2.7;
+        camLook.copy(tg.position).addScaledVector(fwd, 6).setY(heightAt(t, s + 6) + 0.9);
         camera.position.copy(camPos);
         camera.position.y += sy;
         camera.lookAt(camLook);
@@ -1148,14 +1297,18 @@ export function createDriveScene(opts: {
 
       // เงาตามรถ (กล้องเงาเล็ก ๆ รอบรถ ได้เงาคมโดยไม่กินเครื่อง)
       if (high) {
-        sun.target.position.copy(car.root.position);
-        sun.position.copy(car.root.position).addScaledVector(sunDir, 200);
+        sun.target.position.copy(tg.position);
+        sun.position.copy(tg.position).addScaledVector(sunDir, 200);
       }
       sky.position.copy(camera.position);
     },
     setCamera(m) {
       mode = m;
       chaseDir.set(0, 0, 0);
+      camPos.set(0, 0, 0);
+      station = null;
+      camera.fov = baseFov;
+      camera.updateProjectionMatrix();
     },
     setLine(on) {
       lineOn = on;

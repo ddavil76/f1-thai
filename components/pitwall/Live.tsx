@@ -1,19 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FastForward, LogOut, Radio as RadioIcon, Timer, Volume2, VolumeX } from "lucide-react";
+import { Box, FastForward, LogOut, Map as MapIcon, Radio as RadioIcon, Timer, Volume2, VolumeX } from "lucide-react";
 import Car from "@/components/pitwall/Car";
 import DriveLap from "@/components/pitwall/DriveLap";
 import LaunchScreen from "@/components/pitwall/Launch";
 import PitMap, { PIT_K, SIDE, type MapCar } from "@/components/pitwall/PitMap";
+import Race3D from "@/components/pitwall/Race3D";
 import { setSoundOn, sfx, soundOn } from "@/components/pitwall/sound";
+import { commandText, ersEffect, FIGHT_EFFECT, modeEffect } from "@/components/pitwall/explain";
 import { myCars } from "@/components/pitwall/Weekend";
 import { Bar, Btn, Seg, TyreDot, fmtClock, fmtGap, fmtLap, teamOf } from "@/components/pitwall/ui";
 import { buildBoard } from "@/lib/pitwall/board";
 import { ERS, MODE } from "@/lib/pitwall/model";
 import { boxPos, segOrder, type QCar, type Risk } from "@/lib/pitwall/quali";
-import { freshSets, standings, type RaceCar } from "@/lib/pitwall/race";
+import { ATTACK_ERS, ATTACK_GAP, attackOdds, attackTarget, freshSets, standings, type RaceCar } from "@/lib/pitwall/race";
 import type { Msg, Snapshot } from "@/lib/pitwall/room";
 import { circuitName } from "@/lib/pitwall/teams";
 import { buildTrack, lapOf } from "@/lib/pitwall/track";
@@ -24,15 +26,30 @@ type Props = { snap: Snapshot; me: string; send: (m: Msg) => void; interval: num
 const SECTOR = { purple: "#a855f7", green: "#22c55e", yellow: "#facc15" } as const;
 
 export default function Live({ snap, me, send: rawSend, interval, onExit }: Props) {
-  // คำสั่งจากกำแพงพิทมีเสียงคลิกยืนยัน
-  const send = (m: Msg) => {
-    if (["mode", "ers", "fight", "pit", "order", "qsend", "qin", "auto"].includes(m.t)) sfx.select();
-    rawSend(m);
-  };
   const board = useMemo(() => buildBoard(snap.circuit, circuitName(snap.circuit)), [snap.circuit]);
   const track = useMemo(() => buildTrack(snap.circuit), [snap.circuit]);
+  // คำสั่งจากกำแพงพิทมีเสียงคลิกยืนยัน + ข้อความบอกผลของคำสั่งบนจอสักครู่
+  const [toast, setToast] = useState<{ text: string; k: number } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(null), 3200);
+    return () => window.clearTimeout(id);
+  }, [toast]);
+  const send = (m: Msg) => {
+    if (["mode", "ers", "fight", "pit", "order", "qsend", "qin", "auto", "attack"].includes(m.t)) sfx.select();
+    const text = track ? commandText(m, snap, track) : null;
+    if (text) setToast({ text, k: performance.now() });
+    rawSend(m);
+  };
   const mine = myCars(snap, me);
   const [focus, setFocus] = useState<number | null>(mine[0]?.id ?? null);
+  // รถของเราที่เปิดแผงคำสั่งอยู่ (ทีละคัน)
+  const [sel, setSel] = useState<number | null>(mine[0]?.id ?? null);
+  const selCar = mine.find((c) => c.id === sel) ?? mine[0] ?? null;
+  const pick = (id: number) => {
+    setFocus(id);
+    if (mine.some((c) => c.id === id)) setSel(id);
+  };
   const [zoomed, setZoomed] = useState(true);
   const [tab, setTab] = useState<"team" | "timing" | "radio">("team");
   const [sound, setSound] = useState(soundOn);
@@ -40,6 +57,13 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
   const [active, setActive] = useState<{ car: number; key: string } | null>(null);
   const [launched, setLaunched] = useState<Record<number, boolean>>({});
   const host = snap.players.find((p) => p.id === me)?.host;
+  // ตอนแข่ง: ภาพ 3D มุมถ่ายทอดสด (ค่าเริ่มต้น) หรือแผนที่ · เครื่องที่ไม่มี WebGL ใช้แผนที่
+  const [view3d, setView3d] = useState(true);
+  const [no3d, setNo3d] = useState(false);
+  const fail3d = useCallback(() => {
+    setNo3d(true);
+    setView3d(false);
+  }, []);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -124,6 +148,17 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
             </span>
           )}
           {q?.red && <span className="poster rounded-full bg-(--color-f1) px-2.5 py-1 text-[11px]">ธงแดง</span>}
+          {(r || q) && !no3d && (
+            <button
+              type="button"
+              onClick={() => setView3d((v) => !v)}
+              aria-label={view3d ? "ดูแบบแผนที่" : "ดูแบบ 3D"}
+              title={view3d ? "แผนที่" : "3D"}
+              className="rounded-full p-2 text-white/70 hover:bg-white/10"
+            >
+              {view3d ? <MapIcon className="h-5 w-5" /> : <Box className="h-5 w-5" />}
+            </button>
+          )}
           {!snap.online && (
             <button
               type="button"
@@ -153,8 +188,17 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           </button>
         </header>
         <div className="relative min-h-[34vh] flex-1">
-          <PitMap board={board} track={track} cars={mapCars} focus={focus} neutral={r?.neutral?.kind ?? null} zoomed={zoomed} onToggle={() => setZoomed((z) => !z)} interval={interval} />
+          {(r || q) && view3d ? (
+            <Race3D snap={snap} track={track} focus={focus} team={myTeam} interval={interval} onFail={fail3d} />
+          ) : (
+            <PitMap board={board} track={track} cars={mapCars} focus={focus} neutral={r?.neutral?.kind ?? null} zoomed={zoomed} onToggle={() => setZoomed((z) => !z)} interval={interval} />
+          )}
           <RadioTicker snap={snap} team={myTeam} />
+          {toast && (
+            <p key={toast.k} role="status" className="radio-toast pointer-events-none absolute inset-x-2 bottom-20 z-20 mx-auto max-w-md rounded-xl border-l-4 border-white bg-[#08080A]/90 px-3 py-2 text-center text-xs font-bold text-white">
+              {toast.text}
+            </p>
+          )}
           {r && !r.started && !launchCar && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
               <p className="poster text-lg text-white/80">รอรถคันอื่นพร้อมออกตัว… {snap.timer > 0 ? Math.ceil(snap.timer) : ""}</p>
@@ -164,7 +208,7 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
       </div>
 
       <section aria-label="กำแพงพิท" className="flex max-h-[58dvh] min-h-[16rem] flex-none flex-col border-t border-white/10 bg-[#121216] md:max-h-none md:w-[440px] md:border-l md:border-t-0">
-        <div className="grid flex-none grid-cols-3 gap-1 border-b border-white/10 p-1.5 md:hidden">
+        <div className="grid flex-none grid-cols-3 gap-1 border-b border-white/10 p-1.5">
           {(
             [
               ["team", "ทีมเรา"],
@@ -178,18 +222,19 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           ))}
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className={`space-y-3 ${tab === "team" ? "" : "hidden md:block"}`}>
-            {r && <TeamOrders snap={snap} team={myTeam} send={send} />}
-            {mine.map((c) =>
-              r ? (
-                <RaceCarPanel key={c.id} snap={snap} spec={c} car={r.cars[c.id]} focus={focus === c.id} onFocus={() => setFocus(c.id)} send={send} />
+          <div className={`space-y-3 ${tab === "team" ? "" : "hidden"}`}>
+            {/* รถของเรา: เลือกทีละคัน (กล้องตามคันที่เลือก) · ป้ายบอกคันที่แซงได้/โดนจี้ */}
+            {mine.length > 1 && <CarTabs snap={snap} mine={mine} sel={selCar?.id ?? null} onPick={pick} />}
+            {selCar &&
+              (r ? (
+                <RaceCarPanel key={selCar.id} snap={snap} spec={selCar} car={r.cars[selCar.id]} focus={focus === selCar.id} onFocus={() => setFocus(selCar.id)} send={send} />
               ) : q ? (
-                <QualiCarPanel key={c.id} snap={snap} spec={c} car={q.cars[c.id]} focus={focus === c.id} onFocus={() => setFocus(c.id)} send={send} />
-              ) : null,
-            )}
+                <QualiCarPanel key={selCar.id} snap={snap} spec={selCar} car={q.cars[selCar.id]} focus={focus === selCar.id} onFocus={() => setFocus(selCar.id)} send={send} />
+              ) : null)}
+            {r && <TeamOrders snap={snap} team={myTeam} send={send} />}
           </div>
-          <div className={tab === "timing" ? "" : "hidden md:block"}>{r ? <RaceTower snap={snap} mine={mine} onPick={setFocus} /> : <QualiTower snap={snap} mine={mine} onPick={setFocus} />}</div>
-          <div className={tab === "radio" ? "" : "hidden md:block"}>
+          <div className={tab === "timing" ? "" : "hidden"}>{r ? <RaceTower snap={snap} mine={mine} onPick={pick} /> : <QualiTower snap={snap} mine={mine} onPick={pick} />}</div>
+          <div className={tab === "radio" ? "" : "hidden"}>
             <RadioLog snap={snap} team={myTeam} />
           </div>
         </div>
@@ -450,21 +495,73 @@ const RISK_HINT: Record<Risk, string> = {
   normal: "โอกาสพลาดน้อย",
   attack: "เร็วขึ้นราว 0.2 วิ แต่รอบถูกตัดหรือพลาดง่ายขึ้น",
 };
-const MODE_HINT: Record<DriveMode, string> = {
-  save: "ช้าลงเล็กน้อย ยางสึกช้า เสี่ยงพลาดน้อย",
-  normal: "สมดุลระหว่างความเร็วกับยาง",
-  push: "เร็วขึ้น แต่ยางสึกเร็วและเสี่ยงพลาด",
-};
-const ERS_HINT: Record<ErsMode, string> = {
-  harvest: "ชาร์จแบต เสียความเร็วบนทางตรง",
-  auto: "ใช้และชาร์จแบตให้อัตโนมัติ",
-  boost: "เร็วขึ้นบนทางตรง แบตหมดไว",
-};
-const FIGHT_HINT: Record<Fight, string> = {
-  defend: "ปิดไลน์ คันหลังแซงยาก แต่ช้าลงนิดหน่อย",
-  none: "ขับตามปกติ",
-  attack: "พยายามแซงคันหน้า ใช้แบตและยางมากขึ้น",
-};
+/**
+ * การต่อสู้ของรถเรา: คันหน้า/คันหลังห่างเท่าไร กำลังใกล้ขึ้นหรือห่างออก (วินาทีต่อรอบ จากช่องห่างย้อนหลัง)
+ * + ปุ่ม "แซงเลย" เมื่อตามทัน — บอกโอกาสผ่านก่อนกด (เร็วกว่าแค่ไหน DRS ทางตรง ยาง แบต อีกคันป้องกัน)
+ */
+function BattleRow({ snap, car, send }: { snap: Snapshot; car: RaceCar; send: (m: Msg) => void }) {
+  const r = snap.race!;
+  const track = buildTrack(snap.circuit)!;
+  const ahead = r.cars.filter((o) => o !== car && !o.pit && o.out === null && o.finished === null && o.pos > car.pos).sort((a, b) => a.pos - b.pos)[0] ?? null;
+  const behind = r.cars.filter((o) => o !== car && !o.pit && o.out === null && o.finished === null && o.pos < car.pos).sort((a, b) => b.pos - a.pos)[0] ?? null;
+  // ใกล้ขึ้น/ห่างออกกี่วินาทีต่อรอบ (เฉลี่ยจากการจำลอง)
+  const trend = ahead && car.gapAhead !== null && car.aheadId === ahead.id ? (car.closing ?? 0) * track.baseLap : null;
+  const target = attackTarget(r, track, car);
+  const odds = target ? attackOdds(track, snap.cars, r, car, target) : null;
+  const cd = car.cd ?? 0;
+  const why = car.duel
+    ? "กำลังแซงอยู่…"
+    : r.neutral
+      ? "ช่วงเซฟตี้คาร์แซงไม่ได้"
+      : !target
+        ? `ตามให้ห่างไม่เกิน ${ATTACK_GAP} วิ ก่อน`
+        : car.ers < ATTACK_ERS
+          ? "แบตไม่พอ (ต้อง 20%)"
+          : cd > 0
+            ? `รออีก ${Math.ceil(cd)} วิ`
+            : null;
+  const by = r.cars.find((o) => o.duel?.rival === car.id);
+  return (
+    <div className="space-y-1.5 rounded-xl bg-[#08080A] p-2 text-[11px]">
+      <div className="flex items-center gap-2 tabular-nums">
+        <span className="w-12 flex-none text-white/55">คันหน้า</span>
+        {ahead && car.gapAhead !== null ? (
+          <span className="min-w-0 flex-1 truncate">
+            <b>#{snap.cars[ahead.id].num}</b> ห่าง {car.gapAhead.toFixed(2)} วิ
+            {trend !== null && Math.abs(trend) >= 0.05 && (
+              <span className={trend > 0 ? "text-[#4ade80]" : "text-(--color-f1-text)"}>
+                {" "}
+                · {trend > 0 ? "▼ ใกล้ขึ้น" : "▲ ห่างออก"} {Math.abs(trend).toFixed(1)} วิ/รอบ
+                {trend > 0 && car.gapAhead > ATTACK_GAP ? ` (ทันในอีก ~${Math.ceil((car.gapAhead - ATTACK_GAP) / trend)} รอบ)` : ""}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="flex-1 text-white/55">{ahead ? "ห่างเกิน 1 รอบ" : "นำอยู่ ไม่มีคันหน้า"}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 tabular-nums">
+        <span className="w-12 flex-none text-white/55">คันหลัง</span>
+        {behind && car.gapBehind !== null ? (
+          <span className={`min-w-0 flex-1 truncate ${car.gapBehind < 1 ? "text-[#facc15]" : ""}`}>
+            <b>#{snap.cars[behind.id].num}</b> ห่าง {car.gapBehind.toFixed(2)} วิ
+            {by ? " · ขึ้นเทียบอยู่!" : car.gapBehind < 1 && car.fight !== "defend" ? " · จี้มา กด ป้องกัน ได้" : ""}
+          </span>
+        ) : (
+          <span className="flex-1 text-white/55">—</span>
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={!!why}
+        onClick={() => send({ t: "attack", car: car.id })}
+        className="poster flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-(--color-f1) px-3 text-xs text-white disabled:bg-white/10 disabled:text-white/55"
+      >
+        {why ?? `แซงเลย! โอกาสผ่าน ${Math.round((odds ?? 0) * 100)}% · ใช้แบต ${Math.round(ATTACK_ERS * 100)}%`}
+      </button>
+    </div>
+  );
+}
 
 function Control({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
   return (
@@ -472,6 +569,50 @@ function Control({ label, hint, children }: { label: string; hint: string; child
       <p className="text-[11px] font-bold text-white/70">{label}</p>
       {children}
       <p className="text-[11px] leading-snug text-white/60">{hint}</p>
+    </div>
+  );
+}
+
+/** แท็บเลือกรถของเรา: อันดับ · สถานะสั้น ๆ · จุดแดง = แซงได้ตอนนี้ · จุดเหลือง = โดนจี้/ยางใกล้หมด */
+function CarTabs({ snap, mine, sel, onPick }: { snap: Snapshot; mine: CarSpec[]; sel: number | null; onPick: (id: number) => void }) {
+  const r = snap.race;
+  const q = snap.quali;
+  const track = buildTrack(snap.circuit)!;
+  const order = r ? standings(r, track.lapCells).map((c) => c.id) : q ? segOrder(q) : [];
+  return (
+    <div className="grid gap-1.5 rounded-xl bg-[#08080A] p-1" style={{ gridTemplateColumns: `repeat(${mine.length}, minmax(0, 1fr))` }} role="tablist" aria-label="รถของเรา">
+      {mine.map((c) => {
+        const t = teamOf(c);
+        const on = c.id === sel;
+        let note = "";
+        let alert: "go" | "warn" | null = null;
+        if (r) {
+          const rc = r.cars[c.id];
+          note = rc.out ? "ออกจากเรซ" : rc.finished !== null ? "จบแล้ว" : rc.pit ? "ในพิท" : rc.duel ? "กำลังแซง" : `หน้า ${fmtGap(rc.gapAhead)}`;
+          if (!rc.out && rc.finished === null) {
+            const tgt = attackTarget(r, track, rc);
+            // จุดแดง: แซงได้ตอนนี้และโอกาสพอสมควร
+            if (tgt && rc.ers >= ATTACK_ERS && !(rc.cd ?? 0) && !r.neutral && attackOdds(track, snap.cars, r, rc, tgt) >= 0.3) alert = "go";
+            else if ((rc.gapBehind !== null && rc.gapBehind < 0.5) || rc.wear > 0.75) alert = "warn";
+          }
+        } else if (q) {
+          const qc = q.cars[c.id];
+          note = qc.lane ? (qc.lane.kind === "out" ? "ออกจากพิท" : "เข้าพิท") : ({ garage: "ในพิท", out: "รอบอุ่นยาง", push: "รอบเร่ง", in: "กลับพิท", eliminated: "ตกรอบ" } as const)[qc.status];
+        }
+        const pos = order.indexOf(c.id) + 1;
+        return (
+          <button key={c.id} type="button" role="tab" aria-selected={on} onClick={() => onPick(c.id)} className={`relative flex min-h-12 items-center gap-2 rounded-lg px-2 text-left ${on ? "bg-white text-[#08080A]" : "text-white/80 hover:bg-white/10"}`}>
+            <span className="h-7 w-1 flex-none rounded-full" style={{ background: t.color }} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-bold tabular-nums">
+                #{c.num} {pos ? `· P${pos}` : ""}
+              </span>
+              <span className={`block truncate text-[10px] tabular-nums ${on ? "text-[#08080A]/70" : "text-white/60"}`}>{note}</span>
+            </span>
+            {alert && <span className={`absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full ${alert === "go" ? "bg-(--color-f1)" : "bg-[#facc15]"}`} aria-label={alert === "go" ? "แซงได้" : "ต้องระวัง"} />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -509,7 +650,8 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
       </div>
       {!done && (
         <>
-          <Control label="การขับ" hint={MODE_HINT[car.mode]}>
+          <BattleRow snap={snap} car={car} send={send} />
+          <Control label="การขับ" hint={modeEffect(car.mode, r, car, lapsLeft)}>
             <Seg<DriveMode>
               size="sm"
               value={car.mode}
@@ -518,7 +660,7 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
             />
           </Control>
           <div className="grid grid-cols-2 gap-1.5">
-            <Control label="แบตเตอรี่ (ERS)" hint={ERS_HINT[car.ersMode]}>
+            <Control label="แบตเตอรี่ (ERS)" hint={ersEffect(car.ersMode, track, car)}>
               <Seg<ErsMode>
                 size="sm"
                 value={car.ersMode}
@@ -526,7 +668,7 @@ function RaceCarPanel({ snap, spec, car, focus, onFocus, send }: { snap: Snapsho
                 options={(["harvest", "auto", "boost"] as ErsMode[]).map((v) => ({ v, label: ERS[v].label, tone: v === "boost" ? "#38bdf8" : undefined }))}
               />
             </Control>
-            <Control label="ต่อสู้" hint={FIGHT_HINT[car.fight]}>
+            <Control label="ต่อสู้" hint={FIGHT_EFFECT[car.fight]}>
               <Seg<Fight>
                 size="sm"
                 value={car.fight}
