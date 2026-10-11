@@ -14,6 +14,8 @@ type Props = { snap: Snapshot; me: string; send: (m: Msg) => void };
 
 const myPlayer = (snap: Snapshot, me: string) => snap.players.find((p) => p.id === me);
 export const myCars = (snap: Snapshot, me: string) => {
+  // โหมด Roguelike: คุมคันเดียว
+  if (snap.run) return snap.cars.filter((c) => c.id === snap.run!.car);
   const p = myPlayer(snap, me);
   return p?.team === null || p?.team === undefined ? [] : snap.cars.filter((c) => c.team === p.team);
 };

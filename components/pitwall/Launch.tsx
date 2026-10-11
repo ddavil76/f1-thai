@@ -21,11 +21,13 @@ type Phase = "ready" | "lights" | "out" | "result";
  * แตะก่อนไฟดับ = jump start · กด Space บนคีย์บอร์ดก็ได้
  */
 export default function LaunchScreen({
-  car, team, onDone,
+  car, team, onDone, glass = false,
 }: {
   car: CarSpec;
   team: string;
   onDone: (kind: LaunchKind, ms: number | "jump" | null) => void;
+  /** โปร่งใส เห็นรถบนกริดในภาพ 3D ข้างหลัง */
+  glass?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>("ready");
   const [lit, setLit] = useState(0);
@@ -89,7 +91,7 @@ export default function LaunchScreen({
   const gain = result ? LAUNCH[result.kind].good : 0;
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-5 bg-[#08080A]/95 px-4 text-center"
+      className={`absolute inset-0 z-30 flex flex-col items-center gap-5 px-4 text-center ${glass ? "justify-start bg-gradient-to-b from-[#08080A]/20 via-[#08080A]/60 to-[#08080A]/95 pt-[44dvh] md:via-[#08080A]/45 md:to-[#08080A]/90 md:pt-28" : "justify-center bg-[#08080A]/95"}`}
       onPointerDown={phase === "lights" || phase === "out" ? tap : undefined}
       role="dialog"
       aria-label={`ออกตัว รถหมายเลข ${car.num}`}

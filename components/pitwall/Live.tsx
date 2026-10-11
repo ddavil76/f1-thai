@@ -10,6 +10,7 @@ import PitMap, { PIT_K, SIDE, type MapCar } from "@/components/pitwall/PitMap";
 import Race3D from "@/components/pitwall/Race3D";
 import { setSoundOn, sfx, soundOn } from "@/components/pitwall/sound";
 import { commandText, ersEffect, FIGHT_EFFECT, modeEffect } from "@/components/pitwall/explain";
+import { STRATEGY } from "@/lib/pitwall/rogue/cards";
 import { myCars } from "@/components/pitwall/Weekend";
 import { Bar, Btn, Seg, TyreDot, fmtClock, fmtGap, fmtLap, teamOf } from "@/components/pitwall/ui";
 import { buildBoard } from "@/lib/pitwall/board";
@@ -21,11 +22,12 @@ import { circuitName } from "@/lib/pitwall/teams";
 import { buildTrack, lapOf } from "@/lib/pitwall/track";
 import { COMPOUNDS, COMPOUND_INFO, type Car as CarSpec, type Compound, type DriveMode, type ErsMode, type Fight, type TeamOrder } from "@/lib/pitwall/types";
 
-type Props = { snap: Snapshot; me: string; send: (m: Msg) => void; interval: number; onExit: () => void };
+/** error = ข้อความผิดพลาดจากคำสั่งล่าสุด (โชว์บนจอสักครู่) */
+type Props = { snap: Snapshot; me: string; send: (m: Msg) => void; interval: number; onExit: () => void; error?: string | null };
 
 const SECTOR = { purple: "#a855f7", green: "#22c55e", yellow: "#facc15" } as const;
 
-export default function Live({ snap, me, send: rawSend, interval, onExit }: Props) {
+export default function Live({ snap, me, send: rawSend, interval, onExit, error }: Props) {
   const board = useMemo(() => buildBoard(snap.circuit, circuitName(snap.circuit)), [snap.circuit]);
   const track = useMemo(() => buildTrack(snap.circuit), [snap.circuit]);
   // คำสั่งจากกำแพงพิทมีเสียงคลิกยืนยัน + ข้อความบอกผลของคำสั่งบนจอสักครู่
@@ -35,6 +37,18 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
     const id = window.setTimeout(() => setToast(null), 3200);
     return () => window.clearTimeout(id);
   }, [toast]);
+  // คำสั่งไม่สำเร็จ: โชว์เหตุผลแทนข้อความยืนยัน
+  const [errShown, setErrShown] = useState<{ text: string; k: number } | null>(null);
+  const lastErr = useRef<string | null | undefined>(null);
+  useEffect(() => {
+    if (error && error !== lastErr.current) setErrShown({ text: error, k: performance.now() });
+    lastErr.current = error;
+  }, [error]);
+  useEffect(() => {
+    if (!errShown) return;
+    const id = window.setTimeout(() => setErrShown(null), 2600);
+    return () => window.clearTimeout(id);
+  }, [errShown]);
   const send = (m: Msg) => {
     if (["mode", "ers", "fight", "pit", "order", "qsend", "qin", "auto", "attack"].includes(m.t)) sfx.select();
     const text = track ? commandText(m, snap, track) : null;
@@ -194,6 +208,11 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
             <PitMap board={board} track={track} cars={mapCars} focus={focus} neutral={r?.neutral?.kind ?? null} zoomed={zoomed} onToggle={() => setZoomed((z) => !z)} interval={interval} />
           )}
           <RadioTicker snap={snap} team={myTeam} />
+          {errShown && (
+            <p key={errShown.k} role="alert" className="radio-toast pointer-events-none absolute inset-x-2 bottom-32 z-20 mx-auto max-w-md rounded-xl border-l-4 border-(--color-f1) bg-[#08080A]/90 px-3 py-2 text-center text-xs font-bold text-(--color-f1-text)">
+              {errShown.text}
+            </p>
+          )}
           {toast && (
             <p key={toast.k} role="status" className="radio-toast pointer-events-none absolute inset-x-2 bottom-20 z-20 mx-auto max-w-md rounded-xl border-l-4 border-white bg-[#08080A]/90 px-3 py-2 text-center text-xs font-bold text-white">
               {toast.text}
@@ -225,6 +244,7 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           <div className={`space-y-3 ${tab === "team" ? "" : "hidden"}`}>
             {/* รถของเรา: เลือกทีละคัน (กล้องตามคันที่เลือก) · ป้ายบอกคันที่แซงได้/โดนจี้ */}
             {mine.length > 1 && <CarTabs snap={snap} mine={mine} sel={selCar?.id ?? null} onPick={pick} />}
+            {r && snap.run && <StrategyHand snap={snap} send={send} />}
             {selCar &&
               (r ? (
                 <RaceCarPanel key={selCar.id} snap={snap} spec={selCar} car={r.cars[selCar.id]} focus={focus === selCar.id} onFocus={() => setFocus(selCar.id)} send={send} />
@@ -245,6 +265,7 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           key={launchCar.id}
           car={launchCar}
           team={teamOf(launchCar).name}
+          glass={view3d && !no3d}
           onDone={(kind) => {
             setLaunched((l) => ({ ...l, [launchCar.id]: true }));
             send({ t: "launch", car: launchCar.id, kind });
@@ -569,6 +590,54 @@ function Control({ label, hint, children }: { label: string; hint: string; child
       <p className="text-[11px] font-bold text-white/70">{label}</p>
       {children}
       <p className="text-[11px] leading-snug text-white/60">{hint}</p>
+    </div>
+  );
+}
+
+/** การ์ดกลยุทธ์ (โหมด Roguelike): พลังทีม + การ์ดบนมือ 3 ใบ · ครบรอบได้พลัง +1 และจั่วเติม */
+function StrategyHand({ snap, send }: { snap: Snapshot; send: (m: Msg) => void }) {
+  const h = snap.run!;
+  const r = snap.race!;
+  const car = r.cars[h.car];
+  const live = r.started && car.out === null && car.finished === null;
+  return (
+    <div className="space-y-2 rounded-2xl border border-white/10 bg-[#1a1a20] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="poster text-xs text-white/70">การ์ดกลยุทธ์</p>
+        <span className="flex items-center gap-1 text-[11px] font-bold tabular-nums text-white/80" aria-label={`พลังทีม ${h.energy} จาก ${h.max}`}>
+          พลังทีม
+          {Array.from({ length: h.max }, (_, i) => (
+            <span key={i} className={`h-3 w-3 rotate-45 rounded-[3px] ${i < h.energy ? "bg-[#facc15]" : "bg-white/15"}`} />
+          ))}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {h.hand.map((k, i) => {
+          const c = STRATEGY[k];
+          const ok = live && h.energy >= c.cost;
+          return (
+            <button
+              key={`${k}-${i}`}
+              type="button"
+              disabled={!ok}
+              onClick={() => send({ t: "card", car: h.car, idx: i })}
+              className="flex min-h-24 flex-col gap-1 rounded-xl border-2 border-white/15 bg-[#08080A] p-2 text-left transition hover:border-white/40 disabled:opacity-45"
+            >
+              <span className="flex items-center justify-between gap-1">
+                <b className="text-[12px] leading-tight text-white">{c.name}</b>
+                <span className="flex flex-none items-center gap-0.5 text-[10px] font-bold text-[#facc15]">
+                  {Array.from({ length: c.cost }, (_, j) => (
+                    <span key={j} className="h-2 w-2 rotate-45 rounded-[2px] bg-[#facc15]" />
+                  ))}
+                </span>
+              </span>
+              <span className="text-[10px] leading-snug text-white/65">{c.text}</span>
+            </button>
+          );
+        })}
+        {!h.hand.length && <p className="col-span-3 text-[11px] text-white/55">ไม่มีการ์ดบนมือ — ครบรอบจั่วใหม่</p>}
+      </div>
+      <p className="text-[10px] text-white/50">ครบรอบได้พลัง +1 และจั่วเติม · กองจั่ว {h.deck} · ใช้แล้ว {h.discard}</p>
     </div>
   );
 }

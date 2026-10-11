@@ -30,7 +30,19 @@ const CAM_KEY = "pitwall-race3d-cam";
  * เป้าของรถหนึ่งคัน (ข้อมูลล่าสุดจากการจำลอง) · pos = ช่องสะสม · pitStart = ตำแหน่งตอนเริ่มพิทเลน (ไม่อยู่ในพิทเลน = null)
  * garage = จอดในอู่ (ควอลิฟาย) · slow = รอบอุ่นยาง/กลับพิทของควอลิฟาย (หลบออกจากเส้นแข่งให้รถรอบเร่ง) · drs = ปีกหลังเปิด
  */
-type Target = { pos: number; pitStart: number | null; garage: boolean; side: number; hide: boolean; tyre: string; started: boolean; slow: boolean; drs: boolean };
+type Target = {
+  pos: number;
+  pitStart: number | null;
+  garage: boolean;
+  side: number;
+  hide: boolean;
+  tyre: string;
+  started: boolean;
+  slow: boolean;
+  drs: boolean;
+  /** cool = เข้าเส้นชัยแล้ว วิ่งต่อช้า ๆ (รอบเย็นเครื่อง) · stop = ออกจากการแข่ง ชะลอแล้วจอดข้างทาง */
+  end: "cool" | "stop" | null;
+};
 
 /** สถานะรถในควอลิฟาย → เป้าบนฉาก */
 function qualiTarget(q: QCar, track: TrackModel): Target {
@@ -48,6 +60,7 @@ function qualiTarget(q: QCar, track: TrackModel): Target {
     started: true,
     slow: q.status === "out" || q.status === "in",
     drs: false,
+    end: null,
   };
 }
 
@@ -61,7 +74,9 @@ function qualiStar(q: QualiState): number | null {
  * รถจะวิ่ง-หยุด-วิ่ง (ภาพกระตุก) จึงประมาณความเร็วจากข้อมูลที่ผ่านมา แล้วให้รถวิ่งต่อด้วยความเร็วนั้น ค่อย ๆ ดึงเข้าหาตำแหน่งจริง
  * pos/at = ตำแหน่งล่าสุดที่เปลี่ยนและเวลาที่ได้รับ · v = ช่องต่อ ms · shown = ตำแหน่งที่วาดอยู่
  */
-type Track = { pos: number; at: number; v: number; shown: number };
+type Track = { pos: number; at: number; v: number; shown: number; endAt?: number };
+/** รอบเย็นเครื่อง: ความเร็วลดลงเหลือราวหนึ่งในสาม · หายจากภาพหลังกี่วินาที */
+const COOL_HIDE = 20;
 
 /**
  * การแข่งของโหมดผู้จัดการทีมแบบ 3D: ใช้ฉากเดียวกับโหมดนักขับ (โหมดผู้ชม — รถทุกคันเป็น AI)
@@ -108,11 +123,12 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
           pitStart: c.pit ? c.pit.start : null,
           garage: false,
           side: c.side,
-          hide: !!c.out || c.finished !== null,
+          hide: false,
           tyre: COMPOUND_INFO[c.compound].color,
           started: r.started,
           slow: false,
           drs: c.drs,
+          end: c.finished !== null ? ("cool" as const) : c.out ? ("stop" as const) : null,
         }))
       : q!.cars.map((c) => qualiTarget(c, track));
     for (const c of list) {
@@ -193,7 +209,16 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
         const poses = tg.map((c, id) => {
           const m = motion.current.get(id);
           let pos = c.pos;
-          if (m) {
+          let gone = false;
+          if (m && c.end) {
+            // จบแล้ว: ไม่มีข้อมูลตำแหน่งใหม่ — วิ่งต่อเองแล้วชะลอ (เข้าเส้นชัย = รอบเย็นเครื่อง · ออกจากการแข่ง = จอด)
+            m.endAt ??= now;
+            const t = (now - m.endAt) / 1000;
+            const v = c.end === "cool" ? m.v * Math.max(0.32, Math.exp(-t / 4)) : m.v * Math.max(0, 1 - t / 2.5);
+            m.shown += v * step * 1000;
+            pos = m.shown;
+            gone = c.end === "cool" && t > COOL_HIDE;
+          } else if (m) {
             // วิ่งต่อด้วยความเร็วที่ประมาณไว้ (ไม่เกิน 1.5 ช่วงข้อมูล ถ้าข้อมูลหยุดมา = รถหยุด) แล้วดึงเข้าหาตำแหน่งที่ควรเป็น
             const expect = m.pos + m.v * Math.min(now - m.at, view.current.interval * 1.5);
             const next = m.shown + m.v * step * 1000 + (expect - m.shown) * Math.min(1, step * 5);
@@ -204,10 +229,10 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
           if (c.garage) {
             // จอดในอู่ของทีม: สองคันของทีมจอดเยื้องกันในอู่
             const box = map.pitPose(track.pitEntry.start + track.lapCells, 0.5, team);
-            return { s: box.s + (id % 2 ? 1 : -1) * BOX_GAP * 0.2, lat: box.lat + pit.side * (PIT_W / 2 + GARAGE_D * 0.35), pit: true };
+            return { s: box.s + (id % 2 ? 1 : -1) * BOX_GAP * 0.2, lat: box.lat + pit.side * (PIT_W / 2 + GARAGE_D * 0.35), pit: true, gone: false };
           }
-          if (c.pitStart !== null) return { ...map.pitPose(c.pitStart, (pos - c.pitStart) / track.pitCells, team), pit: true };
-          return { s: map.sOf(pos), lat: NaN, pit: false };
+          if (c.pitStart !== null) return { ...map.pitPose(c.pitStart, (pos - c.pitStart) / track.pitCells, team), pit: true, gone };
+          return { s: map.sOf(pos), lat: NaN, pit: false, gone };
         });
         const rivals = tg.map((c, id) => {
           const p = poses[id];
@@ -216,10 +241,11 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
             // ตามเส้นแข่ง · วิ่งคู่/ต่อท้ายใกล้ ๆ = แยกฝั่งตามการจำลอง · บนกริดเยื้องสลับฝั่ง
             const line = sample(dt, dt.lineOffset, p.s);
             // ควอลิฟาย: รอบอุ่นยาง/กลับพิทหลบออกข้างทางให้รถรอบเร่ง
-            const close = c.slow || !c.started || poses.some((o, k) => k !== id && !o.pit && !tg[k].hide && Math.abs(o.s - p.s) < SIDE_NEAR);
-            const want = line + (close ? c.side * (c.slow ? 3.2 : c.started ? SIDE_LAT : 2.2) : 0);
-            const edge = c.side > 0 ? sample(dt, dt.wr, p.s) - 1.3 : -sample(dt, dt.wl, p.s) + 1.3;
-            lat = c.side > 0 ? Math.min(edge, want) : Math.max(edge, want);
+            const close = c.slow || !c.started || !!c.end || poses.some((o, k) => k !== id && !o.pit && !tg[k].hide && Math.abs(o.s - p.s) < SIDE_NEAR);
+            const want = line + (close ? c.side * (c.slow || c.end === "cool" ? 3.2 : c.started ? SIDE_LAT : 2.2) : 0);
+            // ออกจากการแข่ง: จอดเลยขอบถนนออกไป
+            const edge = c.end === "stop" ? (c.side > 0 ? sample(dt, dt.wr, p.s) + 3.5 : -sample(dt, dt.wl, p.s) - 3.5) : c.side > 0 ? sample(dt, dt.wr, p.s) - 1.3 : -sample(dt, dt.wl, p.s) + 1.3;
+            lat = c.end === "stop" ? edge : c.side > 0 ? Math.min(edge, want) : Math.max(edge, want);
           }
           const prev = state.get(id);
           if (!prev || Math.abs(p.s - prev.s) > 200) {
@@ -232,7 +258,7 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
             prev.lat = p.pit ? lat : prev.lat + (lat - prev.lat) * Math.min(1, step * 1.6);
           }
           const st = state.get(id)!;
-          return { s: st.s, lateral: st.lat, speed: st.v, aero: c.drs ? 1 : 0, tyre: c.tyre, hide: c.hide };
+          return { s: st.s, lateral: st.lat, speed: st.v, aero: c.drs ? 1 : 0, tyre: c.tyre, hide: c.hide || p.gone };
         });
         const f = view.current.focus;
         const me = rivals[f] ?? rivals[0];
@@ -289,6 +315,16 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
           </button>
         ))}
       </div>
+      {r?.flag && (
+        <p className="poster pointer-events-none absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full bg-white px-3 py-1 text-xs text-[#08080A] shadow-lg sm:top-14" role="status">
+          🏁 ธงตาหมากรุก
+        </p>
+      )}
+      {r?.neutral && (
+        <p className="poster pointer-events-none absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full bg-[#facc15] px-3 py-1 text-xs text-[#08080A] shadow-lg sm:top-14" role="status">
+          {r.neutral.kind === "sc" ? "SAFETY CAR" : "VIRTUAL SAFETY CAR"}
+        </p>
+      )}
       {spec && team && (rc || qc) && (
         // ป้ายชื่อแบบถ่ายทอดสด: อันดับ · หมายเลข · ชื่อ · ทีม · ยาง + แถวสถานะ (เรซ: ช่องห่าง/โหมด/แบต · ควอลิฟาย: รอบ/เวลา)
         <div className="pointer-events-none absolute left-2 top-12 z-10 max-w-[calc(100%-1rem)] overflow-hidden rounded-md bg-[#08080A]/80 shadow-lg backdrop-blur sm:top-2 sm:max-w-[48%]">

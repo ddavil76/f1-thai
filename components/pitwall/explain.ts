@@ -6,6 +6,7 @@ import type { RaceCar, RaceState } from "@/lib/pitwall/race";
 import type { Msg, Snapshot } from "@/lib/pitwall/room";
 import type { TrackModel } from "@/lib/pitwall/track";
 import { COMPOUND_INFO, type DriveMode, type ErsMode, type Fight } from "@/lib/pitwall/types";
+import { STRATEGY } from "@/lib/pitwall/rogue/cards";
 
 /** ยางเริ่มเสียเวลามาก (หน้าผา) เมื่อสึกเกินนี้ */
 const TYRE_CLIFF = 0.85;
@@ -69,6 +70,10 @@ export function commandText(m: Msg, snap: Snapshot, track: TrackModel): string |
       return `คำสั่งทีม: ${m.order === "hold" ? "ห้ามแซงกัน รักษาอันดับ" : m.order === "swap" ? "สลับอันดับ คันหลังได้ผ่าน" : "แข่งกันได้"}`;
     case "auto":
       return `${num}${m.v ? "ให้ผู้ช่วย AI คุมกลยุทธ์" : "กลับมาคุมเอง"}`;
+    case "card": {
+      const k = snap.run?.hand[m.idx];
+      return k ? `${num}การ์ด ${STRATEGY[k].name} — ${STRATEGY[k].text}` : null;
+    }
     default:
       return null;
   }

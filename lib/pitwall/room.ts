@@ -3,7 +3,9 @@
  * ใช้ตัวเดียวกันทั้งเล่นคนเดียว (รันในเบราว์เซอร์) และห้องออนไลน์ (รันบน Cloudflare Durable Object)
  * ผู้ที่ถือห้องเรียก tick(ms) เป็นระยะ แล้วส่ง snapshot() ให้หน้าจอ
  */
-import { classify, newRace, applyLaunches, stepRace, tryAttack, SIM_DT, type RaceCtx, type RaceState } from "./race";
+import {
+  classify, newRace, applyLaunches, playStrategy, stepRace, tryAttack, SIM_DT, STRATEGY_COST, type CarMods, type RaceCtx, type RaceRules, type RaceState, type StrategyKind,
+} from "./race";
 import { callIn, driveResult, expireDrive, newQuali, planCar, sendOut, stepQuali, type QualiCtx, type QualiState, type Risk } from "./quali";
 import { rand, type Seed } from "./rng";
 import { CIRCUITS, TEAMS } from "./teams";
@@ -44,6 +46,7 @@ export type Msg =
   | { t: "fight"; car: number; fight: Fight }
   | { t: "pit"; car: number; compound: Compound | null }
   | { t: "attack"; car: number }
+  | { t: "card"; car: number; idx: number }
   | { t: "order"; order: TeamOrder }
   | { t: "auto"; car: number; v: boolean }
   | { t: "drive"; car: number; delta: number }
@@ -53,6 +56,26 @@ export type Msg =
   | { t: "lobby" };
 
 export type Standing = { drivers: Record<number, number>; teams: Record<number, number> };
+
+/**
+ * เรซหนึ่งของโหมด Roguelike: ผู้เล่นคุมรถคันเดียว (car) · กริด/จำนวนรอบ/ยางออกตัวกำหนดมา · ตัวปรับรถ (mods) และกติกา (rules)
+ * deck = การ์ดกลยุทธ์ในกอง (จั่วขึ้นมือ 3 ใบ) · พลังทีม: เริ่ม energy ได้ +1 ทุกรอบ สูงสุด maxEnergy
+ */
+export type RunRaceCfg = {
+  circuit: string;
+  laps: number;
+  car: number;
+  grid: number[];
+  startTyre: Compound;
+  mods: Record<number, CarMods>;
+  rules: RaceRules;
+  deck: StrategyKind[];
+  energy: number;
+  maxEnergy: number;
+};
+/** มือการ์ดระหว่างเรซ (ส่งให้หน้าจอ) */
+export type RunHand = { car: number; hand: StrategyKind[]; energy: number; max: number; deck: number; discard: number };
+export const HAND_SIZE = 3;
 
 export const DEFAULT_CONFIG: Config = { circuits: ["spa"], length: "normal", quali: "knockout", ai: "normal" };
 
@@ -124,8 +147,12 @@ export class Room {
   private owned = (team: number) => this.players.some((p) => p.team === team);
   /** ผู้เล่นที่ถือทีมนี้ยังต่ออยู่ไหม */
   private ownerOnline = (team: number) => this.players.some((p) => p.team === team && p.online);
-  human = (car: number) => !!this.cars[car] && this.owned(this.cars[car].team);
+  /** โหมด Roguelike: เรซนี้ผู้เล่นคุมรถคันเดียว (เพื่อนร่วมทีมเป็น AI) */
+  run: RunRaceCfg | null = null;
+  private pile: { deck: StrategyKind[]; hand: StrategyKind[]; discard: StrategyKind[]; energy: number; lap: number } | null = null;
+  human = (car: number) => (this.run ? car === this.run.car : !!this.cars[car] && this.owned(this.cars[car].team));
   private carOf(p: Player, car: number) {
+    if (this.run) return car === this.run.car;
     return p.team !== null && this.cars[car]?.team === p.team;
   }
 
@@ -152,7 +179,18 @@ export class Room {
   /* ---------- สุดสัปดาห์ ---------- */
 
   private ctx(): RaceCtx & QualiCtx {
-    return { track: this.track!, cars: this.cars, teams: TEAMS, ai: this.config.ai, human: this.human, seed: this.seed, say: this.say };
+    const run = this.run;
+    return {
+      track: this.track!,
+      cars: this.cars,
+      teams: TEAMS,
+      ai: this.config.ai,
+      human: this.human,
+      seed: this.seed,
+      say: this.say,
+      mods: run ? (id) => run.mods[id] : undefined,
+      rules: run?.rules,
+    };
   }
 
   private setupWeekend() {
@@ -220,7 +258,61 @@ export class Room {
   }
 
   private humanCars() {
+    if (this.run) return [this.run.car];
     return this.cars.filter((c) => this.ownerOnline(c.team)).map((c) => c.id);
+  }
+
+  /** เริ่มเรซของโหมด Roguelike ทันที (ข้ามเตรียมรถ/ควอลิฟาย/กริด) */
+  runRace(cfg: RunRaceCfg) {
+    this.run = cfg;
+    this.config = { ...this.config, circuits: [cfg.circuit], quali: "none" };
+    this.round = 0;
+    this.setupWeekend();
+    this.laps = cfg.laps;
+    const t = this.track!;
+    // ทีมเราตั้งแรงกดให้เหมาะกับสนามอัตโนมัติ
+    for (const c of this.cars) if (c.team === this.cars[cfg.car].team) c.downforce = t.idealDownforce;
+    this.toGrid(cfg.grid);
+    this.startTyre[cfg.car] = cfg.startTyre;
+    this.toRace();
+    // จั่วการ์ด
+    const deck = [...cfg.deck];
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(rand(this.seed) * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    this.pile = { deck, hand: [], discard: [], energy: cfg.energy, lap: 0 };
+    this.draw();
+    this.bump();
+  }
+
+  private draw() {
+    const p = this.pile;
+    if (!p) return;
+    while (p.hand.length < HAND_SIZE) {
+      if (!p.deck.length) {
+        if (!p.discard.length) break;
+        p.deck = p.discard.splice(0);
+        for (let i = p.deck.length - 1; i > 0; i--) {
+          const j = Math.floor(rand(this.seed) * (i + 1));
+          [p.deck[i], p.deck[j]] = [p.deck[j], p.deck[i]];
+        }
+      }
+      p.hand.push(p.deck.pop()!);
+    }
+  }
+
+  /** ผู้เล่นครบรอบ: พลังทีม +1 แล้วจั่วการ์ดเติมมือ */
+  private runLap() {
+    const p = this.pile;
+    const r = this.race;
+    if (!p || !r || !this.run || !this.track) return;
+    const lap = Math.floor(r.cars[this.run.car].pos / this.track.lapCells);
+    if (lap > p.lap) {
+      p.energy = Math.min(this.run.maxEnergy, p.energy + (lap - p.lap));
+      p.lap = lap;
+      this.draw();
+    }
   }
 
   private startLights() {
@@ -230,7 +322,7 @@ export class Room {
       const x = rand(this.seed);
       this.launch[c.id] = this.human(c.id) ? "ok" : x < 0.1 ? "great" : x < 0.32 ? "good" : x < 0.8 ? "ok" : x < 0.97 ? "slow" : "jump";
     }
-    applyLaunches(r, this.launch);
+    applyLaunches(r, this.launch, (id) => this.run?.mods[id]?.launch ?? 0);
     r.started = true;
     this.timer = -1;
     this.say(null, null, "ไฟดับ! ออกตัว", "good");
@@ -355,6 +447,19 @@ export class Room {
       case "attack":
         if (!r || !this.carOf(p, m.car)) return "ไม่ใช่รถของคุณ";
         return tryAttack(this.ctx(), r, r.cars[m.car]);
+      case "card": {
+        const pile = this.pile;
+        if (!r || !this.run || !pile || m.car !== this.run.car) return "ไม่มีการ์ด";
+        const kind = pile.hand[m.idx];
+        if (!kind) return "ไม่มีการ์ดใบนี้";
+        if (pile.energy < STRATEGY_COST[kind]) return "พลังทีมไม่พอ";
+        const err = playStrategy(this.ctx(), r, r.cars[m.car], kind);
+        if (err) return err;
+        pile.energy -= STRATEGY_COST[kind];
+        pile.hand.splice(m.idx, 1);
+        pile.discard.push(kind);
+        return null;
+      }
       case "order":
         if (!r || p.team === null) return null;
         r.orders[p.team] = m.order;
@@ -452,6 +557,7 @@ export class Room {
       const steps = Math.floor(this.acc / SIM_DT);
       this.acc -= steps * SIM_DT;
       for (let i = 0; i < steps; i++) stepRace(ctx, this.race, SIM_DT);
+      this.runLap();
       if (this.race.done) this.finishRace();
       changed = true;
     }
@@ -482,6 +588,7 @@ export class Room {
       standings: this.standings,
       history: this.history.map((h) => ({ circuit: h.circuit, winner: h.results[0]?.id ?? -1 })),
       radio: this.radio.slice(-25),
+      run: this.run && this.pile ? { car: this.run.car, hand: [...this.pile.hand], energy: this.pile.energy, max: this.run.maxEnergy, deck: this.pile.deck.length, discard: this.pile.discard.length } : null,
     };
   }
 }
@@ -527,4 +634,6 @@ export type Snapshot = {
   standings: Standing;
   history: { circuit: string; winner: number }[];
   radio: Radio[];
+  /** โหมด Roguelike: รถที่ผู้เล่นคุม + มือการ์ด (ไม่ใช่ = null/ไม่มี) */
+  run?: RunHand | null;
 };

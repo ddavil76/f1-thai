@@ -10,6 +10,8 @@ import type { AiLevel, Car, Compound, DriveMode, ErsMode, Fight, LaunchKind, Neu
 import { COMPOUND_INFO } from "./types";
 
 export const SIM_DT = 0.1;
+/** ระยะห่างของช่องกริด (ช่อง ≈ 8 ม.) */
+export const GRID_GAP = 0.055;
 /** ระยะห่างต่ำสุดระหว่างรถ (ช่อง) */
 const MIN_GAP = 0.08;
 const SC_GAP = 0.07;
@@ -83,6 +85,8 @@ export type RaceCar = {
   /** คันหน้าคันไหน · ช่องห่างกับคันหน้าหดลงกี่วินาทีต่อวินาที (เฉลี่ยราว 10 วินาที · ลบ = ห่างออก) */
   aheadId?: number | null;
   closing?: number;
+  /** ผลการ์ดกลยุทธ์ที่ยังทำงาน */
+  buffs?: Buff[];
 };
 
 export type RaceState = {
@@ -102,6 +106,16 @@ export type RaceState = {
   done: boolean;
 };
 
+/**
+ * ตัวปรับของรถหนึ่งคัน (โหมด Roguelike: การ์ดอัปเกรด/คำสาป/บอส) — ไม่ใส่ = ค่าปกติ
+ * pace = วินาทีต่อรอบ (ลบ = เร็วขึ้น) · wear = ตัวคูณยางสึก · pitStop = วินาทีที่จอดเพิ่ม/ลด
+ * attack = โอกาสแซงเลยผ่านเพิ่ม · defend = ตัวคูณโอกาสที่คันอื่นแซงเราผ่าน · ersCost = ตัวคูณแบตที่ปุ่มแซงใช้
+ * ersCharge = ตัวคูณการชาร์จแบต · drs = ตัวคูณแรง DRS · launch = ออกตัวดีขึ้นกี่ขั้น
+ */
+export type CarMods = { pace?: number; wear?: number; pitStop?: number; attack?: number; defend?: number; ersCost?: number; ersCharge?: number; drs?: number; launch?: number };
+/** กติกาของเรซ (โหมด Roguelike/บอส): wear = ตัวคูณยางสึกทุกคัน · incidents = ตัวคูณโอกาสเกิดเหตุ (SC) · mustStop = บังคับเข้าพิท */
+export type RaceRules = { wear?: number; incidents?: number; mustStop?: boolean };
+
 export type RaceCtx = {
   track: TrackModel;
   cars: Car[];
@@ -111,7 +125,15 @@ export type RaceCtx = {
   human: (car: number) => boolean;
   seed: Seed;
   say: (team: number | null, car: number | null, text: string, tone?: "info" | "good" | "bad" | "warn") => void;
+  mods?: (car: number) => CarMods | undefined;
+  rules?: RaceRules;
 };
+
+/** การ์ดกลยุทธ์ที่เล่นระหว่างแข่ง (ผลชั่วคราว) */
+export type BuffKind = "push" | "shield" | "save" | "drs" | "pitcrew" | "fresh";
+export type Buff = { kind: BuffKind; until: number };
+const buffOn = (st: RaceState, c: RaceCar, k: BuffKind) => !!c.buffs?.some((b) => b.kind === k && b.until > st.t);
+const modOf = (ctx: RaceCtx, id: number): CarMods => ctx.mods?.(id) ?? {};
 
 const label = (ctx: RaceCtx, id: number) => `#${ctx.cars[id].num}`;
 
@@ -135,7 +157,8 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
     if (s) s.used = true;
     return {
       id,
-      pos: -slot * 0.2,
+      // ช่องกริดห่างกันราว 8 ม. สลับซ้ายขวา (ออกตัวแล้วรถค่อย ๆ ยืดแถว ไม่วาร์ป)
+      pos: -slot * GRID_GAP,
       side: slot % 2 ? 1 : -1,
       compound: c,
       set,
@@ -190,11 +213,27 @@ export function newRace(ctx: RaceCtx, grid: number[], laps: number, start: Recor
 }
 
 /** ผลออกตัว: ขยับขึ้น/ลงบนกริด (ช่อง) */
+/** ผลออกตัว (ใช้กับ AI/สถิติ) — ช่องที่ได้/เสีย */
 export const LAUNCH_GAIN: Record<LaunchKind, number> = { great: 0.32, good: 0.16, ok: 0, slow: -0.18, jump: -0.5 };
-export function applyLaunches(st: RaceState, kinds: Record<number, LaunchKind>) {
-  for (const c of st.cars) c.pos += LAUNCH_GAIN[kinds[c.id] ?? "ok"];
+const LAUNCH_RANK: Record<LaunchKind, number> = { jump: 0, slow: 1, ok: 2, good: 3, great: 4 };
+/**
+ * ไฟดับ: ออกตัวดี = พุ่งขึ้นเทียบแล้วแซงคันข้างหน้า (ไม่วาร์ปข้ามคัน) · ออกตัวแย่/jump = ช้าไปจังหวะหนึ่ง
+ * ดีกว่าคันหน้าชัด ๆ เท่านั้นถึงแซงได้ · ไล่จากหน้าไปหลัง คันหนึ่งแซงได้คันเดียว
+ */
+export function applyLaunches(st: RaceState, kinds: Record<number, LaunchKind>, bonus: (car: number) => number = () => 0) {
+  const order = [...st.cars].filter((c) => c.out === null).sort((a, b) => b.pos - a.pos);
+  const rank = (c: RaceCar) => Math.min(4, LAUNCH_RANK[kinds[c.id] ?? "ok"] + bonus(c.id));
+  for (const c of order) {
+    const r = rank(c);
+    if (r === 1) c.delay += 0.5;
+    if (r === 0) c.delay += 1.4;
+  }
+  for (let i = 1; i < order.length; i++) {
+    const c = order[i];
+    const a = order[i - 1];
+    if (rank(c) >= 3 && rank(c) > rank(a) && !a.duel && !st.cars.some((o) => o.duel?.rival === a.id)) startDuel(st, c, a, true, DUEL_TIME, false);
+  }
 }
-
 const active = (c: RaceCar) => c.finished === null && c.out === null;
 const onTrack = (c: RaceCar) => active(c) && c.pit === null;
 
@@ -222,8 +261,12 @@ function cellTime(ctx: RaceCtx, st: RaceState, c: RaceCar): { ct: number; clean:
     MODE[c.mode].pace +
     lapsLeft * FUEL_PER_LAP +
     c.noise +
-    (ctx.human(c.id) ? 0 : AI_PACE[ctx.ai]);
+    (ctx.human(c.id) ? 0 : AI_PACE[ctx.ai]) +
+    (modOf(ctx, c.id).pace ?? 0);
   if (c.fight === "defend") perf += 0.15;
+  // การ์ด: ดันสุดหนึ่งรอบ · ยางใหม่ที่วอร์มมาแล้ว (หลังเข้าพิทแบบ undercut)
+  if (buffOn(st, c, "push")) perf -= 0.9;
+  if (buffOn(st, c, "fresh")) perf -= 0.5;
   const cell = cellOf(t, c.pos);
   const kind = t.kinds[cell];
   let f = 1 + perf / t.baseLap;
@@ -235,7 +278,7 @@ function cellTime(ctx: RaceCtx, st: RaceState, c: RaceCar): { ct: number; clean:
   const clean = t.baseLap * t.share[cell] * f;
   // ตามติดคันหน้า: ทางตรงได้สลิปสตรีม โค้งเจออากาศปั่นป่วน
   if (c.gapAhead !== null && c.gapAhead < 1) f *= kind === "straight" ? 0.99 : 1.012;
-  if (c.drs) f *= 0.965;
+  if (c.drs || buffOn(st, c, "drs")) f *= 1 - 0.035 * (modOf(ctx, c.id).drs ?? 1);
   if (st.neutral) f *= st.neutral.kind === "sc" ? 1.45 : 1.35;
   return { ct: t.baseLap * t.share[cell] * f, clean };
 }
@@ -256,6 +299,8 @@ function passChance(ctx: RaceCtx, st: RaceState, x: RaceCar, a: RaceCar): number
   if (x.drs) p *= 2;
   if (x.fight === "attack") p *= 1.6;
   if (a.fight === "defend") p *= 0.45;
+  if (buffOn(st, a, "shield")) p *= 0.2;
+  p *= modOf(ctx, a.id).defend ?? 1;
   p *= 1 + (sa.downforce - sx.downforce) * 0.6;
   return Math.min(0.3, p);
 }
@@ -308,7 +353,7 @@ export function attackTarget(st: RaceState, track: TrackModel, c: RaceCar): Race
 }
 
 /** โอกาสที่กด "แซงเลย" แล้วผ่าน: เร็วกว่าแค่ไหน · DRS · ทางตรง/โค้ง · ยาง · แบต · อีกคันป้องกัน */
-export function attackOdds(track: TrackModel, cars: Car[], st: RaceState, x: RaceCar, a: RaceCar): number {
+export function attackOdds(track: TrackModel, cars: Car[], st: RaceState, x: RaceCar, a: RaceCar, mods?: (car: number) => CarMods | undefined): number {
   const sx = cars[x.id];
   const sa = cars[a.id];
   if (sx.team === sa.team) {
@@ -319,27 +364,35 @@ export function attackOdds(track: TrackModel, cars: Car[], st: RaceState, x: Rac
   const straight = track.kinds[cellOf(track, x.pos)] === "straight";
   let p = 0.3 + rel * 30 + (x.drs ? 0.2 : 0) + (straight ? 0.08 : -0.15) + (a.fight === "defend" ? -0.15 : 0) + (a.wear - x.wear) * 0.35 + (x.ers - a.ers) * 0.1;
   p *= 1 + (sa.downforce - sx.downforce) * 0.3;
-  return Math.max(0.05, Math.min(0.9, p));
+  p += mods?.(x.id)?.attack ?? 0;
+  if (buffOn(st, a, "shield")) p -= 0.25;
+  p *= mods?.(a.id)?.defend ?? 1;
+  return Math.max(0.05, Math.min(0.92, p));
 }
 
 /** ผู้เล่นกด "แซงเลย": ใช้แบต ทอยตามโอกาส แล้วขึ้นเทียบ (ผลออกตอนจบการแซง) */
-export function tryAttack(ctx: RaceCtx, st: RaceState, c: RaceCar): string | null {
+/** แบตที่ปุ่มแซงใช้ (การ์ดอัปเกรดลดได้) */
+export const attackCost = (mods: CarMods | undefined) => ATTACK_ERS * (mods?.ersCost ?? 1);
+
+export function tryAttack(ctx: RaceCtx, st: RaceState, c: RaceCar, card?: { bonus: number }): string | null {
   if (!st.started || st.neutral) return "แซงไม่ได้ช่วงนี้";
-  if ((c.cd ?? 0) > 0) return `รออีก ${Math.ceil(c.cd ?? 0)} วิ`;
-  if (c.ers < ATTACK_ERS) return "แบตไม่พอ";
+  if (!card && (c.cd ?? 0) > 0) return `รออีก ${Math.ceil(c.cd ?? 0)} วิ`;
+  const cost = card ? 0 : attackCost(ctx.mods?.(c.id));
+  if (c.ers < cost) return "แบตไม่พอ";
   const a = attackTarget(st, ctx.track, c);
   if (!a) return `ต้องตามคันหน้าไม่เกิน ${ATTACK_GAP} วิ`;
-  const odds = attackOdds(ctx.track, ctx.cars, st, c, a);
-  c.ers -= ATTACK_ERS;
+  const odds = Math.min(0.95, attackOdds(ctx.track, ctx.cars, st, c, a, ctx.mods) + (card?.bonus ?? 0));
+  c.ers -= cost;
   c.cd = ATTACK_COOLDOWN;
   startDuel(st, c, a, rand(ctx.seed) < odds, DUEL_TIME, true);
   ctx.say(ctx.cars[c.id].team, c.id, `${label(ctx, c.id)} พุ่งขึ้นเทียบ ${label(ctx, a.id)}! (โอกาส ${Math.round(odds * 100)}%)`, "info");
   return null;
 }
 
-function enterPit(ctx: RaceCtx, c: RaceCar, compound: Compound) {
+function enterPit(ctx: RaceCtx, st: RaceState, c: RaceCar, compound: Compound) {
   const t = ctx.track;
-  const stop = STOP_BASE + rand(ctx.seed) * 0.9 + (rand(ctx.seed) < 0.05 ? 3 : 0);
+  const crew = buffOn(st, c, "pitcrew");
+  const stop = Math.max(1.6, STOP_BASE + (crew ? 0 : rand(ctx.seed) * 0.9) + (!crew && rand(ctx.seed) < 0.05 ? 3 : 0) + (modOf(ctx, c.id).pitStop ?? 0) - (crew ? 1.2 : 0));
   const drive = t.baseLap * t.pitCells * (1 / t.lapCells) * 1.0 + PIT_LOSS;
   c.pit = { start: c.pos, t: 0, drive, stop, compound, changed: false };
   c.pitReq = null;
@@ -347,7 +400,66 @@ function enterPit(ctx: RaceCtx, c: RaceCar, compound: Compound) {
   c.duel = null;
 }
 
-function changeTyres(ctx: RaceCtx, c: RaceCar) {
+/** การ์ดกลยุทธ์ (เล่นระหว่างแข่ง) · พลังทีมที่ใช้ */
+export type StrategyKind = "attack" | "push" | "shield" | "ers" | "save" | "drs" | "pitcrew" | "undercut";
+export const STRATEGY_COST: Record<StrategyKind, number> = { attack: 1, push: 1, shield: 1, ers: 1, save: 1, drs: 2, pitcrew: 1, undercut: 2 };
+
+/** เล่นการ์ดกลยุทธ์: คืนข้อความถ้าเล่นไม่ได้ (ไม่เสียการ์ด) */
+export function playStrategy(ctx: RaceCtx, st: RaceState, c: RaceCar, kind: StrategyKind): string | null {
+  if (!st.started) return "รอออกตัวก่อน";
+  if (c.out !== null || c.finished !== null) return "รถไม่ได้อยู่ในการแข่ง";
+  const lap = ctx.track.baseLap;
+  const add = (k: BuffKind, secs: number) => {
+    c.buffs = (c.buffs ?? []).filter((b) => b.until > st.t && b.kind !== k);
+    c.buffs.push({ kind: k, until: st.t + secs });
+  };
+  const team = ctx.cars[c.id].team;
+  switch (kind) {
+    case "attack": {
+      const err = tryAttack(ctx, st, c, { bonus: 0.15 });
+      return err;
+    }
+    case "push":
+      add("push", lap);
+      break;
+    case "shield":
+      add("shield", lap);
+      break;
+    case "ers":
+      c.ers = Math.min(1, c.ers + 0.4);
+      break;
+    case "save":
+      add("save", lap);
+      break;
+    case "drs":
+      if (st.neutral) return "ช่วงเซฟตี้คาร์ใช้ DRS ไม่ได้";
+      add("drs", lap);
+      break;
+    case "pitcrew":
+      if (c.pit) return "รถอยู่ในพิทแล้ว";
+      add("pitcrew", lap * 3);
+      break;
+    case "undercut":
+      if (c.pit) return "รถอยู่ในพิทแล้ว";
+      c.pitReq = c.pitReq ?? planCompound(ctx, st, c);
+      add("pitcrew", lap * 2);
+      break;
+  }
+  ctx.say(team, c.id, `${label(ctx, c.id)} ${STRATEGY_SAY[kind]}`, "info");
+  return null;
+}
+const STRATEGY_SAY: Record<StrategyKind, string> = {
+  attack: "แซงเลย!",
+  push: "ดันสุดรอบนี้!",
+  shield: "ปิดไลน์ป้องกันรอบนี้",
+  ers: "ชาร์จแบตด่วน +40%",
+  save: "ถนอมยางพิเศษรอบนี้",
+  drs: "เปิด DRS ได้ทั้งรอบ",
+  pitcrew: "ทีมช่างเตรียมพิทสต็อปเทพ",
+  undercut: "Undercut! เข้าพิทรอบนี้",
+};
+
+function changeTyres(ctx: RaceCtx, st: RaceState, c: RaceCar) {
   const spec = ctx.cars[c.id];
   const comp = c.pit!.compound;
   const set = bestSet(spec, comp);
@@ -362,6 +474,8 @@ function changeTyres(ctx: RaceCtx, c: RaceCar) {
   c.stops++;
   c.stints.push(comp);
   c.pit!.changed = true;
+  // ช่างเตรียมพร้อม (การ์ด) = ยางใหม่วอร์มมาแล้ว เร็วขึ้นสองรอบ
+  if (buffOn(st, c, "pitcrew")) c.buffs!.push({ kind: "fresh", until: st.t + ctx.track.baseLap * 2 });
 }
 
 /** AI วางกลยุทธ์ยาง: ยางนิ่มสุดที่อยู่ได้ถึงจบ ไม่งั้นยางแข็งสุดที่มี */
@@ -382,7 +496,8 @@ function aiThink(ctx: RaceCtx, st: RaceState, c: RaceCar) {
   if (!c.pitReq && !c.pit && lapsLeft >= 1) {
     const limit = ctx.ai === "hard" ? 0.68 : ctx.ai === "easy" ? 0.82 : 0.72;
     const scCheap = smart && st.neutral && c.wear > 0.38 && lapsLeft > 3;
-    const mustStop = c.stops === 0 && lapsLeft <= 3;
+    // ยังไม่เข้าพิทเลย: เข้าช่วงท้าย (เรซสั้นเข้ารอบสุดท้าย ไม่ใช่ทุกคันเข้าพร้อมกันตั้งแต่รอบแรก)
+    const mustStop = mustStopOn(ctx) && c.stops === 0 && lapsLeft <= mustLap(st);
     const dying = c.wear > limit && (lapsLeft > 2 || c.wear > 0.95);
     if (scCheap || mustStop || dying) c.pitReq = planCompound(ctx, st, c);
   }
@@ -407,7 +522,7 @@ function startNeutral(ctx: RaceCtx, st: RaceState, kind: "sc" | "vsc", why: stri
 
 function lapIncidents(ctx: RaceCtx, st: RaceState, c: RaceCar) {
   if (st.neutral || st.flag) return;
-  const risk = MODE[c.mode].risk * (c.fight === "attack" ? 1.5 : 1) * (c.wear > 0.95 ? 6 : c.wear > 0.85 ? 2.5 : 1);
+  const risk = MODE[c.mode].risk * (c.fight === "attack" ? 1.5 : 1) * (c.wear > 0.95 ? 6 : c.wear > 0.85 ? 2.5 : 1) * (ctx.rules?.incidents ?? 1);
   const r = rand(ctx.seed);
   const team = ctx.cars[c.id].team;
   if (r < 0.003 * risk) {
@@ -495,7 +610,7 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
     if (p.t < half) along = p.t / p.drive;
     else if (p.t < half + p.stop) {
       along = 0.5;
-      if (!p.changed) changeTyres(ctx, c);
+      if (!p.changed) changeTyres(ctx, st, c);
     } else along = Math.min(1, (p.t - p.stop) / p.drive);
     const np = p.start + t.pitCells * along;
     placed.push({ car: c, pos: np });
@@ -515,9 +630,11 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
       const e = ERS[c.fight === "attack" ? "boost" : c.ersMode];
       const kind = t.kinds[cellOf(t, old)];
       const deploy = kind === "straight" && c.ersMode !== "harvest" && (c.ersMode === "boost" || c.fight === "attack" || c.ers > 0.25);
-      c.ers = Math.min(1, Math.max(0, c.ers + moved * (deploy ? -e.drain : kind === "straight" ? (c.ersMode === "harvest" ? e.charge : 0) : e.charge)));
+      const charge = modOf(ctx, c.id).ersCharge ?? 1;
+      c.ers = Math.min(1, Math.max(0, c.ers + moved * (deploy ? -e.drain : (kind === "straight" ? (c.ersMode === "harvest" ? e.charge : 0) : e.charge) * charge)));
       const neutralWear = st.neutral ? 0.3 : 1;
-      c.wear = Math.min(1.2, c.wear + (moved / L) * TYRE[c.compound].wear * MODE[c.mode].wear * (c.fight === "attack" ? 1.15 : 1) * neutralWear * st.wear);
+      const wearMod = (modOf(ctx, c.id).wear ?? 1) * (ctx.rules?.wear ?? 1) * (buffOn(st, c, "save") ? 0 : 1);
+      c.wear = Math.min(1.2, c.wear + (moved / L) * TYRE[c.compound].wear * MODE[c.mode].wear * (c.fight === "attack" ? 1.15 : 1) * neutralWear * st.wear * wearMod);
       // DRS: เปิดได้ถ้าเข้าโซนแล้วห่างคันหน้าไม่ถึง 1 วิ (ตั้งแต่รอบ 2)
       for (const z of t.drs) {
         const zs = z.start;
@@ -527,7 +644,7 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
       if (c.drs && !t.drs.some((z) => inZone(z, Math.floor(np), L))) c.drs = false;
       // เข้าพิท
       const pe = t.pitEntry.start;
-      if (c.pitReq && Math.floor(old) % L !== pe && cellOf(t, np) === pe && !st.flag) enterPit(ctx, c, c.pitReq);
+      if (c.pitReq && Math.floor(old) % L !== pe && cellOf(t, np) === pe && !st.flag) enterPit(ctx, st, c, c.pitReq);
     }
     // เซกเตอร์
     for (let k = 0; k < 2; k++) {
@@ -559,7 +676,7 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
       if (st.flag && c.finished === null) {
         c.finished = st.t;
         st.finishOrder.push(c.id);
-        if (noStop(c)) c.penalty += NO_STOP_PENALTY;
+        if (mustStopOn(ctx) && noStop(c)) c.penalty += NO_STOP_PENALTY;
         continue;
       }
       if (lapNo >= 1) lapIncidents(ctx, st, c);
@@ -576,7 +693,7 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
     if (lead && lead.finished === null) {
       lead.finished = st.t;
       st.finishOrder.push(lead.id);
-      if (noStop(lead)) lead.penalty += NO_STOP_PENALTY;
+      if (mustStopOn(ctx) && noStop(lead)) lead.penalty += NO_STOP_PENALTY;
     }
     ctx.say(null, null, `ธงตาหมากรุก! ${lead ? `${label(ctx, lead.id)} ข้ามเส้นชัยเป็นคันแรก` : ""}`, "good");
   }
@@ -615,6 +732,9 @@ export function stepRace(ctx: RaceCtx, st: RaceState, dt = SIM_DT) {
 
 /** ยังไม่ได้เข้าพิท (กำลังอยู่ในเลนพิทถือว่าเข้าแล้ว) */
 const noStop = (c: RaceCar) => c.stops === 0 && !c.pit;
+const mustStopOn = (ctx: RaceCtx) => ctx.rules?.mustStop !== false;
+/** เหลือกี่รอบแล้วต้องเข้าพิทถ้ายังไม่เข้า (เรซยาว 3 รอบสุดท้าย · เรซสั้นรอบสุดท้าย) */
+const mustLap = (st: RaceState) => Math.max(1, Math.min(3, Math.round(st.laps / 4)));
 
 function warnHuman(ctx: RaceCtx, st: RaceState, c: RaceCar) {
   if (!ctx.human(c.id)) return;
@@ -627,7 +747,7 @@ function warnHuman(ctx: RaceCtx, st: RaceState, c: RaceCar) {
     c.warned = 1;
     ctx.say(team, c.id, `${label(ctx, c.id)} ยางเหลือ ${left}%`, "warn");
   }
-  if (noStop(c) && !c.pitReq && st.laps - lapOf(ctx.track, c.pos) === 3)
+  if (mustStopOn(ctx) && noStop(c) && !c.pitReq && st.laps - lapOf(ctx.track, c.pos) === Math.max(mustLap(st), Math.min(3, st.laps - 1)))
     ctx.say(team, c.id, `${label(ctx, c.id)} ยังไม่ได้เข้าพิท — ต้องเข้าอย่างน้อย 1 ครั้ง ไม่งั้นบวก ${NO_STOP_PENALTY} วิ`, "warn");
 }
 

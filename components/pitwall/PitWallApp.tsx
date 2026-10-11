@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Gauge, Globe, LogIn, Radio, User } from "lucide-react";
+import { ChevronLeft, ChevronRight, Gauge, Globe, LogIn, Radio, Swords, User } from "lucide-react";
+import RogueApp from "@/components/pitwall/rogue/RogueApp";
 import Live from "@/components/pitwall/Live";
 import DriverMode from "@/components/pitwall/driver/DriverMode";
 import { createRoom, onlineReady, useLocalSession, useOnlineSession, type Session } from "@/components/pitwall/session";
@@ -11,7 +12,7 @@ import { NAMES_NOTE } from "@/lib/pitwall/teams";
 
 /** หน้าในเกม: เลือกโหมด → manager (หัวหน้าทีม) / driver (ขับเอง) → เกม */
 type View = "menu" | "manager" | "driver";
-type Game = { kind: "solo" } | { kind: "online"; code: string } | null;
+type Game = { kind: "solo" } | { kind: "online"; code: string } | { kind: "rogue" } | null;
 
 const NAME_KEY = "pitwall-name";
 const VIEWS: View[] = ["menu", "manager", "driver"];
@@ -73,22 +74,36 @@ export default function PitWallApp() {
 
   if (game?.kind === "solo") return <SoloGame name={nick} onExit={() => setGame(null)} />;
   if (game?.kind === "online") return <OnlineGame code={game.code} name={nick} onExit={() => setGame(null)} />;
+  if (game?.kind === "rogue") return <RogueApp onExit={() => setGame(null)} />;
   if (view === "driver") return <DriverMode name={nick} onExit={() => go("menu")} />;
 
   if (view === "manager")
     return (
       <div className="space-y-4">
         <BackToMenu onClick={() => go("menu")} />
-        <Card>
-          <Head kicker="โหมดหัวหน้าทีม · MANAGER" title="เล่นคนเดียว" sub="คุมรถ 2 คันจากกำแพงพิท แข่งกับทีม AI · ตั้งค่ารถ ส่งรถออกควอลิฟาย สั่งโหมดขับ สั่งแซง เข้าพิท เลือกยาง ดูการแข่งแบบ 3D" />
+        <Card className="card-poster">
+          <Head kicker="ใหม่ · ROGUELIKE" title="ฤดูกาลเอาตัวรอด" sub="คุมรถคันเดียวของทีมท้ายตาราง ผ่าน 2 ช่วงของฤดูกาลให้ถึงแชมป์ · เลือกเส้นทาง เก็บการ์ดอัปเกรด ใช้การ์ดกลยุทธ์ระหว่างแข่ง · แพ้แล้วเริ่มใหม่ แต่ได้ชื่อเสียงไว้ปลดล็อก" />
           <Btn
+            className="w-full"
+            onClick={() => {
+              remember();
+              setGame({ kind: "rogue" });
+            }}
+          >
+            <Swords className="inline h-4 w-4" /> เข้าโหมด Roguelike
+          </Btn>
+        </Card>
+        <Card>
+          <Head kicker="คลาสสิก · เล่นคนเดียว" title="สุดสัปดาห์แข่ง / ลีก" sub="คุมรถ 2 คันจากกำแพงพิท แข่งกับทีม AI · ตั้งค่ารถ ส่งรถออกควอลิฟาย สั่งโหมดขับ สั่งแซง เข้าพิท เลือกยาง ดูการแข่งแบบ 3D" />
+          <Btn
+            tone="white"
             className="w-full"
             onClick={() => {
               remember();
               setGame({ kind: "solo" });
             }}
           >
-            <User className="inline h-4 w-4" /> เริ่มเล่นคนเดียว
+            <User className="inline h-4 w-4" /> เริ่มสุดสัปดาห์แข่ง
           </Btn>
         </Card>
 
