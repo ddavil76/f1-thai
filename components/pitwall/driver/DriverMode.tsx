@@ -8,13 +8,14 @@ import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
-import { buildDriveTrack, DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { nextPitEntry, PIT_MISS_PENALTY, STOP_MISS, STOP_WINDOW } from "@/lib/pitwall/drive/pit";
 import { COMPOUND_INFO, COMPOUNDS, suggestCompound, tyreGrip, type Compound } from "@/lib/pitwall/drive/tyres";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
 import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide";
-import { hasRealTrack, loadRawTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
+import { hasRealTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
+import { useDriveTrack } from "./driveTrack";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
 import type { BodyModel, CameraMode, DriveScene, Gfx, GuideMode } from "./scene";
 import { buzz, createSfx } from "./sfx";
@@ -94,26 +95,6 @@ const MODEL_FILE: Record<string, string> = {
 // v2: ผังสนามจริง + เนิน — เวลาเก่า (ผังคร่าว ๆ) เทียบกันไม่ได้
 const bestKey = (circuit: string) => `pitwall-drive-best2:${circuit}`;
 const masteryKey = (circuit: string) => `pitwall-drive-mastery:${circuit}`;
-
-/** สนามที่สร้างแล้ว (สร้างครั้งเดียวต่อสนาม) */
-const trackCache = new Map<string, DriveTrack | null>();
-/** โหลดผังสนามจริง (ถ้ามี) แล้วสร้างสนาม · ระหว่างโหลดได้ undefined */
-function useDriveTrack(circuit: string): DriveTrack | null | undefined {
-  const [, bump] = useState(0);
-  useEffect(() => {
-    if (trackCache.has(circuit)) return;
-    let alive = true;
-    (async () => {
-      const raw = hasRealTrack(circuit) ? await loadRawTrack(circuit).catch(() => null) : null;
-      trackCache.set(circuit, buildDriveTrack(circuit, raw));
-      if (alive) bump((n) => n + 1);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [circuit]);
-  return trackCache.has(circuit) ? trackCache.get(circuit) : undefined;
-}
 
 function readJson<T>(key: string): T | null {
   try {

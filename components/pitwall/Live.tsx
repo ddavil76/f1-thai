@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FastForward, LogOut, Radio as RadioIcon, Timer, Volume2, VolumeX } from "lucide-react";
+import { Box, FastForward, LogOut, Map as MapIcon, Radio as RadioIcon, Timer, Volume2, VolumeX } from "lucide-react";
 import Car from "@/components/pitwall/Car";
 import DriveLap from "@/components/pitwall/DriveLap";
 import LaunchScreen from "@/components/pitwall/Launch";
 import PitMap, { PIT_K, SIDE, type MapCar } from "@/components/pitwall/PitMap";
+import Race3D from "@/components/pitwall/Race3D";
 import { setSoundOn, sfx, soundOn } from "@/components/pitwall/sound";
 import { myCars } from "@/components/pitwall/Weekend";
 import { Bar, Btn, Seg, TyreDot, fmtClock, fmtGap, fmtLap, teamOf } from "@/components/pitwall/ui";
@@ -40,6 +41,13 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
   const [active, setActive] = useState<{ car: number; key: string } | null>(null);
   const [launched, setLaunched] = useState<Record<number, boolean>>({});
   const host = snap.players.find((p) => p.id === me)?.host;
+  // ตอนแข่ง: ภาพ 3D มุมถ่ายทอดสด (ค่าเริ่มต้น) หรือแผนที่ · เครื่องที่ไม่มี WebGL ใช้แผนที่
+  const [view3d, setView3d] = useState(true);
+  const [no3d, setNo3d] = useState(false);
+  const fail3d = useCallback(() => {
+    setNo3d(true);
+    setView3d(false);
+  }, []);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -124,6 +132,17 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
             </span>
           )}
           {q?.red && <span className="poster rounded-full bg-(--color-f1) px-2.5 py-1 text-[11px]">ธงแดง</span>}
+          {r && !no3d && (
+            <button
+              type="button"
+              onClick={() => setView3d((v) => !v)}
+              aria-label={view3d ? "ดูแบบแผนที่" : "ดูแบบ 3D"}
+              title={view3d ? "แผนที่" : "3D"}
+              className="rounded-full p-2 text-white/70 hover:bg-white/10"
+            >
+              {view3d ? <MapIcon className="h-5 w-5" /> : <Box className="h-5 w-5" />}
+            </button>
+          )}
           {!snap.online && (
             <button
               type="button"
@@ -153,7 +172,11 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           </button>
         </header>
         <div className="relative min-h-[34vh] flex-1">
-          <PitMap board={board} track={track} cars={mapCars} focus={focus} neutral={r?.neutral?.kind ?? null} zoomed={zoomed} onToggle={() => setZoomed((z) => !z)} interval={interval} />
+          {r && view3d ? (
+            <Race3D snap={snap} track={track} focus={focus} team={myTeam} interval={interval} onFail={fail3d} />
+          ) : (
+            <PitMap board={board} track={track} cars={mapCars} focus={focus} neutral={r?.neutral?.kind ?? null} zoomed={zoomed} onToggle={() => setZoomed((z) => !z)} interval={interval} />
+          )}
           <RadioTicker snap={snap} team={myTeam} />
           {r && !r.started && !launchCar && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
