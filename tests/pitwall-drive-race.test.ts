@@ -239,20 +239,67 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
     expect(Math.abs(me.car.lat)).toBeLessThan(0.05);
   });
 
-  it("ปุ่มแซงกดไม่ได้ใกล้โค้ง (ทางตรงเหลือไม่พอ)", () => {
+  it("ปุ่มแซงกดไม่ได้เมื่อใกล้จุดเบรกเกินไป (แม้แต่แซงในโค้ง)", () => {
     const { race, slow, me } = chase();
     // ไปตามติดกันก่อนถึงจุดเบรกของชิเคนแรกนิดเดียว
     const brakeAt = (() => {
       for (let s = 200; s < 2000; s += DS) if (monza.zone[Math.floor(s / DS)] === "brake") return s;
       return 800;
     })();
-    slow.car.s = brakeAt - 100;
-    me.car.s = brakeAt - 100 - CAR_LEN - 0.2 * 50;
+    slow.car.s = brakeAt - 45;
+    me.car.s = brakeAt - 45 - CAR_LEN - 0.2 * 50;
     me.car.v = 50;
     drive(race, me);
     expect(me.passState).toBe("wait");
     stepRace(race, { ...idealInput(monza, me.car), pass: true });
     expect(me.pass).toBeNull();
+  });
+
+  it("ใช้แบต OT ตอนตามติด (≤ 0.15 วิ): คันหน้าเสียกำลังชั่วครู่", () => {
+    const { race, slow, me } = chase();
+    const ev: RaceEvent[] = [];
+    let hit = false;
+    for (let k = 0; k < 120 * 5 && !hit; k++) {
+      ev.length = 0;
+      stepRace(race, { ...idealInput(monza, me.car), ot: me.held }, ev);
+      if (ev.some((e) => e.kind === "otHit" && e.by === me.id && e.on === slow.id)) hit = true;
+    }
+    expect(hit).toBe(true);
+    expect(slow.otHit).toBeGreaterThan(0);
+    // ห่างเกินระยะ = ไม่มีผล
+    const far = chase();
+    far.me.car.s = far.slow.car.s - 60;
+    far.me.car.energy = 1;
+    for (let k = 0; k < 60; k++) stepRace(far.race, { ...idealInput(monza, far.me.car), ot: true });
+    expect(far.slow.otHit).toBe(0);
+  });
+
+  it("แซงในโค้ง: ตามติดก่อนถึงโค้งที่ถนนกว้างพอ ปุ่มแซงพร้อม (ดำเข้าด้านใน) และแซงจบได้โดยไม่ชน", () => {
+    let tried = 0;
+    let done = 0;
+    for (let at = 300; at < monza.length - 600 && done === 0; at += 40) {
+      const { race, slow, me } = chase();
+      slow.car.s = at;
+      slow.car.v = 55;
+      me.car.s = at - CAR_LEN - 6;
+      me.car.v = 58;
+      me.car.energy = 1;
+      drive(race, me);
+      if (me.passState !== "ready" || me.passLane === null) continue;
+      const ev: RaceEvent[] = [];
+      stepRace(race, { ...idealInput(monza, me.car), pass: true }, ev);
+      for (let k = 0; k < 48 && !me.pass; k++) drive(race, me);
+      if (!me.pass?.corner) continue;
+      tried++;
+      for (let k = 0; k < 120 * 12 && me.pass; k++) {
+        ev.length = 0;
+        stepRace(race, { ...idealInput(monza, me.car), ot: true }, ev);
+        expect(ev.some((e) => e.kind === "bump")).toBe(false);
+        if (ev.some((e) => e.kind === "passEnd" && e.why === "done")) done++;
+      }
+    }
+    expect(tried).toBeGreaterThan(0);
+    expect(done).toBeGreaterThan(0);
   });
 
   it("หลุดโค้ง: กดคันเร่งค้างอย่างเดียวช้ากว่าขับตามเส้นมาก และหลุดเกิน 3 ครั้งโดนโทษ", () => {
