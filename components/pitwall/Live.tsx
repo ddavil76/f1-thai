@@ -43,6 +43,13 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
   };
   const mine = myCars(snap, me);
   const [focus, setFocus] = useState<number | null>(mine[0]?.id ?? null);
+  // รถของเราที่เปิดแผงคำสั่งอยู่ (ทีละคัน)
+  const [sel, setSel] = useState<number | null>(mine[0]?.id ?? null);
+  const selCar = mine.find((c) => c.id === sel) ?? mine[0] ?? null;
+  const pick = (id: number) => {
+    setFocus(id);
+    if (mine.some((c) => c.id === id)) setSel(id);
+  };
   const [zoomed, setZoomed] = useState(true);
   const [tab, setTab] = useState<"team" | "timing" | "radio">("team");
   const [sound, setSound] = useState(soundOn);
@@ -201,7 +208,7 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
       </div>
 
       <section aria-label="กำแพงพิท" className="flex max-h-[58dvh] min-h-[16rem] flex-none flex-col border-t border-white/10 bg-[#121216] md:max-h-none md:w-[440px] md:border-l md:border-t-0">
-        <div className="grid flex-none grid-cols-3 gap-1 border-b border-white/10 p-1.5 md:hidden">
+        <div className="grid flex-none grid-cols-3 gap-1 border-b border-white/10 p-1.5">
           {(
             [
               ["team", "ทีมเรา"],
@@ -215,18 +222,19 @@ export default function Live({ snap, me, send: rawSend, interval, onExit }: Prop
           ))}
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className={`space-y-3 ${tab === "team" ? "" : "hidden md:block"}`}>
-            {r && <TeamOrders snap={snap} team={myTeam} send={send} />}
-            {mine.map((c) =>
-              r ? (
-                <RaceCarPanel key={c.id} snap={snap} spec={c} car={r.cars[c.id]} focus={focus === c.id} onFocus={() => setFocus(c.id)} send={send} />
+          <div className={`space-y-3 ${tab === "team" ? "" : "hidden"}`}>
+            {/* รถของเรา: เลือกทีละคัน (กล้องตามคันที่เลือก) · ป้ายบอกคันที่แซงได้/โดนจี้ */}
+            {mine.length > 1 && <CarTabs snap={snap} mine={mine} sel={selCar?.id ?? null} onPick={pick} />}
+            {selCar &&
+              (r ? (
+                <RaceCarPanel key={selCar.id} snap={snap} spec={selCar} car={r.cars[selCar.id]} focus={focus === selCar.id} onFocus={() => setFocus(selCar.id)} send={send} />
               ) : q ? (
-                <QualiCarPanel key={c.id} snap={snap} spec={c} car={q.cars[c.id]} focus={focus === c.id} onFocus={() => setFocus(c.id)} send={send} />
-              ) : null,
-            )}
+                <QualiCarPanel key={selCar.id} snap={snap} spec={selCar} car={q.cars[selCar.id]} focus={focus === selCar.id} onFocus={() => setFocus(selCar.id)} send={send} />
+              ) : null)}
+            {r && <TeamOrders snap={snap} team={myTeam} send={send} />}
           </div>
-          <div className={tab === "timing" ? "" : "hidden md:block"}>{r ? <RaceTower snap={snap} mine={mine} onPick={setFocus} /> : <QualiTower snap={snap} mine={mine} onPick={setFocus} />}</div>
-          <div className={tab === "radio" ? "" : "hidden md:block"}>
+          <div className={tab === "timing" ? "" : "hidden"}>{r ? <RaceTower snap={snap} mine={mine} onPick={pick} /> : <QualiTower snap={snap} mine={mine} onPick={pick} />}</div>
+          <div className={tab === "radio" ? "" : "hidden"}>
             <RadioLog snap={snap} team={myTeam} />
           </div>
         </div>
@@ -561,6 +569,50 @@ function Control({ label, hint, children }: { label: string; hint: string; child
       <p className="text-[11px] font-bold text-white/70">{label}</p>
       {children}
       <p className="text-[11px] leading-snug text-white/60">{hint}</p>
+    </div>
+  );
+}
+
+/** แท็บเลือกรถของเรา: อันดับ · สถานะสั้น ๆ · จุดแดง = แซงได้ตอนนี้ · จุดเหลือง = โดนจี้/ยางใกล้หมด */
+function CarTabs({ snap, mine, sel, onPick }: { snap: Snapshot; mine: CarSpec[]; sel: number | null; onPick: (id: number) => void }) {
+  const r = snap.race;
+  const q = snap.quali;
+  const track = buildTrack(snap.circuit)!;
+  const order = r ? standings(r, track.lapCells).map((c) => c.id) : q ? segOrder(q) : [];
+  return (
+    <div className="grid gap-1.5 rounded-xl bg-[#08080A] p-1" style={{ gridTemplateColumns: `repeat(${mine.length}, minmax(0, 1fr))` }} role="tablist" aria-label="รถของเรา">
+      {mine.map((c) => {
+        const t = teamOf(c);
+        const on = c.id === sel;
+        let note = "";
+        let alert: "go" | "warn" | null = null;
+        if (r) {
+          const rc = r.cars[c.id];
+          note = rc.out ? "ออกจากเรซ" : rc.finished !== null ? "จบแล้ว" : rc.pit ? "ในพิท" : rc.duel ? "กำลังแซง" : `หน้า ${fmtGap(rc.gapAhead)}`;
+          if (!rc.out && rc.finished === null) {
+            const tgt = attackTarget(r, track, rc);
+            // จุดแดง: แซงได้ตอนนี้และโอกาสพอสมควร
+            if (tgt && rc.ers >= ATTACK_ERS && !(rc.cd ?? 0) && !r.neutral && attackOdds(track, snap.cars, r, rc, tgt) >= 0.3) alert = "go";
+            else if ((rc.gapBehind !== null && rc.gapBehind < 0.5) || rc.wear > 0.75) alert = "warn";
+          }
+        } else if (q) {
+          const qc = q.cars[c.id];
+          note = qc.lane ? (qc.lane.kind === "out" ? "ออกจากพิท" : "เข้าพิท") : ({ garage: "ในพิท", out: "รอบอุ่นยาง", push: "รอบเร่ง", in: "กลับพิท", eliminated: "ตกรอบ" } as const)[qc.status];
+        }
+        const pos = order.indexOf(c.id) + 1;
+        return (
+          <button key={c.id} type="button" role="tab" aria-selected={on} onClick={() => onPick(c.id)} className={`relative flex min-h-12 items-center gap-2 rounded-lg px-2 text-left ${on ? "bg-white text-[#08080A]" : "text-white/80 hover:bg-white/10"}`}>
+            <span className="h-7 w-1 flex-none rounded-full" style={{ background: t.color }} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-bold tabular-nums">
+                #{c.num} {pos ? `· P${pos}` : ""}
+              </span>
+              <span className={`block truncate text-[10px] tabular-nums ${on ? "text-[#08080A]/70" : "text-white/60"}`}>{note}</span>
+            </span>
+            {alert && <span className={`absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full ${alert === "go" ? "bg-(--color-f1)" : "bg-[#facc15]"}`} aria-label={alert === "go" ? "แซงได้" : "ต้องระวัง"} />}
+          </button>
+        );
+      })}
     </div>
   );
 }

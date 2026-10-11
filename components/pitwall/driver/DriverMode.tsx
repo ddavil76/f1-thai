@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Copy, Flag, LogIn, LogOut, Pause, Play, RotateCcw, Route, Users, Volume2, VolumeX } from "lucide-react";
+import { Camera, ChevronLeft, Copy, Flag, LogIn, LogOut, Pause, Play, RotateCcw, Route, Users, Volume2, VolumeX } from "lucide-react";
 import { Btn, Card, Head, Seg } from "@/components/pitwall/ui";
 import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { createRoom, onlineReady } from "@/components/pitwall/session";
@@ -168,11 +168,11 @@ function Setup({
   return (
     <div className="space-y-4">
       <Btn tone="ghost" onClick={onExit}>
-        <LogOut className="inline h-4 w-4" /> กลับเมนู
+        <ChevronLeft className="inline h-4 w-4" /> เลือกโหมด
       </Btn>
       <Card>
         <Head
-          kicker="โหมดนักขับ · ทดลอง"
+          kicker="โหมดนักขับ · DRIVER"
           title={online ? "แข่งกับเพื่อน" : settings.mode === "race" ? "แข่งกับ AI" : "Time Trial"}
           sub={
             online
