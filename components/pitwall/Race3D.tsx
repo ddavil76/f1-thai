@@ -56,7 +56,12 @@ function qualiStar(q: QualiState): number | null {
   const push = q.cars.filter((c) => c.status === "push" && c.lap).sort((a, b) => (q.t - b.lap!.start) / b.lap!.time - (q.t - a.lap!.start) / a.lap!.time);
   return push[0]?.id ?? q.cars.find((c) => c.status === "out" || c.status === "in")?.id ?? null;
 }
-type Anim = { from: number; to: number; t0: number; dur: number };
+/**
+ * ตำแหน่งที่วาด: ข้อมูลจากการจำลองมาไม่สม่ำเสมอ (บางรอบไม่ขยับ บางรอบขยับสองก้าว) — ถ้าเกลี่ยแค่ระหว่างข้อมูลสองชุด
+ * รถจะวิ่ง-หยุด-วิ่ง (ภาพกระตุก) จึงประมาณความเร็วจากข้อมูลที่ผ่านมา แล้วให้รถวิ่งต่อด้วยความเร็วนั้น ค่อย ๆ ดึงเข้าหาตำแหน่งจริง
+ * pos/at = ตำแหน่งล่าสุดที่เปลี่ยนและเวลาที่ได้รับ · v = ช่องต่อ ms · shown = ตำแหน่งที่วาดอยู่
+ */
+type Track = { pos: number; at: number; v: number; shown: number };
 
 /**
  * การแข่งของโหมดผู้จัดการทีมแบบ 3D: ใช้ฉากเดียวกับโหมดนักขับ (โหมดผู้ชม — รถทุกคันเป็น AI)
@@ -88,8 +93,7 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
   const fallback = r ? order.find((c) => onTrack(c.id))?.id : q ? qualiStar(q) : null;
   const focusId = focus !== null && onTrack(focus) ? focus : (fallback ?? focus ?? 0);
   const targets = useRef<Target[]>([]);
-  const anims = useRef(new Map<number, Anim>());
-  const shown = useRef(new Map<number, number>());
+  const motion = useRef(new Map<number, Track>());
   const view = useRef({ focus: focusId, interval });
 
   // ข้อมูลใหม่: ตั้งให้รถวิ่งจากตำแหน่งที่เห็นอยู่ไปตำแหน่งใหม่ภายในช่วงเวลาก่อนข้อมูลชุดถัดไป
@@ -112,12 +116,16 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
         }))
       : q!.cars.map((c) => qualiTarget(c, track));
     for (const c of list) {
-      const a = anims.current.get(c.id);
-      const cur = a ? a.from + (a.to - a.from) * Math.min(1, (now - a.t0) / a.dur) : shown.current.get(c.id);
-      if (cur === undefined || c.pos < cur - 0.01 || c.pos - cur > 4) {
-        anims.current.delete(c.id);
-        shown.current.set(c.id, c.pos);
-      } else anims.current.set(c.id, { from: cur, to: c.pos, t0: now, dur: interval * 1.15 });
+      const m = motion.current.get(c.id);
+      if (!m || c.pos < m.pos - 0.01 || c.pos - m.pos > 4) {
+        // เริ่มใหม่ / กระโดด (เข้าอู่ ข้ามเวลา): วางที่ตำแหน่งจริงเลย
+        motion.current.set(c.id, { pos: c.pos, at: now, v: 0, shown: c.pos });
+      } else if (c.pos !== m.pos) {
+        const gap = now - m.at;
+        if (gap > 15) m.v = m.v === 0 ? (c.pos - m.pos) / gap : m.v * 0.6 + ((c.pos - m.pos) / gap) * 0.4;
+        m.pos = c.pos;
+        m.at = now;
+      }
     }
   });
 
@@ -183,9 +191,15 @@ export default function Race3D({ snap, track, focus, team: myTeam, interval, onF
         if (step <= 0) return;
         const tg = targets.current;
         const poses = tg.map((c, id) => {
-          const a = anims.current.get(id);
-          const pos = a ? a.from + (a.to - a.from) * Math.min(1, (now - a.t0) / a.dur) : (shown.current.get(id) ?? c.pos);
-          shown.current.set(id, pos);
+          const m = motion.current.get(id);
+          let pos = c.pos;
+          if (m) {
+            // วิ่งต่อด้วยความเร็วที่ประมาณไว้ (ไม่เกิน 1.5 ช่วงข้อมูล ถ้าข้อมูลหยุดมา = รถหยุด) แล้วดึงเข้าหาตำแหน่งที่ควรเป็น
+            const expect = m.pos + m.v * Math.min(now - m.at, view.current.interval * 1.5);
+            const next = m.shown + m.v * step * 1000 + (expect - m.shown) * Math.min(1, step * 5);
+            m.shown = Math.max(m.shown, Math.min(next, expect + 0.05));
+            pos = m.shown;
+          }
           const team = snap.cars[id]?.team ?? 0;
           if (c.garage) {
             // จอดในอู่ของทีม: สองคันของทีมจอดเยื้องกันในอู่

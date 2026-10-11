@@ -18,6 +18,7 @@ export type Player = { id: string; name: string; team: number | null; ready: boo
 /** เกมเดินเร็วกว่าจริงกี่เท่า (×1 = เวลาจริง ดูภาพ 3D ทัน · เร่งได้ด้วยปุ่ม ×2 ×4 ตอนเล่นคนเดียว) */
 export const QUALI_SCALE = 1;
 export const RACE_SCALE = 1;
+const QUALI_DT = 0.1;
 /** ความยาวเรซ (วินาทีของเกม) → จำนวนรอบตามสนาม */
 export const RACE_SECONDS: Record<RaceLength, number> = { short: 420, normal: 660, long: 1020 };
 /** เวลาให้เลือก (วินาทีจริง) เฉพาะออนไลน์ */
@@ -438,11 +439,12 @@ export class Room {
       // มีคนกำลังขับเอง: เกมเดินความเร็วปกติ ให้รอบในเกมกับเกมจับจังหวะไปพร้อมกัน
       const speed = this.quali.cars.some((c) => c.waitDrive) ? 1 : this.speed;
       this.acc += real * QUALI_SCALE * speed;
-      const steps = Math.floor(this.acc / 0.25);
-      this.acc -= steps * 0.25;
+      // ก้าวละ 0.1 วินาทีของเกม (เท่าเรซ) — ก้าวใหญ่ทำให้ตำแหน่งรถขยับเป็นจังหวะ ภาพกระตุก
+      const steps = Math.floor(this.acc / QUALI_DT);
+      this.acc -= steps * QUALI_DT;
       const realPer = steps ? real / steps : real;
       if (!steps) stepQuali(ctx, this.quali, 0, real);
-      for (let i = 0; i < steps; i++) stepQuali(ctx, this.quali, 0.25, realPer);
+      for (let i = 0; i < steps; i++) stepQuali(ctx, this.quali, QUALI_DT, realPer);
       if (this.quali.done) this.afterQuali();
       changed = true;
     } else if (this.phase === "race" && this.race?.started && ctx) {
