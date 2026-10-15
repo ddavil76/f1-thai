@@ -5,6 +5,10 @@
  * — ทอยได้คู่ = ดูดสลิปสตรีม ทอยอีกครั้ง · คู่ 3 ครั้งติด = ขับเร็วในพิทเลน ไปห้องสจ๊วต
  * — ห้องสจ๊วต: ทอยคู่เพื่อออก / จ่ายค่าปรับ / ใช้บัตรอุทธรณ์ · ตาที่ 3 ต้องจ่าย
  * — จ่ายไม่ไหว: ขายสิ่งปลูกสร้างแล้วขายสนามคืนธนาคารครึ่งราคา · ยังไม่พอ = ล้มละลาย
+ * — Race Week: ทุกรอบสนามหนึ่งกลุ่มเป็นเจ้าภาพ ค่าตั๋ว ×2 + เจ้าของได้ค่าลิขสิทธิ์ · ประกาศกลุ่มรอบหน้าไว้ล่วงหน้าให้วางแผนซื้อ
+ * — เป้าสปอนเซอร์: คนละ 2 เป้า (เช่น ถือ 2 สนามเอเชีย / สร้าง VIP) ทำได้รับโบนัสแล้วได้เป้าใหม่
+ * — เทคโอเวอร์: ตกสนามคู่แข่งที่ยังไม่ครบกลุ่ม/ไม่มีอัฒจันทร์ จ่ายค่าตั๋วแล้วซื้อต่อได้ 1.5 เท่า (ครบกลุ่ม = ล็อก)
+ * — ไม่ซื้อ = ประมูลแบบยื่นซองครั้งเดียว ทุกคนเสนอราคาพร้อมกัน ใครสูงสุดได้ไป
  * — จบฤดูกาลเมื่อมีคนวิ่งครบจำนวนรอบ (จบรอบตาเดินนั้น) หรือเหลือคนเดียว · ชนะด้วยมูลค่ารวม
  * สถานะเป็น JSON ล้วน (เก็บในเครื่องได้) · สุ่มด้วยเมล็ด · ไม่มีโค้ดเฉพาะเบราว์เซอร์
  */
@@ -27,12 +31,27 @@ export type Player = {
   pardons: number;
   laps: number;
   out: boolean;
+  /** เป้าสปอนเซอร์ที่ถืออยู่ · จำนวนเป้าที่ทำสำเร็จ */
+  goals: Goal[];
+  done: number;
 };
+
+export type Goal =
+  | { k: "pair"; group: GroupId }
+  | { k: "set" }
+  | { k: "biz2" }
+  | { k: "stands3" }
+  | { k: "vip" }
+  | { k: "spread4" }
+  | { k: "rich" }
+  | { k: "own"; sq: number };
 
 export type Deck = "radio" | "weather";
 export type Phase =
   | { k: "roll" }
   | { k: "buy"; sq: number }
+  | { k: "auction"; sq: number }
+  | { k: "takeover"; sq: number; price: number }
   | { k: "card"; deck: Deck; card: number }
   | { k: "end" }
   | { k: "over" };
@@ -40,7 +59,7 @@ export type Phase =
 export type LogLine = { id: number; who: number | null; text: string; tone?: "good" | "bad" };
 
 export type Game = {
-  v: 1;
+  v: 2;
   seed: Seed;
   players: Player[];
   /** เจ้าของ (index ผู้เล่น) และระดับสิ่งปลูกสร้างของแต่ละช่อง */
@@ -55,6 +74,13 @@ export type Game = {
   again: boolean;
   phase: Phase;
   decks: Record<Deck, number[]>;
+  /** Race Week: ลำดับกลุ่มเจ้าภาพ · กลุ่มตอนนี้/รอบหน้า · รอบสูงสุดที่มีคนวิ่งถึง */
+  calendar: GroupId[];
+  spot: GroupId;
+  next: GroupId;
+  topLap: number;
+  /** ผลประมูลล่าสุด (ให้หน้าจอแสดง) */
+  auction: { sq: number; bids: number[]; winner: number | null; id: number } | null;
   log: LogLine[];
   logId: number;
 };
@@ -67,7 +93,9 @@ export type Action =
   | { t: "end" }
   | { t: "build"; sq: number }
   | { t: "payJail" }
-  | { t: "pardon" };
+  | { t: "pardon" }
+  | { t: "bid"; amount: number }
+  | { t: "takeover" };
 
 type CardDef = { text: string; run: (g: Game, p: number) => void };
 
@@ -101,10 +129,11 @@ export type Setup = { seed: number; names: string[]; colors: { color: string; in
 
 export function newGame(s: Setup): Game {
   const seed: Seed = { s: s.seed | 0 };
+  const calendar = shuffle(seed, GROUP_IDS.length).map((i) => GROUP_IDS[i]);
   const g: Game = {
-    v: 1,
+    v: 2,
     seed,
-    players: s.names.map((name, i) => ({ name, color: s.colors[i].color, ink: s.colors[i].ink, bot: s.bots[i], cash: START_CASH, pos: START, jail: 0, pardons: 0, laps: 0, out: false })),
+    players: s.names.map((name, i) => ({ name, color: s.colors[i].color, ink: s.colors[i].ink, bot: s.bots[i], cash: START_CASH, pos: START, jail: 0, pardons: 0, laps: 0, out: false, goals: [], done: 0 })),
     owner: BOARD.map(() => null),
     level: BOARD.map(() => 0),
     turn: 0,
@@ -115,11 +144,128 @@ export function newGame(s: Setup): Game {
     again: false,
     phase: { k: "roll" },
     decks: { radio: shuffle(seed, RADIO.length), weather: shuffle(seed, WEATHER.length) },
+    calendar,
+    spot: calendar[0],
+    next: calendar[1],
+    topLap: 0,
+    auction: null,
     log: [],
     logId: 0,
   };
-  say(g, null, `เริ่มฤดูกาล ${s.laps} รอบ · ทุกคนได้ทุน ${money(START_CASH)}`);
+  g.players.forEach((_, i) => {
+    g.players[i].goals.push(drawGoal(g, i), drawGoal(g, i));
+  });
+  say(g, null, `เริ่มฤดูกาล ${s.laps} รอบ · ทุกคนได้ทุน ${money(START_CASH)} · Race Week แรกอยู่ที่กลุ่ม${GROUPS[g.spot].name}`);
   return g;
+}
+
+const GROUP_IDS = Object.keys(GROUPS) as GroupId[];
+
+/* ---------- เป้าสปอนเซอร์ ---------- */
+
+export const GOAL_REWARD: Record<Goal["k"], number> = { pair: 200, set: 350, biz2: 250, stands3: 300, vip: 450, spread4: 250, rich: 250, own: 150 };
+const RICH = 2200;
+
+export function goalText(goal: Goal): string {
+  switch (goal.k) {
+    case "pair":
+      return `ถือสนามกลุ่ม${GROUPS[goal.group].name} 2 แห่ง`;
+    case "set":
+      return "ถือครบทั้งกลุ่มสีใดก็ได้ 1 กลุ่ม";
+    case "biz2":
+      return "ถือธุรกิจ 2 แห่ง";
+    case "stands3":
+      return "มีอัฒจันทร์รวม 3 ชั้นขึ้นไป";
+    case "vip":
+      return "สร้างแพดด็อก VIP 1 แห่ง";
+    case "spread4":
+      return "มีสนามใน 4 กลุ่มสีที่ต่างกัน";
+    case "rich":
+      return `มีเงินสด ${money(RICH)} ขึ้นไป`;
+    case "own":
+      return `เป็นเจ้าของ${BOARD[goal.sq].name}`;
+  }
+}
+
+export function goalMet(g: Game, p: number, goal: Goal): boolean {
+  const mine = holdings(g, p);
+  switch (goal.k) {
+    case "pair":
+      return groupSquares(goal.group).filter((i) => g.owner[i] === p).length >= 2;
+    case "set":
+      return GROUP_IDS.some((gr) => ownsGroup(g, p, gr));
+    case "biz2":
+      return BIZ_SQUARES.filter((i) => g.owner[i] === p).length >= 2;
+    case "stands3":
+      return mine.reduce((n, i) => n + Math.min(3, g.level[i]), 0) >= 3;
+    case "vip":
+      return mine.some((i) => g.level[i] === MAX_LEVEL);
+    case "spread4":
+      return new Set(mine.flatMap((i) => (BOARD[i].kind === "circuit" ? [(BOARD[i] as { group: GroupId }).group] : []))).size >= 4;
+    case "rich":
+      return g.players[p].cash >= RICH;
+    case "own":
+      return g.owner[goal.sq] === p;
+  }
+}
+
+/** เป้าใหม่ที่ยังทำไม่ได้และไม่ซ้ำกับที่ถืออยู่ */
+function drawGoal(g: Game, p: number): Goal {
+  const have = g.players[p].goals.map((x) => JSON.stringify(x));
+  for (let k = 0; k < 40; k++) {
+    const r = rand(g.seed);
+    const free = BOARD.flatMap((sq, i) => (sq.kind === "circuit" && g.owner[i] === null ? [i] : []));
+    const goal: Goal =
+      r < 0.3
+        ? { k: "pair", group: GROUP_IDS[Math.floor(rand(g.seed) * GROUP_IDS.length)] }
+        : r < 0.42
+          ? { k: "biz2" }
+          : r < 0.52
+            ? { k: "spread4" }
+            : r < 0.62
+              ? { k: "set" }
+              : r < 0.72
+                ? { k: "stands3" }
+                : r < 0.78
+                  ? { k: "vip" }
+                  : r < 0.86
+                    ? { k: "rich" }
+                    : { k: "own", sq: free.length ? free[Math.floor(rand(g.seed) * free.length)] : SIZE - 1 };
+    if (goal.k === "own" && g.owner[goal.sq] !== null) continue;
+    if (!have.includes(JSON.stringify(goal)) && !goalMet(g, p, goal)) return goal;
+  }
+  return { k: "rich" };
+}
+
+/** ตรวจเป้าทุกคน: ทำได้ = รับโบนัส แล้วได้เป้าใหม่ */
+function checkGoals(g: Game) {
+  g.players.forEach((pl, p) => {
+    if (pl.out) return;
+    for (let k = 0; k < pl.goals.length; k++) {
+      const goal = pl.goals[k];
+      if (!goalMet(g, p, goal)) continue;
+      const r = GOAL_REWARD[goal.k];
+      pl.cash += r;
+      pl.done++;
+      say(g, p, `🎯 ${pl.name} ทำเป้าสปอนเซอร์สำเร็จ: ${goalText(goal)} · รับ ${money(r)}`, "good");
+      pl.goals[k] = drawGoal(g, p);
+    }
+  });
+}
+
+/** ช่องนี้ช่วยเป้าสปอนเซอร์ของผู้เล่นคนนี้ไหม (ถ้าได้ช่องนี้) */
+export function helpsGoal(g: Game, p: number, sq: number): Goal | null {
+  const s = BOARD[sq];
+  for (const goal of g.players[p].goals) {
+    if (goal.k === "own" && goal.sq === sq) return goal;
+    if (s.kind === "circuit") {
+      if (goal.k === "pair" && goal.group === s.group) return goal;
+      if (goal.k === "set" && groupSquares(s.group).filter((i) => g.owner[i] === p).length === 2) return goal;
+      if (goal.k === "spread4" && !holdings(g, p).some((i) => BOARD[i].kind === "circuit" && (BOARD[i] as { group: GroupId }).group === s.group)) return goal;
+    }
+    if (s.kind === "biz" && goal.k === "biz2") return goal;
+  }
+  return null;
 }
 
 export const money = (n: number) => `฿${Math.round(n).toLocaleString("en-US")}`;
@@ -155,7 +301,7 @@ export function rentOf(g: Game, sq: number): number {
   const o = g.owner[sq];
   const s = BOARD[sq];
   if (o === null) return 0;
-  if (s.kind === "circuit") return circuitRent(s.price, g.level[sq], ownsGroup(g, o, s.group));
+  if (s.kind === "circuit") return circuitRent(s.price, g.level[sq], ownsGroup(g, o, s.group)) * (s.group === g.spot ? 2 : 1);
   if (s.kind === "biz") return bizRent(BIZ_SQUARES.filter((i) => g.owner[i] === o).length);
   return 0;
 }
@@ -281,6 +427,102 @@ function passStart(g: Game, p: number) {
   pl.cash += PASS_START;
   pl.laps++;
   say(g, p, `${pl.name} ผ่านเส้นสตาร์ท รอบที่ ${pl.laps} · รับสปอนเซอร์ ${money(PASS_START)}`, "good");
+  if (pl.laps > g.topLap) {
+    g.topLap = pl.laps;
+    nextRaceWeek(g);
+  }
+}
+
+/** เปลี่ยน Race Week ไปกลุ่มถัดไป · เจ้าของสนามในกลุ่มเจ้าภาพได้ค่าลิขสิทธิ์ */
+function nextRaceWeek(g: Game) {
+  const n = g.calendar.length;
+  g.spot = g.calendar[g.topLap % n];
+  g.next = g.calendar[(g.topLap + 1) % n];
+  say(g, null, `🏁 Race Week ย้ายไปกลุ่ม${GROUPS[g.spot].name} — ค่าตั๋ว ×2 · รอบหน้า: ${GROUPS[g.next].name}`);
+  for (const i of groupSquares(g.spot)) {
+    const o = g.owner[i];
+    if (o === null || g.players[o].out) continue;
+    const fee = HOST_FEE + g.level[i] * 25;
+    g.players[o].cash += fee;
+    say(g, o, `${g.players[o].name} ได้ค่าลิขสิทธิ์เจ้าภาพที่${BOARD[i].name} ${money(fee)}`, "good");
+  }
+}
+const HOST_FEE = 50;
+
+/* ---------- เทคโอเวอร์ ---------- */
+
+export const TAKEOVER = 1.5;
+/** ราคาซื้อต่อจากคู่แข่ง · null = ซื้อต่อไม่ได้ (ธุรกิจ / ครบกลุ่มแล้ว / มีสิ่งปลูกสร้าง) */
+export function takeoverPrice(g: Game, sq: number): number | null {
+  const s = BOARD[sq];
+  const o = g.owner[sq];
+  if (s.kind !== "circuit" || o === null) return null;
+  if (ownsGroup(g, o, s.group) || groupSquares(s.group).some((i) => g.level[i] > 0)) return null;
+  return Math.round((s.price * TAKEOVER) / 10) * 10;
+}
+
+/* ---------- ประมูลแบบยื่นซอง ---------- */
+
+/** มูลค่าที่ผู้เล่นคนนี้ให้กับช่องนี้ (ใช้ทั้งบอทตัดสินใจซื้อและประมูล) */
+export function valueOf(g: Game, p: number, sq: number): number {
+  const s = BOARD[sq];
+  if (!isOwnable(s)) return 0;
+  let v = s.price * 0.7;
+  if (s.kind === "circuit") {
+    const grp = groupSquares(s.group);
+    const rest = grp.filter((i) => i !== sq);
+    const mine = rest.filter((i) => g.owner[i] === p).length;
+    if (mine === 2) v += s.price * 1.0;
+    else if (mine === 1 && rest.every((i) => g.owner[i] === p || g.owner[i] === null)) v += s.price * 0.35;
+    if (blocks(g, p, sq) !== null) v += s.price * 0.5;
+    if (s.group === g.spot || s.group === g.next) v += s.price * 0.15;
+  } else {
+    v += s.price * 0.2 * BIZ_SQUARES.filter((i) => g.owner[i] === p).length;
+  }
+  if (helpsGoal(g, p, sq)) v += s.price * 0.3;
+  return v;
+}
+
+/** ช่องนี้กันใครไม่ให้ครบกลุ่ม (คนนั้นถือ 2 ใน 3 ช่องที่เหลือ) */
+export function blocks(g: Game, p: number, sq: number): number | null {
+  const s = BOARD[sq];
+  if (s.kind !== "circuit") return null;
+  const grp = groupSquares(s.group).filter((i) => i !== sq);
+  const o = g.owner[grp[0]];
+  return o !== null && o !== p && grp.every((i) => g.owner[i] === o) ? o : null;
+}
+
+/** ราคาที่บอทยื่นซอง (ปัด 10 · เหลือเงินกันไว้) */
+function botBid(g: Game, p: number, sq: number) {
+  const pl = g.players[p];
+  const v = valueOf(g, p, sq) * (0.85 + rand(g.seed) * 0.3);
+  return Math.max(0, Math.min(pl.cash - 60, Math.floor(v / 10) * 10));
+}
+
+function startAuction(g: Game, sq: number) {
+  const human = g.players.findIndex((x) => !x.bot && !x.out);
+  if (human < 0) return resolveAuction(g, sq, -1, 0);
+  g.phase = { k: "auction", sq };
+}
+
+function resolveAuction(g: Game, sq: number, human: number, humanBid: number) {
+  const bids = g.players.map((pl, i) => (pl.out ? 0 : i === human ? Math.max(0, Math.min(pl.cash, Math.floor(humanBid))) : pl.bot ? botBid(g, i, sq) : 0));
+  const n = g.players.length;
+  let winner: number | null = null;
+  for (let k = 0; k < n; k++) {
+    const i = (g.turn + k) % n;
+    if (bids[i] >= 10 && (winner === null || bids[i] > bids[winner])) winner = i;
+  }
+  const s = BOARD[sq];
+  g.auction = { sq, bids, winner, id: (g.auction?.id ?? 0) + 1 };
+  if (winner === null) say(g, null, `ประมูล${s.name}: ไม่มีใครเสนอราคา`);
+  else {
+    g.players[winner].cash -= bids[winner];
+    g.owner[sq] = winner;
+    say(g, winner, `🔨 ${g.players[winner].name} ชนะประมูล${s.name} ${money(bids[winner])} (${bids.map((b, i) => (g.players[i].out ? null : `${g.players[i].name} ${money(b)}`)).filter(Boolean).join(" · ")})`, "good");
+  }
+  g.phase = { k: "end" };
+  settle(g);
 }
 
 function moveTo(g: Game, p: number, sq: number) {
@@ -310,6 +552,8 @@ function land(g: Game, p: number) {
       const r = rentOf(g, pl.pos);
       say(g, p, `${pl.name} จ่ายค่า${s.kind === "biz" ? "บริการ" : "ตั๋ว"}${s.name} ${money(r)} ให้ ${g.players[o].name}`, "bad");
       pay(g, p, o, r);
+      const tp = takeoverPrice(g, pl.pos);
+      if (!pl.out && tp !== null && pl.cash >= tp) g.phase = { k: "takeover", sq: pl.pos, price: tp };
     }
   } else if (s.kind === "radio" || s.kind === "weather") {
     const deck = g.decks[s.kind];
@@ -428,11 +672,33 @@ export function act(game: Game, a: Action): Game {
       break;
     }
     case "pass":
+      if (ph.k === "takeover") {
+        g.phase = { k: "end" };
+        settle(g);
+        break;
+      }
       if (ph.k !== "buy") return game;
-      say(g, p, `${pl.name} ไม่ซื้อ${BOARD[ph.sq].name}`);
+      say(g, p, `${pl.name} ไม่ซื้อ${BOARD[ph.sq].name} — เปิดประมูลแบบยื่นซอง`);
+      startAuction(g, ph.sq);
+      break;
+    case "takeover": {
+      if (ph.k !== "takeover") return game;
+      const o = g.owner[ph.sq];
+      if (o === null || pl.cash < ph.price) return game;
+      pl.cash -= ph.price;
+      g.players[o].cash += ph.price;
+      g.owner[ph.sq] = p;
+      say(g, p, `💼 ${pl.name} เทคโอเวอร์${BOARD[ph.sq].name}จาก ${g.players[o].name} ${money(ph.price)}`, "good");
       g.phase = { k: "end" };
       settle(g);
       break;
+    }
+    case "bid": {
+      if (ph.k !== "auction") return game;
+      const human = g.players.findIndex((x) => !x.bot && !x.out);
+      resolveAuction(g, ph.sq, human, a.amount);
+      break;
+    }
     case "ok": {
       if (ph.k !== "card") return game;
       const def = (ph.deck === "radio" ? RADIO : WEATHER)[ph.card];
@@ -469,6 +735,7 @@ export function act(game: Game, a: Action): Game {
       say(g, p, `${pl.name} ใช้บัตรอุทธรณ์ ออกจากห้องสจ๊วต`, "good");
       break;
   }
+  checkGoals(g);
   return g;
 }
 
@@ -478,11 +745,14 @@ export function botAction(g: Game): Action {
   const pl = g.players[p];
   const ph = g.phase;
   if (ph.k === "card") return { t: "ok" };
+  if (ph.k === "auction") return { t: "bid", amount: 0 };
+  if (ph.k === "takeover") return valueOf(g, p, ph.sq) * 1.3 >= ph.price && pl.cash - ph.price >= 150 ? { t: "takeover" } : { t: "pass" };
   if (ph.k === "buy") {
     const s = BOARD[ph.sq];
     const price = isOwnable(s) ? s.price : 0;
-    const completes = s.kind === "circuit" && groupSquaresOwnedAfter(g, p, s.group);
-    return pl.cash - price >= 120 || (completes && pl.cash >= price) ? { t: "buy" } : { t: "pass" };
+    const v = valueOf(g, p, ph.sq);
+    if (v >= price * 1.5 && pl.cash >= price) return { t: "buy" };
+    return pl.cash - price >= 100 && (v >= price * 0.8 || pl.cash - price >= 500) ? { t: "buy" } : { t: "pass" };
   }
   if (ph.k === "roll" || ph.k === "end") {
     const sq = bestBuild(g, p, 250);
@@ -494,10 +764,6 @@ export function botAction(g: Game): Action {
     return { t: "roll" };
   }
   return { t: "end" };
-}
-
-function groupSquaresOwnedAfter(g: Game, p: number, group: GroupId) {
-  return groupSquares(group).filter((i) => g.owner[i] !== p).length === 1;
 }
 
 /** ช่องที่ควรสร้างก่อน (ระดับต่ำสุด ราคาแพงสุด) โดยเหลือเงินอย่างน้อย reserve */

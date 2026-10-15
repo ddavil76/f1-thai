@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BIZ_SQUARES, BOARD, cellOf, circuitRent, GROUPS, groupSquares, JAIL, PASS_START, SIZE, START_CASH, type GroupId } from "@/lib/pitwall/tycoon/board";
-import { act, botAction, canBuild, newGame, ranking, RADIO, rentOf, WEATHER, worth, type Game } from "@/lib/pitwall/tycoon/game";
+import { act, blocks, takeoverPrice, botAction, canBuild, goalMet, GOAL_REWARD, helpsGoal, newGame, ranking, RADIO, rentOf, valueOf, WEATHER, worth, type Game } from "@/lib/pitwall/tycoon/game";
 
 const COL = { color: "#f00", ink: "#fff" };
 const game = (seed = 1, bots = [false, true, true, true], laps = 8) =>
@@ -70,7 +70,7 @@ describe("กติกา", () => {
 
   it("ทอยคู่ได้ทอยอีกครั้ง · ตกช่องโดนโทษไปห้องสจ๊วต", () => {
     let g = rollTo(game(), 4, true);
-    if (g.phase.k === "buy") g = act(g, { t: "pass" });
+    if (g.phase.k === "buy") g = act(act(g, { t: "pass" }), { t: "bid", amount: 0 });
     expect(g.phase.k).toBe("roll");
     expect(g.turn).toBe(0);
     let h = game();
@@ -142,5 +142,82 @@ describe("กติกา", () => {
       for (let p = 0; p < 4; p++) expect(Number.isFinite(worth(g, p))).toBe(true);
       expect(g.players.every((p) => p.cash >= 0)).toBe(true);
     }
+  });
+
+  it("ไม่ซื้อ = ประมูลยื่นซอง · คนเสนอสูงสุดได้ไปและจ่ายตามที่เสนอ", () => {
+    let g = rollTo(game(), 3);
+    g = act(g, { t: "pass" });
+    expect(g.phase).toEqual({ k: "auction", sq: 3 });
+    g = act(g, { t: "bid", amount: 400 });
+    expect(g.owner[3]).toBe(0);
+    expect(g.players[0].cash).toBe(START_CASH - 400);
+    expect(g.auction?.winner).toBe(0);
+    expect(g.phase.k).toBe("end");
+    // เสนอ 0 → บอทอาจได้ไป หรือไม่มีใครได้ แต่เงินต้องไม่ติดลบ
+    let h = act(rollTo(game(5), 3), { t: "pass" });
+    h = act(h, { t: "bid", amount: 0 });
+    expect(h.owner[3]).not.toBe(0);
+    expect(h.players.every((p) => p.cash >= 0)).toBe(true);
+  });
+
+  it("Race Week: กลุ่มเจ้าภาพค่าตั๋ว ×2 · ย้ายเมื่อมีคนขึ้นรอบใหม่ และเจ้าของได้ค่าลิขสิทธิ์", () => {
+    let g = game();
+    const sq = groupSquares(g.spot)[0];
+    g.owner[sq] = 1;
+    const other = (Object.keys(GROUPS) as GroupId[]).find((x) => x !== g.spot)!;
+    const sq2 = groupSquares(other)[0];
+    g.owner[sq2] = 1;
+    expect(rentOf(g, sq) / circuitRent((BOARD[sq] as { price: number }).price, 0, false)).toBe(2);
+    expect(rentOf(g, sq2)).toBe(circuitRent((BOARD[sq2] as { price: number }).price, 0, false));
+    const nextGroup = g.next;
+    groupSquares(nextGroup).forEach((i) => (g.owner[i] = 2));
+    const before = g.players[2].cash;
+    g.players[0].pos = 30;
+    g = rollTo(g, 5);
+    expect(g.spot).toBe(nextGroup);
+    expect(g.players[2].cash).toBeGreaterThan(before);
+  });
+
+  it("เป้าสปอนเซอร์: ทุกคนมี 2 เป้า · ทำสำเร็จได้โบนัสและได้เป้าใหม่", () => {
+    let g = game();
+    expect(g.players.every((p) => p.goals.length === 2)).toBe(true);
+    g.players[0].goals = [{ k: "own", sq: 3 }, { k: "biz2" }];
+    expect(helpsGoal(g, 0, 3)).toEqual({ k: "own", sq: 3 });
+    g = rollTo(g, 3);
+    g = act(g, { t: "buy" });
+    expect(g.players[0].done).toBe(1);
+    expect(g.players[0].cash).toBe(START_CASH - 60 + GOAL_REWARD.own);
+    expect(g.players[0].goals).toHaveLength(2);
+    expect(g.players[0].goals.some((x) => x.k === "own" && x.sq === 3)).toBe(false);
+    expect(g.players[0].goals.every((x) => !goalMet(g, 0, x))).toBe(true);
+  });
+
+  it("มูลค่าสนามสูงขึ้นเมื่อครบกลุ่มหรือกันคู่แข่ง", () => {
+    const g = game();
+    const [a, b, c] = groupSquares("asia");
+    const base = valueOf(g, 0, c);
+    g.owner[a] = 0;
+    g.owner[b] = 0;
+    expect(valueOf(g, 0, c)).toBeGreaterThan(base * 1.8);
+    expect(blocks(g, 1, c)).toBe(0);
+    expect(valueOf(g, 1, c)).toBeGreaterThan(base);
+  });
+
+  it("เทคโอเวอร์: จ่ายค่าตั๋วแล้วซื้อต่อได้ 1.5 เท่า · ครบกลุ่มแล้วซื้อต่อไม่ได้", () => {
+    let g = game();
+    g.owner[3] = 1;
+    g = rollTo(g, 3);
+    expect(g.phase.k).toBe("takeover");
+    const tp = takeoverPrice(g, 3)!;
+    expect(tp).toBe(90);
+    const c0 = g.players[0].cash;
+    const c1 = g.players[1].cash;
+    g = act(g, { t: "takeover" });
+    expect(g.owner[3]).toBe(0);
+    expect(g.players[0].cash).toBe(c0 - tp);
+    expect(g.players[1].cash).toBe(c1 + tp);
+    const h = game();
+    groupSquares("me").forEach((i) => (h.owner[i] = 1));
+    expect(takeoverPrice(h, 3)).toBeNull();
   });
 });
