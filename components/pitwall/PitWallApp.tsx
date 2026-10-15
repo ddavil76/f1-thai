@@ -1,22 +1,23 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Gauge, Globe, LogIn, Radio, User } from "lucide-react";
+import { ChevronLeft, ChevronRight, Dices, Gauge, Globe, LogIn, Radio, User } from "lucide-react";
 import Live from "@/components/pitwall/Live";
 import DriverMode from "@/components/pitwall/driver/DriverMode";
+import TycoonApp from "@/components/pitwall/tycoon/TycoonApp";
 import { createRoom, onlineReady, useLocalSession, useOnlineSession, type Session } from "@/components/pitwall/session";
 import { Btn, Card, Head } from "@/components/pitwall/ui";
 import { Final, Grid, Lobby, Prep, Results } from "@/components/pitwall/Weekend";
 import { NAMES_NOTE } from "@/lib/pitwall/teams";
 
-/** หน้าในเกม: เลือกโหมด → manager (หัวหน้าทีม) / driver (ขับเอง) → เกม */
-type View = "menu" | "manager" | "driver";
+/** หน้าในเกม: เลือกโหมด → manager (หัวหน้าทีม) / driver (ขับเอง) / tycoon (เกมเศรษฐี) → เกม */
+type View = "menu" | "manager" | "driver" | "tycoon";
 type Game = { kind: "solo" } | { kind: "online"; code: string } | null;
 
 const NAME_KEY = "pitwall-name";
-const VIEWS: View[] = ["menu", "manager", "driver"];
+const VIEWS: View[] = ["menu", "manager", "driver", "tycoon"];
 
-/** โหมดที่เลือกอยู่ใน URL (?mode=manager|driver) — ปุ่มย้อนกลับของเบราว์เซอร์/มือถือพากลับหน้าเลือกโหมด */
+/** โหมดที่เลือกอยู่ใน URL (?mode=manager|driver|tycoon) — ปุ่มย้อนกลับของเบราว์เซอร์/มือถือพากลับหน้าเลือกโหมด */
 function viewFromUrl(): View {
   if (typeof window === "undefined") return "menu";
   const v = new URLSearchParams(window.location.search).get("mode");
@@ -74,6 +75,7 @@ export default function PitWallApp() {
   if (game?.kind === "solo") return <SoloGame name={nick} onExit={() => setGame(null)} />;
   if (game?.kind === "online") return <OnlineGame code={game.code} name={nick} onExit={() => setGame(null)} />;
   if (view === "driver") return <DriverMode name={nick} onExit={() => go("menu")} />;
+  if (view === "tycoon") return <TycoonApp onExit={() => go("menu")} />;
 
   if (view === "manager")
     return (
@@ -185,6 +187,14 @@ export default function PitWallApp() {
           sub="ขับเองแบบ 3D กดคันเร่ง/เบรกตามเส้นช่วยสามสี"
           points={["Time Trial ทำเวลาต่อรอบ", "แข่งกับ AI · ตามติดแล้วกดแซง", "ยาง · เข้าพิทตามจังหวะ", "แข่งกับเพื่อนออนไลน์ 8 คน"]}
           onClick={() => go("driver")}
+        />
+        <ModeCard
+          kicker="BOARD GAME"
+          title="เจ้าพ่อพิทเลน"
+          icon={<Dices className="h-6 w-6" aria-hidden />}
+          sub="เกมเศรษฐีสายแข่งรถ ทอยเต๋าวนสนาม ซื้อสนาม เก็บค่าตั๋ว"
+          points={["ซื้อสนามแข่ง 18 แห่ง · ธุรกิจ 4", "สร้างอัฒจันทร์ · แพดด็อก VIP", "การ์ดวิทยุทีม · สภาพอากาศ", "เล่นกับบอท 1–3 คน"]}
+          onClick={() => go("tycoon")}
         />
       </div>
       <p className="text-center text-[11px] text-white/50">{NAMES_NOTE}</p>
