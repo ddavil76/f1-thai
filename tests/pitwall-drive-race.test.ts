@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { buildDriveTrack, DS, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput, newCar, perfOf, stepCar } from "@/lib/pitwall/drive/car";
-import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, stopError, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { advanceRemote, CAR_LEN, createRace, HOLD_GAP, OFF_PENALTY, OT_HIT_GAP, TRACK_LIMITS, type Race, type RaceCar, type RaceInput, packState, setRemote, stepRace, stopError, type Entrant, type NetState, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { PIT_MISS_PENALTY } from "@/lib/pitwall/drive/pit";
 import { tyreGrip } from "@/lib/pitwall/drive/tyres";
 import { DRIVE_START_DELAY, DriveRoom } from "@/lib/pitwall/drive/room";
@@ -206,6 +206,28 @@ describe("โหมดนักขับ: แข่งกับ AI", { timeout: 
     expect(heldGap!).toBeLessThan(HOLD_GAP + 0.08);
     expect(me.car.s).toBeLessThan(slow.car.s);
     expect(ready).toBe(true);
+  });
+
+  it("ใช้ OT ตอนตามติด = คันหน้าเสียกำลังชั่วครู่ · อยู่ห่างใช้ OT ไม่มีผล (ขับอิสระ)", () => {
+    const { race, slow, me } = chase();
+    me.car.d = monza.lineOffset[Math.floor(me.car.s / DS)];
+    const ev: RaceEvent[] = [];
+    const free = (ot: boolean) => stepRace(race, { ...idealInput(monza, me.car), free: true, assist: 1, ot }, ev);
+    // ยังห่าง: กด OT แล้วคันหน้าไม่เป็นอะไร
+    for (let k = 0; k < 30; k++) free(true);
+    expect((slow.car.s - me.car.s - CAR_LEN) / me.car.v).toBeGreaterThan(OT_HIT_GAP);
+    expect(slow.otHit).toBe(0);
+    expect(ev.some((e) => e.kind === "otHit")).toBe(false);
+    // ตามจนติด แล้วกด OT
+    for (let k = 0; k < 120 * 6 && !me.held; k++) free(false);
+    expect(me.held).toBe(true);
+    me.car.energy = 1;
+    for (let k = 0; k < 12; k++) free(true);
+    expect(ev.filter((e) => e.kind === "otHit" && e.by === me.id && e.on === slow.id)).toHaveLength(1);
+    expect(slow.otHit).toBeGreaterThan(0);
+    // ปล่อย OT: ผลหายเองใน ~0.3 วิ
+    for (let k = 0; k < 60; k++) free(false);
+    expect(slow.otHit).toBeLessThanOrEqual(0);
   });
 
   it("ตามติดแล้วไม่เบรกเองเข้าโค้ง = ชนท้าย เสียความเร็วมาก", () => {

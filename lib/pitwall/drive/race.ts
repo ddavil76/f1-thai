@@ -44,6 +44,10 @@ const HOLD_DECEL_CLOSE = 90;
 export const PASS_WINDOW = 0.28;
 const PASS_STRAIGHT = 250;
 const PASS_TIMEOUT = 12;
+/** แบต OT ตอนตามติด (ห่างไม่เกิน OT_HIT_GAP วิ ในแนวเดียวกัน): คันหน้าเสียกำลังชั่วครู่ (ความเร็วสูงสุด/แรงเร่งลดลง OT_SLOW) */
+export const OT_HIT_GAP = 0.2;
+const OT_HIT_TIME = 0.3;
+export const OT_SLOW = 0.03;
 /** ลมดูดที่พาออกมาตอนออกแซง หายไปกี่ส่วนต่อวินาที */
 const CARRY_FADE = 0.3;
 /** หลุดโค้ง: เตือนได้กี่ครั้งก่อนโดนโทษ · โทษครั้งละกี่วินาที · นับซ้ำได้อีกหลังกี่วินาที */
@@ -111,6 +115,8 @@ export type RaceCar = Entrant & {
   box: number;
   /** AI: แผนเข้าพิท (จบรอบที่เท่าไร · ยางที่จะเปลี่ยน) */
   plan: { lap: number; next: Compound } | null;
+  /** โดนรถคันหลังใช้แบต OT ตามติด: เสียกำลังอีกกี่วินาที */
+  otHit: number;
 };
 
 /**
@@ -152,7 +158,8 @@ export type RaceEvent =
   | { kind: "pitEarly"; id: string }
   | { kind: "pitOut"; id: string }
   | { kind: "pitMiss"; id: string; penalty: number }
-  | { kind: "tyreLow"; id: string };
+  | { kind: "tyreLow"; id: string }
+  | { kind: "otHit"; by: string; on: string };
 
 export type Race = {
   track: DriveTrack;
@@ -229,6 +236,7 @@ export function createRace(track: DriveTrack, entrants: Entrant[], opts: { laps:
       pitOff: null,
       box: lane.boxes[team] ?? 0,
       plan: e.player || e.remote ? null : planStop(start, opts.laps, rng),
+      otHit: 0,
     };
   });
   return { track, laps: opts.laps, cars, t: 0, lights: 4.2 + rng() * 1.2, order: cars.map((_, i) => i), finished: false, rng, pitLane: lane };
@@ -673,6 +681,16 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     rc.tow = 0;
     rc.dirty = 0;
     if (inPit(rc)) return;
+    // ใช้แบต OT ตอนตามติดคันหน้า (≤ OT_HIT_GAP วิ): คันหน้าเสียกำลังชั่วครู่ ให้แซงง่ายขึ้น
+    // (รถเพื่อนออนไลน์จำลองอยู่ในเครื่องเพื่อน จึงไม่โดนผลนี้)
+    if (rc.car.ot) {
+      const fb = frontInBand(race, i);
+      if (fb.j >= 0 && !cars[fb.j].remote && gapSec(fb.gap, rc.car.v) <= OT_HIT_GAP) {
+        const o = cars[fb.j];
+        if (o.otHit <= 0) events.push({ kind: "otHit", by: rc.id, on: o.id });
+        o.otHit = OT_HIT_TIME;
+      }
+    }
     const f = ahead(race, i);
     if (f.j < 0) return;
     const o = cars[f.j].car;
@@ -750,6 +768,11 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     if (rc.carry > 0) {
       rc.carry = rc.pass ? Math.max(0, rc.carry - CARRY_FADE * STEP) : 0;
       mods = { tow: Math.max(rc.tow, rc.carry), dirty: rc.dirty };
+    }
+    // โดนคันหลังใช้แบต OT ตามติด: เสียกำลังชั่วครู่
+    if (rc.otHit > 0) {
+      rc.otHit -= STEP;
+      mods = { ...mods, boost: (mods.boost ?? 0) - OT_SLOW };
     }
     const want = input.lane ?? rc.lane;
     // กันชนท้าย: ความเร็วสูงสุดที่ยังค้างระยะ HOLD_GAP วินาทีหลังคันหน้าได้ (คำนวณก่อนขยับ)
