@@ -10,7 +10,7 @@ import { useDriveLink, type DriveLink } from "./driveSession";
 import { ASSIST_STEER, dragAxis, steerAxis, type Assist } from "@/lib/pitwall/drive/steer";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepFree, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
-import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
+import { advanceRemote, createRace, gapAhead, OFF_PENALTY, OT_HIT_GAP, OT_SLOW, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { nextPitEntry, PIT_MISS_PENALTY, STOP_MISS, STOP_WINDOW } from "@/lib/pitwall/drive/pit";
 import { COMPOUND_INFO, COMPOUNDS, suggestCompound, tyreGrip, type Compound } from "@/lib/pitwall/drive/tyres";
 import type { DriveSnap } from "@/lib/pitwall/drive/room";
@@ -263,7 +263,7 @@ function Setup({
               <b className="text-white">แซง:</b> เลี้ยวหลบออกจากท้ายคันหน้าเอง (ลมดูดพาออกมา + กด OT) แล้วขึ้นไปเคียง · เบียดข้างกัน = ถูกดันออก เสียความเร็วนิดหน่อย · เข้าโค้งเคียงกัน คันด้านนอกที่ไม่นำครึ่งคันต้องยอม
             </li>
             <li>
-              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง (แรงเร่งเพิ่ม · ความเร็วสูงสุด +5% · หมดใน ~4.5 วิ) · เบรกชาร์จเร็ว (แถบเขียว) · ยกคันเร่งชาร์จช้า · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม
+              <b className="text-white">ลมดูด / แบต (OT):</b> ออกจากท้ายคันหน้าได้ลมดูดพาไปครู่หนึ่ง · กด OT ค้างใช้แบตเร่ง (แรงเร่งเพิ่ม · ความเร็วสูงสุด +5% · หมดใน ~4.5 วิ) · เบรกชาร์จเร็ว (แถบเขียว) · ยกคันเร่งชาร์จช้า · ตามหลังไม่เกิน 1 วิตอนผ่านต้นโซนทางตรงได้พลังงานเพิ่ม · ใช้ OT ตอนตามติดคันหน้า (ไม่เกิน {OT_HIT_GAP} วิ) คันหน้าเสียกำลัง {Math.round(OT_SLOW * 100)}% ชั่วครู่ (AI ใช้ใส่คุณได้เหมือนกัน)
             </li>
             <li>
               <b className="text-white">หลุดโค้ง:</b> เข้าโค้งเร็วเกิน รถเลี้ยวไม่พอ ออกกว้างลงหญ้า (ฝืด เกาะน้อย ช้าลงมาก) · ล้อทั้งสี่ออกนอกถนนนับหนึ่งครั้ง · เตือน 3 ครั้ง ครั้งต่อไปโดน +5 วินาทีทุกครั้ง
@@ -936,6 +936,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       const revents: RaceEvent[] = [];
       let yieldMsgAt = 0;
       let contactAt = 0;
+      let otHitAt = 0;
       let towerAt = 0;
       const rowsOf = (r: Race): TowerRow[] => {
         const lead = r.cars[r.order[0]];
@@ -1061,7 +1062,10 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
                 setMsg({ id: now + 1, text: `แซงได้! P${race.order.indexOf(pi) + 1}`, tone: "good" });
               }
               else if (e.kind === "overtake" && e.on === me.id) setMsg({ id: now + 2, text: `โดนแซง · P${race.order.indexOf(pi) + 1}`, tone: "bad" });
-              else if (e.kind === "contact" && e.id === me.id && now - contactAt > 700) {
+              else if (e.kind === "otHit" && (e.by === me.id || e.on === me.id) && now - otHitAt > 2000) {
+                otHitAt = now;
+                setMsg(e.by === me.id ? { id: now + 17, text: "OT ตามติด! คันหน้าเสียกำลังชั่วครู่", tone: "good" } : { id: now + 18, text: "คันหลังใช้ OT ตามติด · เสียกำลังชั่วครู่", tone: "bad" });
+              } else if (e.kind === "contact" && e.id === me.id && now - contactAt > 700) {
                 contactAt = now;
                 sfx?.thump(0.5);
                 shake(40);
