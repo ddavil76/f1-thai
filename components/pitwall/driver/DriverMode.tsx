@@ -7,6 +7,7 @@ import { Btn, Card, Head, Seg } from "@/components/pitwall/ui";
 import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
+import { dragAxis, steerAxis, steerTarget, type Assist } from "@/lib/pitwall/drive/steer";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
@@ -33,6 +34,12 @@ type Settings = {
   /** สั่นมือถือตอนขึ้น kerb / หลุดโค้ง / ชนท้าย */
   haptics: boolean;
   autoBrake: boolean;
+  /** การเลี้ยว: manual = เลี้ยวเอง (◀ ▶ / ลากนิ้ว / ลูกศร) · auto = รถวิ่งตามไลน์ให้ กดแซงเพื่อเปลี่ยนเลน (แบบเดิม) */
+  steer: "manual" | "auto";
+  /** ระดับช่วยขับ: 2 ง่าย (เร่งให้ · Straight Mode ให้ · ประคองพวงมาลัยแรง) · 1 ปกติ (ประคองเบา) · 0 โปร */
+  assist: Assist;
+  /** มือถือ: เลี้ยวด้วยการลากนิ้ว หรือปุ่ม ◀ ▶ */
+  touchSteer: "drag" | "buttons";
   camera: CameraMode;
   gfx: "auto" | Gfx;
   /** Straight Mode: auto = เปิดเองทุกครั้งที่อยู่ในโซน · manual = กดเอง (E / Shift / ปุ่มบนจอ) */
@@ -48,6 +55,16 @@ type Settings = {
   /** ยางออกตัว (แข่ง/ออนไลน์) */
   startTyre: Compound;
 };
+
+/** คำอธิบายระดับช่วยขับ */
+const ASSIST_DESC: Record<Assist, string> = {
+  2: "ง่าย: รถเร่งให้ตลอด คุณกดเบรกก่อนเข้าโค้ง · เปิด Straight Mode ให้เอง · ปล่อยพวงมาลัยแล้วรถกลับ racing line เอง",
+  1: "ปกติ: เร่ง เบรก และ Straight Mode ตามที่ตั้งไว้ · ช่วยประคองพวงมาลัยกลับไลน์เล็กน้อย",
+  0: "โปร: ไม่มีตัวช่วยพวงมาลัย ต้องคุมไลน์เองตลอด",
+};
+
+/** ปล่อยปุ่มทั้งหมด (หยุดชั่วคราว / สลับแอป) กันรถเร่งหรือเลี้ยวค้าง */
+const RELEASE = { throttle: false, brake: false, touchT: false, touchB: false, pass: false, ot: false, touchO: false, left: false, right: false, touchL: false, touchR: false, drag: null };
 
 /** รถในสนามแข่ง: ผู้เล่น + นักขับคนอื่นจากทุกทีม (เรียงตามกริด) */
 function buildField(settings: Settings): Entrant[] {
@@ -127,7 +144,7 @@ const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 export default function DriverMode({ name, onExit }: { name: string; onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = typeof window === "undefined" ? null : readJson<Partial<Settings>>(SETTINGS_KEY);
-    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", train: false, haptics: true, autoBrake: false, camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", startTyre: "medium", ...saved };
+    return { team: 0, driver: 0, circuit: "monza", line: true, guide: "dynamic", train: false, haptics: true, autoBrake: false, steer: "manual", assist: 2, touchSteer: "drag", camera: "tv", gfx: "auto", sm: "auto", mode: "tt", raceLaps: 5, field: 10, difficulty: "normal", grid: "back", startTyre: "medium", ...saved };
   });
   const [driving, setDriving] = useState(false);
   const [room, setRoom] = useState<string | null>(null);
@@ -231,11 +248,11 @@ function Setup({
           </div>
         )}
         <p className="text-xs text-white/60">
-          คอม: <b>↑</b> หรือ <b>W</b> = คันเร่ง · <b>↓</b> <b>S</b> หรือ <b>Space</b> = เบรก · <b>E</b> หรือ <b>Shift</b> = Straight Mode · <b>C</b> = สลับกล้อง · <b>Esc</b> = หยุดชั่วคราว · มือถือ: ปุ่มเบรกซ้าย คันเร่งขวา
+          คอม: <b>↑</b> หรือ <b>W</b> = คันเร่ง · <b>↓</b> <b>S</b> หรือ <b>Space</b> = เบรก · <b>←</b> <b>→</b> หรือ <b>A</b> <b>D</b> = เลี้ยว (โหมดเลี้ยวเอง) · <b>E</b> หรือ <b>Shift</b> = Straight Mode · <b>C</b> = สลับกล้อง · <b>Esc</b> = หยุดชั่วคราว · มือถือ: นิ้วซ้ายเลี้ยว (ลากนิ้วหรือปุ่ม ◀ ▶) · นิ้วขวาเบรก/คันเร่ง
           {settings.mode !== "tt" && (
             <>
               {" "}
-              · แข่ง: <b>D</b> = แซง (เมื่อปุ่มแซงพร้อม) · <b>Q</b> (กดค้าง) = OT ใช้แบต · <b>P</b> = ขอ/ยกเลิกเข้าพิท · <b>1</b>/<b>2</b>/<b>3</b> = เลือกยาง S/M/H · ในพิท <b>Enter</b> หรือ <b>Space</b> = จอด / ไป · มือถือ: ปุ่ม “แซง” “OT” และ “PIT”
+              · แข่ง: <b>F</b> = แซงอัตโนมัติ (โหมดวิ่งตามไลน์ · กด <b>D</b> ได้ด้วย) · <b>Q</b> (กดค้าง) = OT ใช้แบต · <b>P</b> = ขอ/ยกเลิกเข้าพิท · <b>1</b>/<b>2</b>/<b>3</b> = เลือกยาง S/M/H · ในพิท <b>Enter</b> หรือ <b>Space</b> = จอด / ไป · มือถือ: ปุ่ม “แซง” “OT” และ “PIT”
             </>
           )}
         </p>
@@ -363,6 +380,28 @@ function Setup({
         </p>
       </Card>
       )}
+
+      <Card>
+        <Head kicker="การควบคุม" title="ระดับช่วยขับ" sub={ASSIST_DESC[settings.assist]} />
+        <Seg<Assist> value={settings.assist} onChange={(v) => set({ assist: v })} options={[{ v: 2, label: "ง่าย" }, { v: 1, label: "ปกติ" }, { v: 0, label: "โปร" }]} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs font-bold text-white/70">การเลี้ยว</span>
+            <Seg<Settings["steer"]> value={settings.steer} onChange={(v) => set({ steer: v })} options={[{ v: "manual", label: "เลี้ยวเอง" }, { v: "auto", label: "วิ่งตามไลน์ให้" }]} />
+          </label>
+          {settings.steer === "manual" && (
+            <label className="space-y-1">
+              <span className="text-xs font-bold text-white/70">เลี้ยวบนมือถือ</span>
+              <Seg<Settings["touchSteer"]> value={settings.touchSteer} onChange={(v) => set({ touchSteer: v })} options={[{ v: "drag", label: "ลากนิ้ว" }, { v: "buttons", label: "ปุ่ม ◀ ▶" }]} />
+            </label>
+          )}
+        </div>
+        <p className="text-[11px] text-white/60">
+          {settings.steer === "manual"
+            ? "เลี้ยวเองเพื่อเลือกไลน์: racing line เร็วที่สุด · ออกนอกไลน์ในโค้งต้องช้าลง · หลบขึ้นไปแซงคันหน้าเอง (ติดท้ายคันหน้าในไลน์เดียวกัน = ต้องรอ)"
+            : "แบบเดิม: รถวิ่งตาม racing line ให้ · ตามติดคันหน้าแล้วกดปุ่ม “แซง” รถเปลี่ยนเลนขึ้นไปเคียงให้เอง"}
+        </p>
+      </Card>
 
       <details className="card group p-4">
         <summary className="cursor-pointer select-none list-none">
@@ -640,6 +679,8 @@ type Hud = {
   tow: HTMLSpanElement | null;
   side: HTMLSpanElement | null;
   lane: HTMLSpanElement | null;
+  /** จุดตำแหน่งรถบนแถบเลี้ยว (ซ้าย-ขวาบนถนน) */
+  steer: HTMLSpanElement | null;
   pass: HTMLButtonElement | null;
   lights: HTMLDivElement | null;
   dots: (SVGCircleElement | null)[];
@@ -695,7 +736,19 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const team = TEAMS[settings.team] ?? TEAMS[0];
   const driver = team.drivers[settings.driver] ?? team.drivers[0];
   const host = useRef<HTMLDivElement>(null);
-  const input = useRef({ throttle: false, brake: false, touchT: false, touchB: false, smArm: false, pass: false, ot: false, touchO: false, pitReq: undefined as Compound | null | undefined, pitAct: false });
+  const input = useRef({
+    throttle: false, brake: false, touchT: false, touchB: false, smArm: false, pass: false, ot: false, touchO: false, pitReq: undefined as Compound | null | undefined, pitAct: false,
+    // เลี้ยว: ปุ่ม/คีย์ซ้ายขวา · ลากนิ้ว (−1..1 หรือ null = ไม่ได้ลาก) · เลนเป้าหมาย
+    left: false, right: false, touchL: false, touchR: false, drag: null as number | null, lane: 0,
+  });
+  const manual = settings.steer === "manual";
+  const dragRef = useRef<{ id: number; x0: number } | null>(null);
+  const endDrag = (e: { pointerId: number }) => {
+    if (dragRef.current?.id !== e.pointerId) return;
+    dragRef.current = null;
+    input.current.drag = null;
+  };
+  const autoGas = settings.assist === 2;
   const isRace = settings.mode === "race";
   // พิท: ยางที่เลือกจะเปลี่ยน · ขอเข้าพิทอยู่ไหม (ฝั่งจอ — ค่าจริงอยู่ใน race)
   const [pitTyre, setPitTyre] = useState<Compound>("hard");
@@ -716,7 +769,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const [tower, setTower] = useState<TowerRow[]>([]);
   const [result, setResult] = useState<TowerRow[] | null>(null);
   const [runId, setRunId] = useState(0);
-  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, dot: null, lap: null, sm: null, battery: null, tow: null, side: null, lane: null, pass: null, lights: null, dots: [], tyre: null, wear: null, wearTxt: null, pitBtn: null, pitPanel: null, pitMark: null, pitAct: null, pitInfo: null, pitBar: null });
+  const hud = useRef<Hud>({ time: null, delta: null, speed: null, gear: null, thr: null, brk: null, dot: null, lap: null, sm: null, battery: null, tow: null, side: null, lane: null, steer: null, pass: null, lights: null, dots: [], tyre: null, wear: null, wearTxt: null, pitBtn: null, pitPanel: null, pitMark: null, pitAct: null, pitInfo: null, pitBar: null });
   const sceneRef = useRef<DriveScene | null>(null);
   const [camera, setCamera] = useState<CameraMode>(settings.camera);
   const [line, setLine] = useState(settings.line);
@@ -752,7 +805,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
   const pausedRef = useRef(false);
   useEffect(() => {
     pausedRef.current = paused;
-    if (paused) Object.assign(input.current, { throttle: false, brake: false, touchT: false, touchB: false, pass: false, ot: false, touchO: false });
+    if (paused) Object.assign(input.current, RELEASE);
   }, [paused]);
 
   // แผนที่ย่อ (จุดละ ~40 ม.)
@@ -786,6 +839,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
     const keys = (e: KeyboardEvent, down: boolean) => {
       const k = e.key;
       if (k === "ArrowUp" || k === "w" || k === "W") input.current.throttle = down;
+      else if (k === "ArrowLeft" || k === "a" || k === "A") input.current.left = down;
+      else if (k === "ArrowRight" || (manual && (k === "d" || k === "D"))) input.current.right = down;
       else if (k === "ArrowDown" || k === "s" || k === "S" || k === " ") {
         input.current.brake = down;
         // ในพิท: Space = จอด / ไป (รถวิ่งเอง ไม่ต้องเบรก)
@@ -796,8 +851,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         // กดหนึ่งครั้ง = เตรียมเปิด/ปิด Straight Mode (โหมดกดเอง)
         if (down && !e.repeat) input.current.smArm = !input.current.smArm;
       }
-      else if (k === "d" || k === "D") {
-        // กดแซง (ทำงานเมื่อปุ่มแซงพร้อม)
+      else if (k === "d" || k === "D" || k === "f" || k === "F") {
+        // กดแซง (ทำงานเมื่อปุ่มแซงพร้อม · โหมดเลี้ยวเอง D = เลี้ยวขวา ใช้ F แทน)
         if (down && !e.repeat) input.current.pass = true;
       } else if (k === "q" || k === "Q") input.current.ot = down;
       else if (k === "p" || k === "P") {
@@ -813,7 +868,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
     const dn = (e: KeyboardEvent) => keys(e, true);
     const up = (e: KeyboardEvent) => keys(e, false);
     // สลับแอป/แท็บ: ปล่อยปุ่มทั้งหมด กันรถเร่งค้าง
-    const blur = () => Object.assign(input.current, { throttle: false, brake: false, touchT: false, touchB: false, pass: false, ot: false, touchO: false });
+    const blur = () => Object.assign(input.current, RELEASE);
     window.addEventListener("keydown", dn);
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);
@@ -822,7 +877,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [onExit]);
+  }, [onExit, manual]);
 
   // ฉาก 3D + ลูปจำลอง
   useEffect(() => {
@@ -933,6 +988,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       const events: StepEvent[] = [];
       let last = performance.now();
       let acc = 0;
+      /** ปุ่มของผู้เล่นหนึ่งขั้นเวลา: คันเร่ง/เบรก · Straight Mode · เลนเป้าหมายจากการเลี้ยว (โหมดเลี้ยวเอง) · ระดับง่าย = เร่งให้ */
+      const easy = settings.assist === 2;
+      const pedals = (i: typeof input.current, step: number) => {
+        const brake = i.brake || i.touchB;
+        const lane = settings.steer === "manual" ? (i.lane = steerTarget(i.lane, steerAxis(i.left || i.touchL, i.right || i.touchR, i.drag), settings.assist, step)) : undefined;
+        return { throttle: easy ? !brake : i.throttle || i.touchT, brake, sm: settings.sm === "auto" || easy || i.smArm, lane };
+      };
       let hudAt = 0;
       let wasInvalid = false;
       let prevV = car.v;
@@ -997,7 +1059,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           while (acc >= RACE_STEP) {
             acc -= RACE_STEP;
             const inPitNow = race.cars[pi].pit !== null;
-            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB, sm: settings.sm === "auto" || i.smArm, pass: i.pass, ot: i.ot || i.touchO, pitReq: i.pitReq, pitStop: inPitNow && i.pitAct, pitGo: inPitNow && i.pitAct };
+            const want = { ...pedals(i, RACE_STEP), pass: !manual && i.pass, ot: i.ot || i.touchO, pitReq: i.pitReq, pitStop: inPitNow && i.pitAct, pitGo: inPitNow && i.pitAct };
+            // ในพิท/แซงอัตโนมัติ รถเลือกเลนเอง → เลนเป้าหมายตามตำแหน่งจริง (ออกพิทไม่กระตุก)
+            if (inPitNow || race.cars[pi].pass) i.lane = car.lat;
             i.pass = false;
             i.pitReq = undefined;
             i.pitAct = false;
@@ -1094,7 +1158,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           const i = input.current;
           while (acc >= STEP) {
             acc -= STEP;
-            const want = { throttle: i.throttle || i.touchT, brake: i.brake || i.touchB, sm: settings.sm === "auto" || i.smArm };
+            const want = pedals(i, STEP);
             if (settings.autoBrake) {
               const ideal = idealInput(track, car);
               want.brake = want.brake || ideal.brake;
@@ -1341,7 +1405,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               h.delta.style.color = delta === null ? "" : delta <= 0 ? "#4ade80" : "#ff3b2f";
             }
           }
-          if (h.thr) h.thr.style.opacity = i.throttle || i.touchT ? "1" : "0.18";
+          if (h.thr) h.thr.style.opacity = i.throttle || i.touchT || (settings.assist === 2 && !(i.brake || i.touchB)) ? "1" : "0.18";
+          if (h.steer) h.steer.style.transform = `translateX(${(car.lat * 56).toFixed(1)}px)`;
           if (h.brk) h.brk.style.opacity = i.brake || i.touchB ? "1" : "0.18";
           // สถานะ Straight Mode
           if (h.sm) {
@@ -1476,7 +1541,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           </ol>
 
           {/* แบตเตอรี่ · ลมดูด · มีรถข้าง ๆ · เลน */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-46 flex flex-col items-center gap-1 sm:bottom-24">
+          <div className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1 sm:bottom-24 ${manual ? "bottom-50" : "bottom-46"}`}>
             <span ref={(n) => void (hud.current.tow = n)} className="poster rounded bg-[#0ea5e9]/80 px-2 text-xs tracking-wide opacity-0 transition-opacity">
               SLIPSTREAM
             </span>
@@ -1499,7 +1564,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             </div>
           </div>
 
-          {/* ปุ่มแซง: ขึ้นเองเมื่อตามติดคันหน้า · กดครั้งเดียว รถเปลี่ยนเลนและแซงให้ */}
+          {/* ปุ่มแซง (โหมดวิ่งตามไลน์): ขึ้นเองเมื่อตามติดคันหน้า · กดครั้งเดียว รถเปลี่ยนเลนและแซงให้ */}
+          {!manual && (
           <button
             ref={(n) => void (hud.current.pass = n)}
             type="button"
@@ -1514,6 +1580,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           >
             แซง ▶
           </button>
+          )}
           <button
             type="button"
             aria-label="OT ใช้แบต (กดค้าง)"
@@ -1530,7 +1597,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               input.current.touchO = false;
             }}
             onContextMenu={(e) => e.preventDefault()}
-            className={`${pad} absolute bottom-30 right-33 h-12 w-16 border-[#38bdf8] bg-black/40 text-xs text-[#38bdf8] active:bg-[#38bdf8]/40 sm:bottom-26 sm:right-30`}
+            className={`${pad} absolute bottom-30 h-12 w-16 border-[#38bdf8] bg-black/40 text-xs text-[#38bdf8] active:bg-[#38bdf8]/40 sm:bottom-26 sm:right-30 ${manual ? "right-3" : "right-33"}`}
           >
             OT
           </button>
@@ -1675,7 +1742,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         ref={(n) => void (hud.current.sm = n)}
         data-st="off"
         aria-live="polite"
-        className="poster pointer-events-none absolute right-3 top-38 rounded-lg border-2 px-3 py-1 text-sm tracking-wide opacity-0 transition-opacity duration-200 sm:right-auto sm:left-1/2 sm:top-24 sm:-translate-x-1/2 sm:text-base"
+        className="poster pointer-events-none absolute left-3 top-38 rounded-lg border-2 px-3 py-1 text-sm tracking-wide opacity-0 transition-opacity duration-200 sm:left-1/2 sm:top-24 sm:-translate-x-1/2 sm:text-base"
       />
 
       {msg && (
@@ -1696,7 +1763,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       </svg>
 
       {/* หน้าปัด: ความเร็ว เกียร์ และปุ่มที่กดอยู่ */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-1">
+      <div className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1 ${manual ? "bottom-28 sm:bottom-3" : "bottom-3"}`}>
         <div className="flex items-end gap-3 rounded-2xl bg-black/55 px-4 py-2 backdrop-blur">
           <div ref={(n) => void (hud.current.brk = n)} className="h-10 w-2.5 rounded-full bg-(--color-f1)" aria-hidden />
           <div className="text-center">
@@ -1744,8 +1811,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         </div>
       )}
 
-      {/* ปุ่ม Straight Mode (โหมดกดเอง) */}
-      {settings.sm === "manual" && (
+      {/* ปุ่ม Straight Mode (โหมดกดเอง · ระดับง่ายเปิดให้เอง) */}
+      {settings.sm === "manual" && settings.assist !== 2 && (
         <button
           type="button"
           aria-label="เปิด/ปิด Straight Mode"
@@ -1753,13 +1820,93 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             input.current.smArm = !input.current.smArm;
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`${pad} absolute bottom-30 right-3 h-14 w-28 border-[#4ade80] bg-black/40 text-xs active:bg-[#16a34a]/60 sm:bottom-64 sm:w-24`}
+          className={`${pad} absolute h-14 border-[#4ade80] bg-black/40 text-xs active:bg-[#16a34a]/60 ${manual ? "bottom-28 left-3 w-24" : "bottom-30 right-3 w-28 sm:bottom-64 sm:w-24"}`}
         >
           SM
         </button>
       )}
 
-      {/* ปุ่มสัมผัส: ซ้ายเบรก ขวาคันเร่ง (คอมก็คลิกค้างได้) */}
+      {/* นิ้วซ้าย: เลี้ยว (ลากนิ้วซ้าย-ขวา หรือปุ่ม ◀ ▶) */}
+      {manual && settings.touchSteer === "drag" && (
+        <div
+          role="slider"
+          aria-label="ลากซ้าย-ขวาเพื่อเลี้ยว"
+          aria-valuemin={-1}
+          aria-valuemax={1}
+          aria-valuenow={0}
+          className="absolute bottom-0 left-0 h-[42%] w-[55%] touch-none select-none"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            dragRef.current = { id: e.pointerId, x0: e.clientX };
+            input.current.drag = 0;
+          }}
+          onPointerMove={(e) => {
+            const d = dragRef.current;
+            if (!d || d.id !== e.pointerId) return;
+            const r = dragAxis(d.x0, e.clientX);
+            d.x0 = r.x0;
+            input.current.drag = r.axis;
+          }}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onLostPointerCapture={endDrag}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div className="pointer-events-none absolute bottom-4 left-3 w-36 space-y-1.5 rounded-2xl border border-white/15 bg-black/45 p-2.5 backdrop-blur">
+            <div className="relative h-2 rounded-full bg-white/15">
+              <span className="absolute -top-1 bottom-[-4px] left-1/2 w-0.5 -translate-x-1/2 bg-white/40" />
+              <span ref={(n) => void (hud.current.steer = n)} className="absolute left-1/2 top-1/2 -ml-2.5 -mt-2.5 h-5 w-5 rounded-full border-2 border-white bg-(--color-f1)" />
+            </div>
+            <p className="text-center text-[11px] text-white/70">ลากซ้าย-ขวาเพื่อเลี้ยว</p>
+          </div>
+        </div>
+      )}
+      {manual && settings.touchSteer === "buttons" && (
+        <>
+        <button
+          type="button"
+          aria-label="เลี้ยวซ้าย (กดค้าง)"
+          onPointerDown={() => {
+            input.current.touchL = true;
+          }}
+          onPointerUp={() => {
+            input.current.touchL = false;
+          }}
+          onPointerCancel={() => {
+            input.current.touchL = false;
+          }}
+          onPointerLeave={() => {
+            input.current.touchL = false;
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          className={`${pad} absolute bottom-3 left-3 h-20 w-20 border-white/60 bg-black/40 text-2xl active:bg-white/30`}
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          aria-label="เลี้ยวขวา (กดค้าง)"
+          onPointerDown={() => {
+            input.current.touchR = true;
+          }}
+          onPointerUp={() => {
+            input.current.touchR = false;
+          }}
+          onPointerCancel={() => {
+            input.current.touchR = false;
+          }}
+          onPointerLeave={() => {
+            input.current.touchR = false;
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          className={`${pad} absolute bottom-3 left-25 h-20 w-20 border-white/60 bg-black/40 text-2xl active:bg-white/30`}
+        >
+          ▶
+        </button>
+        </>
+      )}
+
+      {/* เบรก/คันเร่ง: โหมดเลี้ยวเองอยู่ฝั่งขวาทั้งคู่ · โหมดวิ่งตามไลน์ ซ้ายเบรก ขวาคันเร่ง · ระดับง่ายเร่งให้ (ไม่มีปุ่มคันเร่ง) */}
       <button
         type="button"
         aria-label="เบรก (กดค้าง)"
@@ -1776,30 +1923,34 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           input.current.touchB = false;
         }}
         onContextMenu={(e) => e.preventDefault()}
-        className={`${pad} absolute bottom-3 left-3 h-24 w-28 border-(--color-f1) bg-(--color-f1)/25 active:bg-(--color-f1)/60 sm:h-20 sm:w-24`}
+        className={`${pad} absolute bottom-3 border-(--color-f1) bg-(--color-f1)/25 active:bg-(--color-f1)/60 ${
+          !manual ? "left-3 h-24 w-28 sm:h-20 sm:w-24" : autoGas ? "right-3 h-24 w-36 sm:bottom-40 sm:h-20" : "right-29 h-20 w-20 sm:bottom-40"
+        }`}
       >
         เบรก
       </button>
-      <button
-        type="button"
-        aria-label="คันเร่ง (กดค้าง)"
-        onPointerDown={() => {
-          input.current.touchT = true;
-        }}
-        onPointerUp={() => {
-          input.current.touchT = false;
-        }}
-        onPointerCancel={() => {
-          input.current.touchT = false;
-        }}
-        onPointerLeave={() => {
-          input.current.touchT = false;
-        }}
-        onContextMenu={(e) => e.preventDefault()}
-        className={`${pad} absolute bottom-3 right-3 h-24 w-28 border-[#22c55e] bg-[#22c55e]/25 active:bg-[#22c55e]/60 sm:bottom-40 sm:h-20 sm:w-24`}
-      >
-        คันเร่ง
-      </button>
+      {!autoGas && (
+        <button
+          type="button"
+          aria-label="คันเร่ง (กดค้าง)"
+          onPointerDown={() => {
+            input.current.touchT = true;
+          }}
+          onPointerUp={() => {
+            input.current.touchT = false;
+          }}
+          onPointerCancel={() => {
+            input.current.touchT = false;
+          }}
+          onPointerLeave={() => {
+            input.current.touchT = false;
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          className={`${pad} absolute bottom-3 right-3 h-24 border-[#22c55e] bg-[#22c55e]/25 active:bg-[#22c55e]/60 ${manual ? "w-24 sm:bottom-40 sm:h-20" : "w-28 sm:bottom-40 sm:h-20 sm:w-24"}`}
+        >
+          คันเร่ง
+        </button>
+      )}
     </div>,
     document.body,
   );
