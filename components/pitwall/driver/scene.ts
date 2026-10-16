@@ -79,6 +79,10 @@ export type DriveScene = {
     guide?: DriveSceneGuide;
     /** กำลังใช้แบต Overtake (มุมกล้องกว้างขึ้น ให้รู้สึกพุ่ง) */
     boost?: boolean;
+    /** ขับอิสระ: ทิศรถเทียบทิศถนน (เรเดียน, บวก = หันขวา) · พวงมาลัย −1..1 · ยางใกล้หลุดเกาะ 0..1 — ไม่ใส่ psi = หันตามเส้นที่วิ่ง */
+    psi?: number;
+    steer?: number;
+    slip?: number;
   }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
@@ -1118,7 +1122,18 @@ export function createDriveScene(opts: {
   /** วางรถ: หันหัวตามทิศของ racing line (ไม่ใช่เส้นกลางถนน) — ระยะเยื้องจากไลน์ (ไถล) คงที่ตลอดช่วงที่ดูทิศ */
   // หันหัวรถตามการเคลื่อนด้านข้าง (เปลี่ยนเลน · เลี้ยวเข้า/ออกพิท) — ไม่ไถลข้างแบบปู
   const sideYaw = new WeakMap<Obj, { s: number; lat: number; yaw: number }>();
-  const place = (obj: Obj, s: number, lateral: number, yaw = 0) => {
+  const place = (obj: Obj, s: number, lateral: number, yaw = 0, psi?: number) => {
+    if (psi !== undefined) {
+      // ขับอิสระ: ทิศรถมาจากการจำลองตรง ๆ (ทิศเส้นกลางถนน + psi)
+      sideYaw.delete(obj);
+      const p = poseAt(t, s, lateral);
+      const y = surfaceAt(t, s, lateral);
+      const rise = (heightAt(t, s + 3) - heightAt(t, s - 3)) / 6;
+      obj.position.set(p.x, y, p.z);
+      tmp.set(p.x + Math.cos(p.heading + psi + yaw), y + rise, p.z + Math.sin(p.heading + psi + yaw));
+      obj.lookAt(tmp);
+      return;
+    }
     const prev = sideYaw.get(obj);
     let turn = prev?.yaw ?? 0;
     if (prev && Math.abs(s - prev.s) < 50) {
@@ -1154,7 +1169,7 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus, psi, steer, slip = 0 }) {
       clock += dt;
       if (tyre) car.setTyre(tyre);
       drawGuide(s, speed, accel, dt, guide);
@@ -1171,7 +1186,8 @@ export function createDriveScene(opts: {
       const rel = lateral - sample(t, t.lineOffset, s);
       const latRate = dt > 0 ? (rel - motion.lastLat) / dt : 0;
       motion.lastLat = rel;
-      const slideYaw = speed > 3 ? -Math.atan2(latRate, speed) * 1.4 : 0;
+      // ขับอิสระ: ทิศรถมาจาก psi แล้ว — ท้ายปัดเล็กน้อยเข้าด้านในเมื่อยางใกล้หลุดเกาะ
+      const slideYaw = psi !== undefined ? (steer ?? 0) * slip * 0.08 : speed > 3 ? -Math.atan2(latRate, speed) * 1.4 : 0;
       motion.yaw += (Math.max(-0.22, Math.min(0.22, slideYaw)) - motion.yaw) * k;
       // เอียงออกนอกโค้ง (แรงเหวี่ยง) · หัวทิ่มเมื่อเบรก ท้ายย่อเมื่อเร่ง
       const lat = speed * speed * curve;
@@ -1180,11 +1196,11 @@ export function createDriveScene(opts: {
       // แกน x: หมุนบวก = หัวทิ่ม → เบรก (accel < 0) หัวทิ่ม
       motion.pitch += (Math.max(-0.025, Math.min(0.03, -accel * 0.0011)) - motion.pitch) * k;
       // ล้อหน้าเลี้ยวตามโค้ง (Ackermann คร่าว ๆ) + แก้ท้ายปัด
-      const steerTarget = Math.max(-0.5, Math.min(0.5, -Math.atan(WHEELBASE * curve) * 1.6 + motion.yaw * 0.8));
+      const steerTarget = steer !== undefined ? -steer * 0.42 : Math.max(-0.5, Math.min(0.5, -Math.atan(WHEELBASE * curve) * 1.6 + motion.yaw * 0.8));
       motion.steer += (steerTarget - motion.steer) * Math.min(1, dt * 12);
       motion.spin += (speed / WHEEL_R) * dt;
 
-      place(car.root, s, lateral, motion.yaw);
+      place(car.root, s, lateral, motion.yaw, psi);
       // ถนนเอียง (bank > 0 = ฝั่งขวาสูง) → ตัวรถเอียงตาม (หมุน z บวก = ฝั่งซ้ายยก)
       const bankRoll = -sample(t, t.bank, s);
       car.body.rotation.set(motion.pitch, 0, motion.roll + bankRoll);

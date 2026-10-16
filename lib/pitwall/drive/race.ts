@@ -15,7 +15,7 @@
  *  ขอเข้าพิท → ถึงทางเข้ารถวิ่งเองด้วยความเร็วพิทเลน → กด "จอด" ให้ตรงกรอบอู่ทีม → เปลี่ยนยาง → ไฟเขียวกด "ไป"
  *  รถในพิทเลนไม่ชน/ไม่บัง/ไม่ให้ลมดูดกับรถบนสนาม
  */
-import { advanceCar, idealInput, newCar, perfOf, STEP, stepCar, type CarState, type Input, type Mods, type Perf, type StepEvent } from "./car";
+import { advanceCar, idealInput, newCar, perfOf, STEP, stepCar, stepFree, syncLat, type CarState, type Input, type Mods, type Perf, type StepEvent } from "./car";
 import { accelFor, DS, laneValue, laneZone, sample, VMAX, type DriveTrack } from "./line";
 import { AUTO_GO, BOX_SHIFT, EARLY_GO, nextPitEntry, PIT_MISS_PENALTY, PIT_QUEUE, PIT_V, pitLane, pitLateral, STOP_BASE, STOP_DECEL, STOP_MISS, STOP_WINDOW, stopExtra, stopGrade, wallFrom, wallTo, type PitLane, type StopGrade } from "./pit";
 import { COMPOUNDS, EXCURSION_WEAR, newTyre, suggestCompound, TYRE_LIFE, tyreGrip, wearPerMeter, wearTyre, type Compound, type Tyre } from "./tyres";
@@ -143,6 +143,7 @@ export type RaceEvent =
   | { kind: "detect"; id: string }
   | { kind: "offtrack"; id: string; n: number; penalty: number }
   | { kind: "bump"; id: string }
+  | { kind: "contact"; id: string }
   | { kind: "yield"; id: string }
   | { kind: "lap"; id: string; lap: number; time: number }
   | { kind: "finish"; id: string; pos: number }
@@ -457,10 +458,10 @@ function aiInput(race: Race, i: number, events: RaceEvent[]): Input {
 }
 
 /**
- * ปุ่มของผู้เล่น · pass = กดแซง (เปลี่ยนเลนขึ้นไปเคียง) · ot = กดค้างใช้แบต
+ * ปุ่มของผู้เล่น · free = ขับอิสระ (พวงมาลัย steer/assist · ไม่มีเลน) · pass = กดแซงแบบเลน (เปลี่ยนเลนขึ้นไปเคียง — ใช้เมื่อไม่ได้ขับอิสระ) · ot = กดค้างใช้แบต
  * pitReq = ขอ/ยกเลิกเข้าพิท (ยางที่จะเปลี่ยน · null = ยกเลิก · ไม่ใส่ = ไม่เปลี่ยน) · pitStop = กดจอด · pitGo = กดปล่อยรถ
  */
-export type RaceInput = Input & { pass?: boolean; pitReq?: Compound | null; pitStop?: boolean; pitGo?: boolean };
+export type RaceInput = Input & { free?: boolean; pass?: boolean; pitReq?: Compound | null; pitStop?: boolean; pitGo?: boolean };
 
 
 /** ระยะก่อนทางเข้าพิทที่รถเริ่มชิดเลนฝั่งพิท (เมตร) */
@@ -507,6 +508,8 @@ function enterPit(race: Race, rc: RaceCar, c: Compound, events: RaceEvent[]) {
   rc.car.sm = false;
   rc.car.ot = false;
   rc.car.slide = 0;
+  rc.car.psi = 0;
+  rc.car.steer = 0;
   rc.pitOff = rc.pit.from;
   events.push({ kind: "pitIn", id: rc.id });
 }
@@ -638,6 +641,8 @@ function stepPit(race: Race, rc: RaceCar, press: { stop: boolean; go: boolean },
     c.lat = race.pitLane.side;
     rc.lane = c.lat;
     c.slide = 0;
+    c.d = laneValue(t, "offset", c.s, c.lat);
+    c.psi = 0;
     events.push({ kind: "pitOut", id: rc.id });
     return;
   }
@@ -720,8 +725,13 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     }
     let input: Input;
     let mods: Mods = { tow: rc.tow, dirty: rc.dirty };
-    if (rc.player) {
-      // ผู้เล่น: ไม่มีปุ่มเปลี่ยนเลน — กดแซงแล้วรถเปลี่ยนเลนขึ้นไปเคียง และกลับ racing line ให้เอง
+    const free = rc.player && !!player.free;
+    if (free) {
+      // ขับอิสระ: เลี้ยวเอง · ขอเข้าพิทไว้แล้วถึงช่วงก่อนทางเข้า = รถชิดฝั่งพิทเอง
+      const aim = rc.pitWant && approachingPit(race, rc.car.s) ? laneValue(t, "offset", rc.car.s, race.pitLane.side) : undefined;
+      input = { ...player, aim };
+    } else if (rc.player) {
+      // ผู้เล่น (แบบเลน): ไม่มีปุ่มเปลี่ยนเลน — กดแซงแล้วรถเปลี่ยนเลนขึ้นไปเคียง และกลับ racing line ให้เอง
       if (player.pass) rc.passWant = 0.4;
       if (rc.passWant > 0) {
         rc.passWant -= STEP;
@@ -758,7 +768,9 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     const sPre = rc.car.s;
     // ยาง: การเกาะถนนตามชนิด/การสึก/ความเย็น
     const g = tyreGrip(rc.tyre);
-    stepCar(t, rc.car, { ...input, lane: want }, g === 1 ? rc.perf : { ...rc.perf, grip: rc.perf.grip * g }, stepEv, mods);
+    const perf = g === 1 ? rc.perf : { ...rc.perf, grip: rc.perf.grip * g };
+    if (free) stepFree(t, rc.car, input, perf, stepEv, mods);
+    else stepCar(t, rc.car, { ...input, lane: want }, perf, stepEv, mods);
     rc.held = rc.car.v > vHold;
     if (rc.held) {
       // อยู่ในระยะกันชนแล้ว (คันหน้าเบรกแรง) → ชะลอรวมกับเบรกเองได้ถึง HOLD_DECEL_CLOSE ไม่งั้นไหลไปทับคันหน้า
@@ -768,7 +780,22 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     }
     rc.heldT = rc.held || (fb.j >= 0 && (fb.gap - CAR_LEN) / Math.max(15, rc.car.v) < FOLLOW_NEAR) ? rc.heldT + STEP : 0;
     rc.blocked = false;
-    if (rc.car.lat !== before) {
+    if (free) {
+      rc.lane = rc.car.lat;
+      // ขับอิสระ: เบียดข้างกับรถคันอื่น → ดันออกด้านข้าง หัวรถตรงขึ้น เสียความเร็วนิดหน่อย
+      for (const o of cars) {
+        if (o === rc || inPit(o) || Math.abs(o.car.s - rc.car.s) >= CAR_LEN * 0.8) continue;
+        const dl = rc.car.d - latM(t, o.car);
+        if (Math.abs(dl) >= CAR_W) continue;
+        const side = dl === 0 ? 1 : Math.sign(dl);
+        rc.car.d = latM(t, o.car) + side * CAR_W;
+        if (Math.sign(rc.car.psi) !== side) rc.car.psi *= 0.3;
+        rc.car.v *= 0.997;
+        syncLat(t, rc.car);
+        events.push({ kind: "contact", id: rc.id });
+        rc.blocked = true;
+      }
+    } else if (rc.car.lat !== before) {
       const now = rc.car.lat;
       // ห้ามตัดเข้าเลนที่มีรถเคียงอยู่ หรือมีรถอยู่ข้างหน้าใกล้เกินระยะกันชนท้าย
       const room = CAR_LEN + HOLD_GAP * rc.car.v * 0.6;
@@ -821,7 +848,7 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
   for (let i = 0; i < cars.length; i++) {
     const rc = cars[i];
     if (!rc.player) continue;
-    const chk = rc.pass || rc.pit || rc.finish !== null ? ({ state: "none" } as const) : passCheck(race, i);
+    const chk = player.free || rc.pass || rc.pit || rc.finish !== null ? ({ state: "none" } as const) : passCheck(race, i);
     rc.passState = chk.state;
     rc.passLane = chk.state === "ready" ? chk.lane : null;
   }

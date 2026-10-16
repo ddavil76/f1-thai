@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { buildDriveTrack, DS, laneValue, poseAt, sample, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { hasRealTrack, loadRawTrack } from "@/lib/pitwall/drive/tracks";
 import { idealInput } from "@/lib/pitwall/drive/car";
-import { createRace, packState, setRemote, stepRace, stopError, type Entrant, type Race, type RaceCar, type RaceEvent, type RaceInput } from "@/lib/pitwall/drive/race";
+import { CAR_LEN, createRace, packState, setRemote, stepRace, stopError, type Entrant, type Race, type RaceCar, type RaceEvent, type RaceInput } from "@/lib/pitwall/drive/race";
 import { BOX_GAP, pitLateral, PIT_MISS_PENALTY, PIT_QUEUE, pitLane, STOP_BASE, STOP_MISS, stopExtra, stopGrade } from "@/lib/pitwall/drive/pit";
 import { lapsLeft, newTyre, suggestCompound, TYRE_LIFE, tyreGrip, wearPerMeter, wearTyre } from "@/lib/pitwall/drive/tyres";
 import { CIRCUITS, TEAMS } from "@/lib/pitwall/teams";
@@ -161,6 +161,26 @@ describe("เข้าพิท", { timeout: 30000 }, () => {
     expect(me.pits).toBe(1);
     expect(atEntry).toBeCloseTo(race.pitLane.side, 1);
     expect(jump).toBeLessThan(0.2);
+  });
+
+  it("ขับอิสระ: แข่งกับ AI จนจบ เข้าพิทได้ (ช่วงก่อนทางเข้ารถชิดฝั่งพิทเอง) และรถไม่ทับกัน", () => {
+    const race = createRace(monza, field(6, 5), { laps: 2, difficulty: "normal", seed: 4 });
+    const me = race.cars.find((c) => c.player)!;
+    let overlap = 0;
+    let atEntry: number | null = null;
+    for (let k = 0; k < 120 * 60 * 6 && me.finish === null; k++) {
+      stepRace(race, { ...idealInput(monza, me.car, 1, tyreGrip(me.tyre)), free: true, assist: 1, pitReq: me.pits === 0 && me.pitWant === null && !me.pit ? "hard" : undefined, pitStop: me.pit?.phase === "lane" && stopError(me) >= 0, pitGo: !!me.pit?.ready });
+      if (me.pit && atEntry === null) atEntry = me.car.d - laneValue(monza, "offset", me.car.s, race.pitLane.side);
+      for (const o of race.cars) {
+        if (o === me || o.pitOff !== null || me.pitOff !== null) continue;
+        if (Math.abs(o.car.s - me.car.s) < CAR_LEN * 0.8 && Math.abs(o.car.d - me.car.d) < 1.85) overlap++;
+      }
+    }
+    expect(me.finish).not.toBeNull();
+    expect(me.pits).toBe(1);
+    expect(me.penalty).toBe(0);
+    expect(Math.abs(atEntry!)).toBeLessThan(1.5);
+    expect(overlap).toBe(0);
   });
 
   it("กดจอดเร็วไป/ไม่กดเลย = จอดนานกว่า", () => {
