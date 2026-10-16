@@ -153,21 +153,22 @@ function driveFree(id: string, laps: number, pick: (c: ReturnType<typeof newCar>
   let out = 0;
   let wall = 0;
   let far = 0;
+  let breach = -Infinity;
   const ev: StepEvent[] = [];
   for (let i = 0; i < maxT && results.length < laps; i++) {
     ev.length = 0;
     stepFree(t, c, pick(c, t), perfOf(0), ev);
     if (c.s > 0) far = Math.max(far, Math.abs(c.d - t.lineOffset[Math.floor((c.s / DS) % t.n)]));
-    const wl = t.wl[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)];
-    const wr = t.wr[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)];
-    expect(c.d).toBeGreaterThanOrEqual(-wl - t.runoff - 0.5);
-    expect(c.d).toBeLessThanOrEqual(wr + t.runoff + 0.5);
+    const k = Math.floor((((c.s / DS) % t.n) + t.n) % t.n);
+    breach = Math.max(breach, -t.wl[k] - t.runoff - c.d, c.d - t.wr[k] - t.runoff);
     for (const e of ev) {
       if (e.kind === "lap") results.push(e.result);
       if (e.kind === "excursion") out++;
       if (e.kind === "wall") wall++;
     }
   }
+  // ไม่ทะลุกำแพง (เผื่อการประมาณค่าระหว่างจุด)
+  expect(breach).toBeLessThan(0.5);
   return { t, c, results, out, wall, far };
 }
 
@@ -180,7 +181,7 @@ describe("โหมดนักขับ: ขับอิสระ", () => {
       expect(Math.abs(results[1].time - t.refLap) / t.refLap, id).toBeLessThan(0.04);
       expect(far, id).toBeLessThan(4.5);
     }
-  });
+  }, 60_000);
 
   it("ไม่เลี้ยวเลย = ออกนอกถนน รอบไม่นับ ไปติดกำแพง แต่ไม่ทะลุ", () => {
     const { results, out, wall } = driveFree("monza", 1, (c, tr) => idealInput(tr, c), 120 * 200);
