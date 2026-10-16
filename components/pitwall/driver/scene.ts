@@ -29,12 +29,13 @@ const LINE_W = 0.9;
 /** รัศมีล้อ (เมตร) และตำแหน่งล้อ: [x, z, ความกว้างยาง, ล้อหน้า] */
 const WHEEL_R = 0.36;
 const WHEELS: [number, number, number, boolean][] = [
-  [0.8, 1.8, 0.3, true],
-  [-0.8, 1.8, 0.3, true],
-  [0.76, -1.8, 0.4, false],
-  [-0.76, -1.8, 0.4, false],
+  [0.81, 1.7, 0.28, true],
+  [-0.81, 1.7, 0.28, true],
+  [0.7625, -1.7, 0.375, false],
+  [-0.7625, -1.7, 0.375, false],
 ];
-const WHEELBASE = 3.6;
+/** ฐานล้อ 3.4 ม. (กติกาปี 2026) */
+const WHEELBASE = 3.4;
 /** ความยาวรถ (เมตร) */
 export const CAR_LEN = 5.6;
 
@@ -854,53 +855,53 @@ export function createDriveScene(opts: {
   const rimMat = keep(new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.3, metalness: 0.85 }));
   const stripeMat = keep(new THREE.MeshStandardMaterial({ color: 0xe10600, roughness: 0.6 }));
   const darkMat = keep(new THREE.MeshStandardMaterial({ color: 0x0d0e10, roughness: 0.5, side: THREE.DoubleSide }));
-  // ฝาครอบล้อ (ล้อ 18 นิ้ว): แผ่นเรียบสีเข้ม มีลายซี่ให้เห็นล้อหมุน
-  const coverTex = canvasTex(256, 256, (g) => {
-    g.fillStyle = "#1a1c20";
-    g.fillRect(0, 0, 256, 256);
-    g.translate(128, 128);
-    g.fillStyle = "#2c2f35";
-    for (let k = 0; k < 5; k++) {
-      g.rotate((Math.PI * 2) / 5);
-      g.beginPath();
-      g.moveTo(-10, 18);
-      g.lineTo(10, 18);
-      g.lineTo(26, 120);
-      g.lineTo(-26, 120);
-      g.closePath();
-      g.fill();
-    }
-    g.fillStyle = "#9aa0a8";
-    g.beginPath();
-    g.arc(0, 0, 16, 0, Math.PI * 2);
-    g.fill();
-  }, false);
-  const coverMat = keep(new THREE.MeshStandardMaterial({ map: coverTex, roughness: 0.45, metalness: 0.4, side: THREE.DoubleSide }));
-  /** ขอบล้อ 18 นิ้ว (รัศมีขอบล้อ ≈ 0.23 ม.) ยางแก้มเตี้ย */
-  const RIM_R = 0.235;
+  /** ล้อ 18 นิ้ว (รัศมีขอบล้อ ≈ 0.23 ม.) ยางแก้มเตี้ยขอบมน · ล้อแม็ก 10 ก้านด้านนอก · ดรัมเบรกด้านใน (แกนล้อ = แกน x) */
+  const RIM_R = 0.234;
   const wheelGeos = (w: number) => {
-    // ยางขอบมน (หมุนโครงหน้าตัดรอบแกน) ไม่ใช่ทรงกระบอกเหลี่ยม
-    const h = w / 2;
     const R = WHEEL_R;
-    const profile = [
-      [RIM_R, -h + 0.012], [R - 0.04, -h], [R - 0.01, -h + 0.03], [R, -h + 0.07],
-      [R, h - 0.07], [R - 0.01, h - 0.03], [R - 0.04, h], [RIM_R, h - 0.012],
-    ].map(([r, y]) => new THREE.Vector2(r, y));
+    const rc = (R + RIM_R) / 2;
+    const hr = (R - RIM_R) / 2;
+    const spow = (v: number, e: number) => Math.sign(v) * Math.abs(v) ** e;
+    // หน้าตัดยาง (หมุนรอบแกน): แก้มยางโป่งมน ดอกยางแบน
+    const profile = [new THREE.Vector2(RIM_R - 0.006, -w * 0.43)];
+    for (let i = 0; i <= 24; i++) {
+      const t = -Math.PI / 2 + (i / 24) * Math.PI;
+      profile.push(new THREE.Vector2(rc + hr * spow(Math.cos(t), 0.42), (w / 2) * spow(Math.sin(t), 0.55)));
+    }
+    profile.push(new THREE.Vector2(RIM_R - 0.006, w * 0.43));
     const tyre = keep(new THREE.LatheGeometry(profile, 40));
     tyre.rotateZ(Math.PI / 2);
-    const rim = keep(new THREE.CylinderGeometry(RIM_R, RIM_R, w - 0.03, 28, 1, true));
+    const rim = keep(new THREE.CylinderGeometry(RIM_R - 0.005, RIM_R - 0.005, w * 0.86, 28, 1, true));
     rim.rotateZ(Math.PI / 2);
-    const cover = keep(new THREE.CircleGeometry(RIM_R - 0.004, 28));
-    cover.rotateY(Math.PI / 2);
+    // หน้าล้อแม็ก 10 ก้าน (แผ่นเจาะช่อง) — เห็นล้อหมุนชัด
+    const face = new THREE.Shape();
+    face.absarc(0, 0, RIM_R - 0.005, 0, Math.PI * 2, false);
+    for (let k = 0; k < 10; k++) {
+      const a0 = (k * Math.PI) / 5 + 0.12;
+      const a1 = ((k + 1) * Math.PI) / 5 - 0.12;
+      const h = new THREE.Path();
+      h.moveTo(0.08 * Math.cos(a0), 0.08 * Math.sin(a0));
+      h.lineTo(0.205 * Math.cos(a0), 0.205 * Math.sin(a0));
+      h.absarc(0, 0, 0.205, a0, a1, false);
+      h.lineTo(0.08 * Math.cos(a1), 0.08 * Math.sin(a1));
+      h.absarc(0, 0, 0.08, a1, a0, true);
+      face.holes.push(h);
+    }
+    const spokes = keep(new THREE.ExtrudeGeometry(face, { depth: 0.016, bevelEnabled: false, curveSegments: 4 }));
+    spokes.rotateY(Math.PI / 2);
+    const drum = keep(new THREE.CylinderGeometry(0.17, 0.17, w * 0.55, 20));
+    drum.rotateZ(Math.PI / 2);
+    const nut = keep(new THREE.CylinderGeometry(0.035, 0.04, 0.05, 6));
+    nut.rotateZ(Math.PI / 2);
     const lip = keep(new THREE.TorusGeometry(RIM_R, 0.008, 6, 32));
     lip.rotateY(Math.PI / 2);
     // แถบสีแก้มยาง (สีตามชนิดยาง: Soft แดง · Medium เหลือง · Hard ขาว)
     const ring = keep(new THREE.TorusGeometry(R * 0.8, 0.016, 6, 32));
     ring.rotateY(Math.PI / 2);
-    return { tyre, rim, cover, lip, ring };
+    return { w, tyre, rim, spokes, drum, nut, lip, ring };
   };
-  const geoF = wheelGeos(0.3);
-  const geoR = wheelGeos(0.4);
+  const geoF = wheelGeos(WHEELS[0][2]);
+  const geoR = wheelGeos(WHEELS[2][2]);
   // ครีบเหนือล้อหน้า (ติดกับชุดเบรก เลี้ยวตามล้อแต่ไม่หมุน)
   const deflector = keep(new THREE.CylinderGeometry(WHEEL_R + 0.05, WHEEL_R + 0.05, 0.16, 16, 1, true, -Math.PI * 0.3, Math.PI * 0.45));
   deflector.rotateZ(Math.PI / 2);
@@ -944,23 +945,29 @@ export function createDriveScene(opts: {
     const rm = ghostMat(rimMat);
     // แถบแก้มยางของรถแต่ละคันแยกวัสดุ (เปลี่ยนสีตามยางที่ใส่)
     const st = isGhost ? ghostMat(stripeMat) : keep(stripeMat.clone());
-    const cm = ghostMat(coverMat);
     const dm = ghostMat(darkMat);
     for (const [x, z, w, front] of WHEELS) {
       const holder = new THREE.Group();
       holder.position.set(x, WHEEL_R, z);
       const sp = new THREE.Group();
-      const g = w === 0.3 ? geoF : geoR;
+      const g = front ? geoF : geoR;
       sp.add(new THREE.Mesh(g.tyre, tm), new THREE.Mesh(g.rim, rm));
+      // ก้านล้อ + น็อตกลางอยู่ด้านนอกรถ · ดรัมเบรกเยื้องเข้าด้านใน
+      const out = x > 0 ? 1 : -1;
+      const face = new THREE.Mesh(g.spokes, rm);
+      face.position.x = out > 0 ? w * 0.36 : -w * 0.36 - 0.016;
+      const nut = new THREE.Mesh(g.nut, rm);
+      nut.position.x = out * (w * 0.36 + 0.02);
+      const drum = new THREE.Mesh(g.drum, dm);
+      drum.position.x = -out * w * 0.12;
+      sp.add(face, nut, drum);
       for (const side of [-1, 1]) {
-        const cv = new THREE.Mesh(g.cover, cm);
-        cv.position.x = side * (w / 2 - 0.006);
         const lp = new THREE.Mesh(g.lip, rm);
         lp.position.x = side * (w / 2 - 0.004);
         // แถบสีข้างยาง
         const rg = new THREE.Mesh(g.ring, st);
         rg.position.x = side * (w / 2 + 0.002);
-        sp.add(cv, lp, rg);
+        sp.add(lp, rg);
       }
       if (front) {
         const df = new THREE.Mesh(deflector, dm);
