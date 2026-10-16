@@ -3,7 +3,7 @@
  * — เร็วเกินที่โค้งรับไหว = ไถลออกนอกไลน์ เสียความเร็ว และถ้าเกินมากรอบนั้นไม่นับ
  * จำลองแบบขั้นเวลาคงที่ (ผลเหมือนเดิมทุกเครื่อง ไม่ขึ้นกับเฟรมเรต)
  */
-import { accelFor, brakeAt, coastAt, coastSM, DS, G, laneValue, laneZone, sample, SM_BLEED, VMAX, VSM, type DriveTrack } from "./line";
+import { accelFor, ALAT, brakeAt, coastAt, coastSM, DOWNFORCE, DS, G, LANE_GAP, laneValue, laneZone, sample, SM_BLEED, VMAX, VSM, type DriveTrack } from "./line";
 
 export const STEP = 1 / 120;
 /** ระยะเริ่มก่อนเส้นสตาร์ท (เมตร) — วิ่งเข้าเส้นแบบมีความเร็วแล้ว */
@@ -22,7 +22,17 @@ export const GHOST_DS = 10;
  * sm = ขอเปิด Straight Mode (เปิดจริงเฉพาะในโซนและไม่ได้เบรก)
  * lane = เลนที่อยากไป (−1 ซ้าย · 0 racing line · 1 ขวา) · ot = กดใช้พลังงานแบตเตอรี่เสริม (Overtake)
  */
-export type Input = { throttle: boolean; brake: boolean; sm?: boolean; lane?: number; ot?: boolean };
+export type Input = {
+  throttle: boolean;
+  brake: boolean;
+  sm?: boolean;
+  lane?: number;
+  ot?: boolean;
+  /** ขับอิสระ (stepFree): พวงมาลัย −1 ซ้ายสุด … 1 ขวาสุด · assist = ผู้ช่วยเลี้ยวตาม racing line (0..1) · aim = ระยะเยื้องที่รถเลี้ยวไปเอง (เช่นชิดฝั่งพิท) */
+  steer?: number;
+  assist?: number;
+  aim?: number;
+};
 /** ผลจากรถคันอื่น: tow = ลมดูดจากคันหน้า (0..1) · dirty = อากาศเสียในโค้ง (0..1) · boost = แรงเสริมตอนแซง (ส่วนของความเร็วสูงสุด) */
 export type Mods = { tow: number; dirty: number; boost?: number };
 
@@ -64,41 +74,32 @@ export type CarState = {
   ot: boolean;
   /** เวลาที่เหลือของการหลุดโค้งครั้งล่าสุด (ล้อลงหญ้า กำลังกลับเข้าถนน) */
   offT: number;
+  /** ขับอิสระ: ระยะเยื้องจากเส้นกลาง (ม., บวก = ขวา) · ทิศรถเทียบทิศถนน (เรเดียน, บวก = หันขวา) · พวงมาลัยตอนนี้ · ยางใกล้หลุดเกาะ (0..1) · ล้อทั้งสี่ออกนอกถนน */
+  d: number;
+  psi: number;
+  steer: number;
+  slip: number;
+  out: boolean;
 };
 
 export type LapResult = { lap: number; time: number; valid: boolean; trace: number[] };
 /** off = รอบนี้ไม่นับ (Time Trial) · excursion = หลุดโค้งลงหญ้าหนึ่งครั้ง (ความเร็วตก) */
-export type StepEvent = { kind: "slide"; amount: number } | { kind: "off" } | { kind: "excursion" } | { kind: "lap"; result: LapResult };
+export type StepEvent = { kind: "slide"; amount: number } | { kind: "off" } | { kind: "excursion" } | { kind: "wall" } | { kind: "lap"; result: LapResult };
 
 export function newCar(t: DriveTrack, at?: { s: number; v: number; lat: number }): CarState {
   const s = at?.s ?? -RUN_UP;
-  return { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false, offT: 0 };
+  const c: CarState = { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false, offT: 0, d: 0, psi: 0, steer: 0, slip: 0, out: false };
+  c.d = laneValue(t, "offset", s, c.lat);
+  return c;
 }
 
 /** เดินหน้าหนึ่งขั้น STEP · คืนเหตุการณ์ที่เกิด (ไถล, หลุดโค้ง, จบรอบ) */
 export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, events: StepEvent[] = [], mods?: Mods): StepEvent[] {
   const dt = STEP;
-  const v = c.v;
   // เปลี่ยนเลน: เลื่อนไปทางเลนเป้าหมายทีละน้อย
   const want = Math.max(-1, Math.min(1, input.lane ?? c.lat));
   c.lat += Math.sign(want - c.lat) * Math.min(Math.abs(want - c.lat), LANE_RATE * dt);
-  // Straight Mode: เปิดได้เฉพาะในโซน ปิดเองเมื่อเบรกหรือพ้นโซน
-  c.sm = !!input.sm && !input.brake && t.smZone[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)] === 1;
-  // Overtake: แบตเตอรี่เสริมตอนกดคันเร่ง · ชาร์จคืนตอนเบรก/ปล่อยคันเร่ง
-  c.ot = !!input.ot && input.throttle && !input.brake && c.energy > 0;
-  if (c.ot) c.energy = Math.max(0, c.energy - OT_DRAIN * dt);
-  else if (input.brake) c.energy = Math.min(1, c.energy + REGEN_BRAKE * dt);
-  else if (!input.throttle) c.energy = Math.min(1, c.energy + REGEN_LIFT * dt);
-  // ความเร็วสูงสุดตามแรงต้าน: ปีกพับ · ลมดูด · แบตเตอรี่เสริม
-  const vtop = (c.sm ? VSM : VMAX) * (1 + TOW_TOP * (mods?.tow ?? 0) + (c.ot ? OT_TOP : 0) + (mods?.boost ?? 0));
-  // ขึ้นเนิน = แรงโน้มถ่วงดึงถอยหลัง · ลงเนิน = ไหลเร็วขึ้น
-  const drive = accelFor(v, vtop) * perf.accel + (c.ot ? OT_ACCEL : 0) + (mods?.boost ?? 0) * 30;
-  const a = (input.brake ? -brakeAt(v) : input.throttle ? drive : -(c.sm ? coastSM(v) : coastAt(v))) - G * sample(t, t.grade, c.s);
-  // ความเร็วสูงสุด: พับปีกกลับ/หมดลมดูดขณะเร็วกว่า → ลดลงเองทีละน้อย (ไม่ชนกำแพงความเร็ว)
-  const top = vtop * perf.top;
-  const next = v + a * dt;
-  c.v = Math.max(0, next > top ? Math.max(top, Math.min(next, v - SM_BLEED * dt)) : next);
-
+  const drive = longitudinal(t, c, input, perf, mods);
   // เร็วเกินโค้ง → ไถลออกนอกไลน์และเสียความเร็ว (อากาศเสียจากคันหน้าทำให้เกาะถนนน้อยลง)
   const limit = laneValue(t, "vlat", c.s, c.lat) * perf.grip * (1 - DIRTY_GRIP * (mods?.dirty ?? 0));
   const over = c.v / limit - 1;
@@ -131,7 +132,164 @@ export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, ev
 
   // v = ความเร็วจริงบน racing line · s นับตามเส้นกลาง (ในโค้งด้านใน 1 ม. ของไลน์ = มากกว่า 1 ม. ของเส้นกลาง)
   advanceCar(t, c, (c.v * dt) / Math.max(0.2, laneValue(t, "stretch", c.s, c.lat)), events);
+  c.d = laneValue(t, "offset", c.s, c.lat) + c.slide;
+  c.psi = 0;
+  c.steer = 0;
   return events;
+}
+
+/** มุมเลี้ยวล้อหน้าสูงสุด (เรเดียน) · ฐานล้อ (ม.) — ความเร็วต่ำเลี้ยววงแคบสุดได้เท่านี้ */
+const MAX_LOCK = 0.35;
+const WHEELBASE = 3.4;
+/** พวงมาลัยหมุนเร็วสุดกี่หน่วยต่อวินาที (ไปทางที่กด · คืนกลาง) — กดปุ่มแล้วล้อค่อย ๆ หัน ไม่กระตุก */
+const STEER_IN = 3.2;
+const STEER_OUT = 6;
+/** หญ้า: เริ่มเมื่อกึ่งกลางรถเลยขอบถนนเท่านี้ (ล้อข้างหนึ่งออก) · ล้อทั้งสี่ออก = รอบไม่นับ/หลุดโค้ง */
+const GRASS_AT = 0.3;
+const OUT_AT = 1.0;
+/** บนหญ้าเกาะได้กี่ส่วน · ชนกำแพงเหลือความเร็วกี่ส่วน */
+const GRASS_GRIP = 0.5;
+const WALL_KEEP = 0.5;
+/** หันออกจากทิศถนนได้มากสุด (กันรถหมุนกลับหลัง) */
+const PSI_MAX = 1.2;
+/** ครึ่งความกว้างรถ (ม.) — ไว้หยุดที่กำแพง */
+const HALF_CAR = 0.95;
+
+const centreCurve = new WeakMap<DriveTrack, Float64Array>();
+/** ความโค้งของเส้นกลางถนน (1/ม., บวก = เลี้ยวขวา) — t.curve เป็นของ racing line */
+function centreKappa(t: DriveTrack) {
+  let k = centreCurve.get(t);
+  if (k) return k;
+  const n = t.n;
+  k = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = t.heading[(i - 1 + n) % n];
+    const b = t.heading[(i + 1) % n];
+    k[i] = Math.atan2(Math.sin(b - a), Math.cos(b - a)) / (2 * DS);
+  }
+  for (let p = 0; p < 3; p++) {
+    const m = new Float64Array(n);
+    for (let i = 0; i < n; i++) m[i] = 0.25 * k[(i - 1 + n) % n] + 0.5 * k[i] + 0.25 * k[(i + 1) % n];
+    k = m;
+  }
+  centreCurve.set(t, k);
+  return k;
+}
+
+/** แรงเหวี่ยงที่ยางรับได้ (ม./วิ²) ที่ความเร็ว v — สูตรเดียวกับที่ใช้คิดความเร็วในโค้งของ racing line (โค้งเอียงช่วยเพิ่ม) */
+export const gripAccel = (v: number, grip: number, bank = 0) => (ALAT + G * Math.sin(Math.abs(bank)) + DOWNFORCE * (v / VMAX) ** 2) * grip;
+
+/** เลี้ยวได้วงแคบสุดเท่าไร (ความโค้ง 1/ม.) ที่ความเร็วนี้ — จำกัดทั้งมุมล้อและแรงเกาะ */
+export function maxCurvature(v: number, grip: number, bank = 0) {
+  const geo = Math.tan(MAX_LOCK) / WHEELBASE;
+  return Math.min(geo, gripAccel(v, grip, bank) / Math.max(1, v * v));
+}
+
+/** พวงมาลัยที่ผู้ช่วยอยากหมุน: เล็งจุดบนเส้นเป้าหมายข้างหน้า (pure pursuit) · aim = ระยะเยื้องเป้าหมาย (ไม่ใส่ = racing line) */
+export function pursuitSteer(t: DriveTrack, c: CarState, grip: number, aim?: number) {
+  const look = 5 + c.v * 0.2;
+  const target = aim ?? sample(t, t.lineOffset, c.s + look);
+  const kc = sample(t, centreKappa(t), c.s);
+  const want = Math.atan2(target - c.d, look);
+  const kappa = kc / Math.max(0.3, 1 - kc * c.d) + (2 * Math.sin(want - c.psi)) / look;
+  return Math.max(-1, Math.min(1, kappa / maxCurvature(c.v, grip, sample(t, t.bank, c.s))));
+}
+
+/**
+ * ขับอิสระหนึ่งขั้น STEP: เลี้ยวด้วยพวงมาลัยจริง วิ่งได้ทั้งความกว้างถนน — racing line เป็นแค่เส้นแนะนำ
+ * — เลี้ยวได้แคบสุดตามแรงเกาะ (เร็วเกินโค้ง = เลี้ยวไม่พอ ออกกว้างลงหญ้าเอง) · หญ้า = ฝืด เกาะน้อย · ล้อทั้งสี่ออก = รอบไม่นับ · สุดที่กำแพง
+ * — อัปเดต lat/slide ให้ตรงกับตำแหน่งจริงด้วย (ระบบแข่ง/AI/ออนไลน์อ่านตำแหน่งจาก lat + slide)
+ */
+export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, events: StepEvent[] = [], mods?: Mods): StepEvent[] {
+  const dt = STEP;
+  const wl = sample(t, t.wl, c.s);
+  const wr = sample(t, t.wr, c.s);
+  const beyond = Math.max(-wl - c.d, c.d - wr);
+  const grass = Math.max(0, Math.min(1, (beyond - GRASS_AT) / 0.6));
+  const grip = perf.grip * (1 - DIRTY_GRIP * (mods?.dirty ?? 0)) * (1 - (1 - GRASS_GRIP) * grass);
+
+  // พวงมาลัย: ผู้เล่น + ผู้ช่วย (ยิ่งผู้เล่นหมุนเยอะ ผู้ช่วยยิ่งปล่อย) · aim = รถเลี้ยวเองทั้งหมด
+  const own = Math.max(-1, Math.min(1, input.steer ?? 0));
+  let want = own;
+  if (input.aim !== undefined) want = pursuitSteer(t, c, grip, input.aim);
+  else if (input.assist) want = Math.max(-1, Math.min(1, own + input.assist * (1 - Math.abs(own)) * pursuitSteer(t, c, grip)));
+  const rate = Math.abs(want) > Math.abs(c.steer) && Math.sign(want) === Math.sign(c.steer || want) ? STEER_IN : STEER_OUT;
+  c.steer += Math.sign(want - c.steer) * Math.min(Math.abs(want - c.steer), rate * dt);
+
+  // ความโค้งที่ล้อพาไป (จำกัดด้วยแรงเกาะ) · ยิ่งใช้แรงเกาะเต็ม ยางยิ่งถูเสียความเร็ว
+  const bank = sample(t, t.bank, c.s);
+  const kmax = maxCurvature(c.v, grip, bank);
+  const kappa = c.steer * kmax;
+  const use = (Math.abs(kappa) * c.v * c.v) / Math.max(1, gripAccel(c.v, grip, bank));
+  c.slip = Math.max(0, Math.min(1, (use - 0.85) / 0.15)) * Math.min(1, c.v / 25);
+  longitudinal(t, c, input, perf, mods, grass, 1.6 * use * use);
+  if (c.slip > 0) events.push({ kind: "slide", amount: c.slip * 0.1 });
+
+  // เดินรถในพิกัดถนน: s ตามเส้นกลาง · d เยื้องข้าง · psi ทิศเทียบถนน
+  const kc = sample(t, centreKappa(t), c.s);
+  const sDot = (c.v * Math.cos(c.psi)) / Math.max(0.3, 1 - kc * c.d);
+  c.psi += (kappa * c.v - kc * sDot) * dt;
+  c.psi = Math.max(-PSI_MAX, Math.min(PSI_MAX, c.psi));
+  c.d += c.v * Math.sin(c.psi) * dt;
+
+  // กำแพง: หยุดที่ขอบ runoff · ความเร็วหาย · หัวรถดีดกลับเข้าหาถนน
+  const wallL = -wl - t.runoff + HALF_CAR;
+  const wallR = wr + t.runoff - HALF_CAR;
+  if (c.d < wallL || c.d > wallR) {
+    const side = c.d > wallR ? 1 : -1;
+    c.d = side > 0 ? wallR : wallL;
+    if (Math.sign(c.psi) === side) {
+      c.v *= 1 - (1 - WALL_KEEP) * Math.min(1, Math.abs(Math.sin(c.psi)) * 4);
+      c.psi = -c.psi * 0.3;
+      events.push({ kind: "wall" });
+    }
+  }
+
+  // ล้อทั้งสี่ออกนอกถนน: นับหลุดโค้งครั้งเดียวต่อการออก · รอบนี้ไม่นับ
+  const out = beyond > OUT_AT;
+  if (out && !c.out) {
+    events.push({ kind: "excursion" });
+    if (c.lapStart !== null && !c.invalid) {
+      c.invalid = true;
+      events.push({ kind: "off" });
+    }
+  }
+  c.out = out;
+  c.offT = grass > 0 ? 0.2 : Math.max(0, c.offT - dt);
+
+  advanceCar(t, c, sDot * dt, events);
+  syncLat(t, c);
+  return events;
+}
+
+/** ตำแหน่งในหน่วยเลน (ไว้ให้ระบบแข่ง: ลมดูด การบัง กันชนท้าย) + ส่วนที่เหลือเป็น slide → lat/slide ชี้ตำแหน่งจริง (d) เป๊ะ */
+export function syncLat(t: DriveTrack, c: CarState) {
+  c.lat = Math.max(-1, Math.min(1, (c.d - sample(t, t.lineOffset, c.s)) / LANE_GAP));
+  c.slide = c.d - laneValue(t, "offset", c.s, c.lat);
+}
+
+/** คันเร่ง/เบรก หนึ่งขั้น: Straight Mode · แบตเตอรี่ · ความเร็วสูงสุด · ความชัน → คืนแรงเร่งของเครื่องตอนนี้
+ *  grass = ส่วนของรถที่อยู่บนหญ้า (0..1: เร่งได้น้อย ฝืดมาก) · scrub = ยางถูกเบียดตอนเลี้ยว (ม./วิ²) */
+function longitudinal(t: DriveTrack, c: CarState, input: Input, perf: Perf, mods?: Mods, grass = 0, scrub = 0): number {
+  const dt = STEP;
+  const v = c.v;
+  // Straight Mode: เปิดได้เฉพาะในโซน ปิดเองเมื่อเบรกหรือพ้นโซน
+  c.sm = !!input.sm && !input.brake && t.smZone[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)] === 1;
+  // Overtake: แบตเตอรี่เสริมตอนกดคันเร่ง · ชาร์จคืนตอนเบรก/ปล่อยคันเร่ง
+  c.ot = !!input.ot && input.throttle && !input.brake && c.energy > 0;
+  if (c.ot) c.energy = Math.max(0, c.energy - OT_DRAIN * dt);
+  else if (input.brake) c.energy = Math.min(1, c.energy + REGEN_BRAKE * dt);
+  else if (!input.throttle) c.energy = Math.min(1, c.energy + REGEN_LIFT * dt);
+  // ความเร็วสูงสุดตามแรงต้าน: ปีกพับ · ลมดูด · แบตเตอรี่เสริม
+  const vtop = (c.sm ? VSM : VMAX) * (1 + TOW_TOP * (mods?.tow ?? 0) + (c.ot ? OT_TOP : 0) + (mods?.boost ?? 0));
+  // ขึ้นเนิน = แรงโน้มถ่วงดึงถอยหลัง · ลงเนิน = ไหลเร็วขึ้น
+  const drive = accelFor(v, vtop) * perf.accel + (c.ot ? OT_ACCEL : 0) + (mods?.boost ?? 0) * 30;
+  const a = -scrub - grass * (3 + 0.1 * v) + (input.brake ? -brakeAt(v) : input.throttle ? drive * (1 - 0.55 * grass) : -(c.sm ? coastSM(v) : coastAt(v))) - G * sample(t, t.grade, c.s);
+  // ความเร็วสูงสุด: พับปีกกลับ/หมดลมดูดขณะเร็วกว่า → ลดลงเองทีละน้อย (ไม่ชนกำแพงความเร็ว)
+  const top = vtop * perf.top;
+  const next = v + a * dt;
+  c.v = Math.max(0, next > top ? Math.max(top, Math.min(next, v - SM_BLEED * dt)) : next);
+  return drive;
 }
 
 /** เลื่อนรถไปตามสนาม ds เมตร (เส้นกลาง) หนึ่งขั้นเวลา: บันทึกเวลาทุก GHOST_DS เมตร · ข้ามเส้นชัย = จบรอบ (ใช้กับพิทเลนด้วย) */

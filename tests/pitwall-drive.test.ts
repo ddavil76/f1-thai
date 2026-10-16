@@ -3,7 +3,7 @@ import { buildDriveTrack, DS, VSM, type DriveTrack } from "@/lib/pitwall/drive/l
 import { loadRawTrack, hasRealTrack } from "@/lib/pitwall/drive/tracks";
 import { cornersOf } from "@/lib/pitwall/drive/corners";
 import { CIRCUITS as ALL } from "@/lib/pitwall/teams";
-import { deltaTo, ghostDistance, idealInput, newCar, perfOf, stepCar, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
+import { deltaTo, ghostDistance, idealInput, newCar, perfOf, stepCar, stepFree, type Input, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 
 const CIRCUITS = ALL.map((c) => c.id);
 /** สนามที่สร้างจากข้อมูลจริง (สร้างครั้งเดียว) */
@@ -142,6 +142,77 @@ describe("โหมดนักขับ: รถ", () => {
     // รถอยู่ที่ระยะ 500 ม. ณ เวลาเดียวกับรอบดีสุด → เร็ว/ช้ากว่า = 0
     const fake = { ...newCar(TRACKS.bahrain), lapStart: 0, t: trace[50] };
     expect(deltaTo(trace, fake, 500)).toBeCloseTo(0, 3);
+  });
+});
+
+/** ขับอิสระ n รอบ: คืนผลรอบ จำนวนครั้งที่ล้อทั้งสี่ออก ชนกำแพง และระยะห่างจาก racing line มากสุด */
+function driveFree(id: string, laps: number, pick: (c: ReturnType<typeof newCar>, t: DriveTrack) => Input, maxT = 120 * 60 * 6) {
+  const t = TRACKS[id];
+  const c = newCar(t);
+  const results: LapResult[] = [];
+  let out = 0;
+  let wall = 0;
+  let far = 0;
+  const ev: StepEvent[] = [];
+  for (let i = 0; i < maxT && results.length < laps; i++) {
+    ev.length = 0;
+    stepFree(t, c, pick(c, t), perfOf(0), ev);
+    if (c.s > 0) far = Math.max(far, Math.abs(c.d - t.lineOffset[Math.floor((c.s / DS) % t.n)]));
+    const wl = t.wl[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)];
+    const wr = t.wr[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)];
+    expect(c.d).toBeGreaterThanOrEqual(-wl - t.runoff - 0.5);
+    expect(c.d).toBeLessThanOrEqual(wr + t.runoff + 0.5);
+    for (const e of ev) {
+      if (e.kind === "lap") results.push(e.result);
+      if (e.kind === "excursion") out++;
+      if (e.kind === "wall") wall++;
+    }
+  }
+  return { t, c, results, out, wall, far };
+}
+
+describe("โหมดนักขับ: ขับอิสระ", () => {
+  it("ผู้ช่วยเลี้ยวเต็มที่ (ระดับง่าย) ตามเส้นช่วย = ทุกสนามรอบนับ ไม่ออกนอกถนน เวลาใกล้เวลาอ้างอิง", () => {
+    for (const id of CIRCUITS) {
+      const { t, results, out, far } = driveFree(id, 2, (c, tr) => ({ ...idealInput(tr, c), assist: 1 }));
+      expect(out, id).toBe(0);
+      expect(results[1].valid, id).toBe(true);
+      expect(Math.abs(results[1].time - t.refLap) / t.refLap, id).toBeLessThan(0.04);
+      expect(far, id).toBeLessThan(4.5);
+    }
+  });
+
+  it("ไม่เลี้ยวเลย = ออกนอกถนน รอบไม่นับ ไปติดกำแพง แต่ไม่ทะลุ", () => {
+    const { results, out, wall } = driveFree("monza", 1, (c, tr) => idealInput(tr, c), 120 * 200);
+    expect(out).toBeGreaterThan(0);
+    expect(wall).toBeGreaterThan(0);
+    expect(results.every((r) => !r.valid)).toBe(true);
+  });
+
+  it("เลี้ยวหลบไปขอบถนนได้อิสระ (ไม่ถูกดึงกลับเลน) · ปล่อยแล้วผู้ช่วยพากลับ racing line", () => {
+    const t = TRACKS.monza;
+    const c = newCar(t, { s: 200, v: 60, lat: 0 });
+    // ทางตรงหลังเส้นสตาร์ท: เลี้ยวซ้ายครู่หนึ่ง
+    for (let i = 0; i < 60; i++) stepFree(t, c, { throttle: true, brake: false, steer: -1, assist: 0 }, perfOf(0));
+    const moved = c.d - t.lineOffset[Math.floor(c.s / DS)];
+    expect(moved).toBeLessThan(-2.5);
+    // แก้กลับให้ตรงถนน แล้วปล่อย (โปร) = อยู่ฝั่งนั้นต่อ ไม่เด้งกลับ
+    for (let i = 0; i < 240; i++) stepFree(t, c, { throttle: true, brake: false, steer: Math.max(-1, Math.min(1, -c.psi * 20)), assist: 0 }, perfOf(0));
+    expect(c.d - t.lineOffset[Math.floor(c.s / DS)]).toBeLessThan(-2);
+    // ระดับง่าย: ปล่อยพวงมาลัย = กลับเข้า racing line
+    for (let i = 0; i < 120 * 4; i++) stepFree(t, c, { throttle: true, brake: false, assist: 1 }, perfOf(0));
+    expect(Math.abs(c.d - t.lineOffset[Math.floor(c.s / DS)])).toBeLessThan(0.6);
+    // lat/slide ชี้ตำแหน่งจริง (ระบบแข่งอ่านค่าจากตรงนี้)
+    expect(c.lat).toBeGreaterThanOrEqual(-1);
+    expect(c.lat).toBeLessThanOrEqual(1);
+  });
+
+  it("เร็วขึ้นเลี้ยวได้วงกว้างขึ้น (แรงเกาะจำกัด) — เข้าโค้งเร็วเกิน = ออกกว้าง", () => {
+    const slow = driveFree("monza", 1, (c, tr) => ({ ...idealInput(tr, c, 0.97), assist: 1 }));
+    const fast = driveFree("monza", 1, (c, tr) => ({ ...idealInput(tr, c, 1.12), assist: 1 }));
+    expect(slow.out).toBe(0);
+    expect(fast.out).toBeGreaterThan(0);
+    expect(fast.far).toBeGreaterThan(slow.far);
   });
 });
 
