@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* มือถือแนวนอน (จอเตี้ย) — โหมดนักขับจัดปุ่มเป็นสองฝั่งให้นิ้วโป้งกด · มือถือแนวตั้ง (จอสัมผัส) */
+@custom-variant land (@media (orientation: landscape) and (max-height: 520px));
+@custom-variant tall-touch (@media (orientation: portrait) and (pointer: coarse));
+
 @theme {
   --color-bg: #08080a;
   --color-surface: #121216;

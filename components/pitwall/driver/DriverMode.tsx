@@ -138,6 +138,27 @@ const fmtDelta = (d: number) => `${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(2)
 const GEARS = [0, 85, 125, 160, 195, 230, 265, 300];
 const gearOf = (kmh: number) => GEARS.filter((g) => kmh >= g).length;
 
+/**
+ * มือถือ: กดเริ่มแล้วเข้าเต็มจอและล็อกแนวนอน (ปุ่มสองฝั่งกดง่ายกว่า) — ทำได้บน Android
+ * iPhone/เบราว์เซอร์ที่ไม่ยอม = ข้ามเงียบ ๆ (ผู้เล่นหมุนเครื่องเอง · มีป้ายแนะนำบนจอ)
+ */
+function goLandscape() {
+  if (typeof window === "undefined" || !window.matchMedia("(pointer: coarse)").matches) return;
+  const el = document.documentElement;
+  if (!el.requestFullscreen || document.fullscreenElement) return;
+  el.requestFullscreen({ navigationUI: "hide" })
+    .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape"))
+    .catch(() => {});
+}
+/** ออกจากหน้าขับ: ปลดล็อกจอและออกจากเต็มจอ */
+function leaveLandscape() {
+  if (typeof document === "undefined" || !document.fullscreenElement) return;
+  try {
+    screen.orientation.unlock?.();
+  } catch {}
+  document.exitFullscreen?.().catch(() => {});
+}
+
 /** โหมดนักขับ (ทดลอง): Time Trial ขับเองด้วยคันเร่ง/เบรก ตามเส้นช่วยสามสี */
 export default function DriverMode({ name, onExit }: { name: string; onExit: () => void }) {
   const [settings, setSettings] = useState<Settings>(() => {
@@ -157,8 +178,31 @@ export default function DriverMode({ name, onExit }: { name: string; onExit: () 
   const online = settings.mode === "online" && onlineReady();
 
   if (online && room) return <OnlineDrive code={room} name={name} settings={settings} set={set} onLeave={() => setRoom(null)} />;
-  if (driving && track && !online) return <DriveSession settings={settings} track={track} onExit={() => setDriving(false)} />;
-  return <Setup settings={settings} track={track} set={set} online={online} onRoom={setRoom} onStart={() => setDriving(true)} onExit={onExit} />;
+  if (driving && track && !online)
+    return (
+      <DriveSession
+        settings={settings}
+        track={track}
+        onExit={() => {
+          leaveLandscape();
+          setDriving(false);
+        }}
+      />
+    );
+  return (
+    <Setup
+      settings={settings}
+      track={track}
+      set={set}
+      online={online}
+      onRoom={setRoom}
+      onStart={() => {
+        goLandscape();
+        setDriving(true);
+      }}
+      onExit={onExit}
+    />
+  );
 }
 
 function Setup({
@@ -1424,6 +1468,11 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       <div ref={host} data-keep className="absolute inset-0" />
       {failed && <p className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm">เครื่องนี้ไม่รองรับกราฟิก 3D (WebGL)</p>}
 
+      {/* มือถือแนวตั้ง: แนะนำให้หมุนจอ (จางหายเองใน 6 วิ · เล่นแนวตั้งต่อได้) */}
+      <p className="radio-toast pointer-events-none absolute inset-x-0 top-44 z-[2] mx-auto hidden w-fit rounded-xl bg-black/75 px-4 py-2 text-center text-sm font-bold backdrop-blur tall-touch:block">
+        ↻ หมุนจอเป็นแนวนอน กดง่ายกว่า
+      </p>
+
       {/* แถบบน */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start gap-2 p-2 sm:p-3">
         <button type="button" onClick={() => setPaused(true)} aria-label="หยุดชั่วคราว" className="pointer-events-auto rounded-full bg-black/55 p-2.5 backdrop-blur">
@@ -1463,19 +1512,19 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               {sound ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
             </button>
           </div>
-          <div className="hidden rounded-xl bg-black/55 px-3 py-1.5 text-right text-[11px] tabular-nums text-white/80 backdrop-blur sm:block">
+          <div className="hidden rounded-xl bg-black/55 px-3 py-1.5 text-right text-[11px] tabular-nums text-white/80 backdrop-blur sm:block land:px-2 land:py-1">
             {!isRace && (
               <>
-                <p>
+                <p className="land:hidden">
                   ดีสุด <b className="text-white">{fmtTime(best?.time ?? null)}</b>
                 </p>
-                <p>เป้าหมาย {fmtTime(track.refLap)}</p>
+                <p className="land:hidden">เป้าหมาย {fmtTime(track.refLap)}</p>
               </>
             )}
             {credit && <p className="text-[10px] text-white/50">โมเดลรถ: Meshy (CC BY 4.0)</p>}
-            {hasRealTrack(track.circuitId) && <p className="max-w-56 text-[10px] text-white/50">{TRACK_DATA_CREDIT}</p>}
+            {hasRealTrack(track.circuitId) && <p className="max-w-56 text-[10px] text-white/50 land:max-w-72 land:text-[9px]">{TRACK_DATA_CREDIT}</p>}
             {laps.slice(0, 4).map((l) => (
-              <p key={l.lap} className={l.valid ? "" : "text-(--color-f1-text) line-through"}>
+              <p key={l.lap} className={`land:hidden ${l.valid ? "" : "text-(--color-f1-text) line-through"}`}>
                 รอบ {l.lap} {fmtTime(l.time)}
               </p>
             ))}
@@ -1486,14 +1535,14 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       {isRace && (
         <>
           {/* ไฟสตาร์ท 5 ดวง */}
-          <div ref={(n) => void (hud.current.lights = n)} className="pointer-events-none absolute inset-x-0 top-24 mx-auto flex w-fit gap-2 rounded-2xl bg-black/70 p-3 transition-opacity sm:top-28" aria-hidden>
+          <div ref={(n) => void (hud.current.lights = n)} className="pointer-events-none absolute inset-x-0 top-24 mx-auto flex w-fit gap-2 rounded-2xl bg-black/70 p-3 transition-opacity sm:top-28 land:top-20" aria-hidden>
             {[0, 1, 2, 3, 4].map((k) => (
               <span key={k} className="h-8 w-8 rounded-full bg-[#2a2c31] sm:h-10 sm:w-10" />
             ))}
           </div>
 
           {/* ตารางอันดับ */}
-          <ol className="pointer-events-none absolute left-2 top-16 hidden w-52 space-y-0.5 rounded-xl bg-black/55 p-1.5 text-[11px] tabular-nums backdrop-blur sm:top-24 sm:block">
+          <ol className="pointer-events-none absolute left-2 top-16 hidden w-52 space-y-0.5 rounded-xl bg-black/55 p-1.5 text-[11px] tabular-nums backdrop-blur sm:top-24 sm:block land:hidden">
             {tower.slice(0, 10).map((r) => (
               <li key={r.id} className={`flex items-center gap-1.5 rounded px-1 ${r.me ? "bg-white/20 font-bold" : ""}`}>
                 <span className="w-4 text-right text-white/70">{r.pos}</span>
@@ -1513,7 +1562,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           </ol>
 
           {/* แบตเตอรี่ · ลมดูด · มีรถข้าง ๆ · เลน */}
-          <div className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1 sm:bottom-24 bottom-50`}>
+          <div className="pointer-events-none absolute inset-x-0 bottom-50 flex flex-col items-center gap-1 sm:bottom-24 land:bottom-18">
             <span ref={(n) => void (hud.current.tow = n)} className="poster rounded bg-[#0ea5e9]/80 px-2 text-xs tracking-wide opacity-0 transition-opacity">
               SLIPSTREAM
             </span>
@@ -1552,13 +1601,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               input.current.touchO = false;
             }}
             onContextMenu={(e) => e.preventDefault()}
-            className={`${pad} absolute bottom-30 h-12 w-16 border-[#38bdf8] bg-black/40 text-xs text-[#38bdf8] active:bg-[#38bdf8]/40 sm:bottom-26 sm:right-30 right-3`}
+            className={`${pad} absolute bottom-30 right-3 h-12 w-16 border-[#38bdf8] bg-black/40 text-xs text-[#38bdf8] active:bg-[#38bdf8]/40 sm:bottom-26 sm:right-30 land:bottom-34 land:right-3 land:w-28`}
           >
             OT
           </button>
 
           {/* PIT: แตะเพื่อขอ/ยกเลิกเข้าพิท · เลือกยางที่จะใส่ */}
-          <div className="absolute right-3 top-40 flex flex-col items-end gap-1 sm:top-44">
+          <div className="absolute right-3 top-40 flex flex-col items-end gap-1 sm:top-44 land:left-3 land:right-auto land:top-16 land:items-start">
             <button
               ref={(n) => void (hud.current.pitBtn = n)}
               type="button"
@@ -1591,7 +1640,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           <div
             ref={(n) => void (hud.current.pitPanel = n)}
             style={{ opacity: 0, pointerEvents: "none" }}
-            className="absolute inset-x-0 bottom-46 z-[1] mx-auto w-[min(92vw,26rem)] space-y-2 rounded-2xl bg-black/75 p-3 backdrop-blur transition-opacity sm:bottom-28"
+            className="absolute inset-x-0 bottom-46 z-[1] mx-auto w-[min(92vw,26rem)] space-y-2 rounded-2xl bg-black/75 p-3 backdrop-blur transition-opacity sm:bottom-28 land:bottom-2 land:w-[min(46vw,22rem)] land:p-2"
           >
             <p ref={(n) => void (hud.current.pitInfo = n)} className="text-center text-xs font-bold text-white/85" />
             <div className="relative h-5 overflow-hidden rounded-full bg-white/10" aria-hidden>
@@ -1620,7 +1669,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           {/* ผลการแข่ง */}
           {/* กำลังเล่นรีเพลย์ */}
           {replaying && (
-            <div data-keep className="absolute inset-x-0 top-16 z-10 flex items-center justify-center gap-2 sm:top-24">
+            <div data-keep className="absolute inset-x-0 top-16 z-10 flex items-center justify-center gap-2 sm:top-24 land:top-16">
               <span className="poster rounded bg-(--color-f1) px-3 py-1 text-sm tracking-wide">{replaying === "finish" ? "REPLAY · เส้นชัย" : "ไฮไลต์การแซง"}</span>
               <button type="button" onClick={stopReplay} className="rounded-full bg-black/60 px-3 py-1 text-sm font-bold backdrop-blur">
                 ข้าม ⏭
@@ -1697,17 +1746,17 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         ref={(n) => void (hud.current.sm = n)}
         data-st="off"
         aria-live="polite"
-        className="poster pointer-events-none absolute left-3 top-38 rounded-lg border-2 px-3 py-1 text-sm tracking-wide opacity-0 transition-opacity duration-200 sm:left-1/2 sm:top-24 sm:-translate-x-1/2 sm:text-base"
+        className="poster pointer-events-none absolute left-3 top-38 rounded-lg border-2 px-3 py-1 text-sm tracking-wide opacity-0 transition-opacity duration-200 sm:left-1/2 sm:top-24 sm:-translate-x-1/2 sm:text-base land:top-20 land:text-sm"
       />
 
       {msg && (
-        <p key={msg.id} className={`radio-toast pointer-events-none absolute inset-x-0 top-24 mx-auto w-fit rounded-xl px-4 py-2 text-center text-base font-bold sm:top-28 sm:text-lg ${msg.tone === "good" ? "bg-[#16a34a]/90" : msg.tone === "bad" ? "bg-(--color-f1)/90" : "bg-black/70"}`}>
+        <p key={msg.id} className={`radio-toast pointer-events-none absolute inset-x-0 top-24 mx-auto w-fit rounded-xl px-4 py-2 text-center text-base font-bold sm:top-28 sm:text-lg land:top-30 land:py-1 land:text-sm ${msg.tone === "good" ? "bg-[#16a34a]/90" : msg.tone === "bad" ? "bg-(--color-f1)/90" : "bg-black/70"}`}>
           {msg.text}
         </p>
       )}
 
       {/* แผนที่ย่อ */}
-      <svg viewBox={mini.box} className="pointer-events-none absolute right-3 top-16 h-20 w-20 rounded-xl bg-black/45 p-1 sm:top-auto sm:bottom-3 sm:h-32 sm:w-32" aria-hidden>
+      <svg viewBox={mini.box} className="pointer-events-none absolute right-3 top-16 h-20 w-20 rounded-xl bg-black/45 p-1 sm:top-auto sm:bottom-3 sm:h-32 sm:w-32 land:bottom-auto land:top-30 land:h-20 land:w-20" aria-hidden>
         <path d={mini.d} fill="none" stroke="white" strokeOpacity={0.7} strokeWidth={mini.w} />
         {field
           .filter((e) => !e.player)
@@ -1718,8 +1767,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       </svg>
 
       {/* หน้าปัด: ความเร็ว เกียร์ และปุ่มที่กดอยู่ */}
-      <div className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1 bottom-28 sm:bottom-3`}>
-        <div className="flex items-end gap-3 rounded-2xl bg-black/55 px-4 py-2 backdrop-blur">
+      <div className="pointer-events-none absolute inset-x-0 bottom-28 flex flex-col items-center gap-1 sm:bottom-3 land:bottom-2">
+        <div className="flex items-end gap-3 rounded-2xl bg-black/55 px-4 py-2 backdrop-blur land:px-3 land:py-1.5">
           <div ref={(n) => void (hud.current.brk = n)} className="h-10 w-2.5 rounded-full bg-(--color-f1)" aria-hidden />
           <div className="text-center">
             <span ref={(n) => void (hud.current.speed = n)} className="poster block text-3xl leading-none tabular-nums" />
@@ -1775,7 +1824,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             input.current.smArm = !input.current.smArm;
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`${pad} absolute h-14 border-[#4ade80] bg-black/40 text-xs active:bg-[#16a34a]/60 bottom-28 left-3 w-24`}
+          className={`${pad} absolute bottom-28 left-3 h-14 w-24 border-[#4ade80] bg-black/40 text-xs active:bg-[#16a34a]/60 land:bottom-34 land:left-auto land:right-34 land:h-12 land:w-28`}
         >
           SM
         </button>
@@ -1789,7 +1838,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           aria-valuemin={-1}
           aria-valuemax={1}
           aria-valuenow={0}
-          className="absolute bottom-0 left-0 h-[42%] w-[55%] touch-none select-none"
+          className="absolute bottom-0 left-0 h-[42%] w-[55%] touch-none select-none land:h-[62%] land:w-[40%]"
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
             dragRef.current = { id: e.pointerId, x0: e.clientX };
@@ -1834,7 +1883,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             input.current.touchL = false;
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`${pad} absolute bottom-3 left-3 h-20 w-20 border-white/60 bg-black/40 text-2xl active:bg-white/30`}
+          className={`${pad} absolute bottom-3 left-3 h-20 w-20 border-white/60 bg-black/40 text-2xl active:bg-white/30 land:h-24 land:w-24`}
         >
           ◀
         </button>
@@ -1854,7 +1903,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             input.current.touchR = false;
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`${pad} absolute bottom-3 left-25 h-20 w-20 border-white/60 bg-black/40 text-2xl active:bg-white/30`}
+          className={`${pad} absolute bottom-3 left-25 h-20 w-20 border-white/60 bg-black/40 text-2xl active:bg-white/30 land:left-30 land:h-24 land:w-24`}
         >
           ▶
         </button>
@@ -1879,7 +1928,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         }}
         onContextMenu={(e) => e.preventDefault()}
         className={`${pad} absolute bottom-3 border-(--color-f1) bg-(--color-f1)/25 active:bg-(--color-f1)/60 ${
-          autoGas ? "right-3 h-24 w-36 sm:bottom-40 sm:h-20" : "right-29 h-20 w-20 sm:bottom-40"
+          autoGas ? "right-3 h-24 w-36 sm:bottom-40 sm:h-20 land:bottom-3 land:h-28 land:w-44" : "right-29 h-20 w-20 sm:bottom-40 land:bottom-3 land:right-34 land:h-28 land:w-28"
         }`}
       >
         เบรก
@@ -1901,7 +1950,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             input.current.touchT = false;
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`${pad} absolute bottom-3 right-3 h-24 border-[#22c55e] bg-[#22c55e]/25 active:bg-[#22c55e]/60 w-24 sm:bottom-40 sm:h-20`}
+          className={`${pad} absolute bottom-3 right-3 h-24 w-24 border-[#22c55e] bg-[#22c55e]/25 active:bg-[#22c55e]/60 sm:bottom-40 sm:h-20 land:bottom-3 land:h-28 land:w-28`}
         >
           คันเร่ง
         </button>
