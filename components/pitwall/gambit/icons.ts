@@ -1,0 +1,33 @@
+/** ไอคอนการ์ด (เส้น SVG viewBox 48×48) จากต้นแบบ Pit Wall Gambit — ใส่ใน <svg> ด้วย stroke = currentColor */
+export const CARD_ICONS: Record<string, string> = {
+  engine:'<rect x="15" y="7" width="18" height="17" rx="3"/><path d="M15 13h18M15 18h18M24 24v9"/><circle cx="24" cy="37" r="4.5"/>',
+  drag:'<path d="M9 24c7-8 19-10 32 0-13 10-25 8-32 0z"/><path d="M3 15h13M3 33h13M29 9h12"/>',
+  tgrip:'<circle cx="24" cy="24" r="16"/><circle cx="24" cy="24" r="6"/><path d="M24 8v5M24 35v5M8 24h5M35 24h5M13 13l3.5 3.5M31.5 31.5L35 35M35 13l-3.5 3.5M16.5 31.5L13 35"/>',
+  turbo:'<circle cx="24" cy="24" r="16"/><path d="M24 24c0-6 4-10 10-10M24 24c6 0 10 4 10 10M24 24c0 6-4 10-10 10M24 24c-6 0-10-4-10-10"/><circle cx="24" cy="24" r="2.5"/>',
+  weight:'<path d="M39 7C23 9 12 21 12 36l-5 5"/><path d="M39 7c-2 15-12 25-27 29"/><path d="M17 30h11M21 23h11M26 16h9"/>',
+  tc:'<circle cx="19" cy="29" r="13"/><circle cx="19" cy="29" r="4.5"/><path d="M29 8c6 2 10 7 11 13"/><path d="M36 19l4 2 2-4"/>',
+  downforce:'<path d="M5 15c11-6 27-6 38 0-13 5-25 5-38 0z"/><path d="M14 23v13M24 24v15M34 23v13"/><path d="M10 32l4 4 4-4M20 35l4 4 4-4M30 32l4 4 4-4"/>',
+  susp:'<path d="M24 3v6M24 39v6"/><path d="M14 9L34 13 14 17 34 21 14 25 34 29 14 33 34 37"/>',
+  tsave:'<path d="M24 5l15 6v11c0 10-7 17-15 21C16 39 9 32 9 22V11z"/><circle cx="24" cy="22" r="7"/><circle cx="24" cy="22" r="2"/>',
+  therm:'<path d="M20 30V10a4 4 0 018 0v20"/><circle cx="24" cy="35" r="7"/><path d="M24 17v15M33 12h6M33 18h6M33 24h6"/>',
+  crew:'<path d="M31 6a10 10 0 00-9 14L8 34a4 4 0 006 6l14-14a10 10 0 0013-9l-6 5-6-2-2-6z"/>',
+  cool:'<circle cx="24" cy="24" r="18"/><circle cx="24" cy="24" r="3"/><path d="M24 21c-2-8 2-13 8-12 2 6-2 10-8 12zM27 25c8-1 12 5 9 10-6 1-9-4-9-10zM21 26c-5 6-12 6-14 1 3-5 9-5 14-1z"/>',
+  sector:'<path d="M10 43V5M10 7h22l-4 7 4 7H10"/><path d="M36 25l-6 9h6l-4 8"/>',
+  regen:'<path d="M38 19A15 15 0 0011 15M10 29a15 15 0 0027 4"/><path d="M11 7v8h8M37 41v-8h-8"/><path d="M26 15l-5 9h6l-4 9"/>',
+  batt:'<rect x="7" y="13" width="30" height="22" rx="3"/><path d="M41 20v8"/><path d="M13 19v10M19 19v10M25 19v10"/>',
+  kick:'<path d="M28 3L11 27h12l-4 18 18-25H25z"/>',
+  focus:'<circle cx="24" cy="24" r="14"/><circle cx="24" cy="24" r="4"/><path d="M24 3v9M24 36v9M3 24h9M36 24h9"/>',
+  late:'<circle cx="21" cy="27" r="15"/><circle cx="21" cy="27" r="5"/><path d="M30 9h8a3 3 0 013 3v15H32"/><path d="M13 19l.1.1M29 35l.1.1M13 35l.1.1M29 19l.1.1"/>',
+  attack:'<path d="M7 11l13 13-13 13M21 11l13 13-13 13M39 11v26"/>',
+  defend:'<path d="M24 5l15 6v12c0 10-7 17-15 20C16 40 9 33 9 23V11z"/><path d="M17 24l5 5 9-10"/>',
+  xpgain:'<path d="M24 5l5.5 11 12 1.8-8.7 8.4 2 12L24 32.6 13.2 38.2l2-12L6.5 17.8l12-1.8z"/><path d="M24 29V18M19.5 22.5L24 18l4.5 4.5"/>',
+  gdur:'<path d="M13 5h22M13 43h22M16 5c0 11 16 12 16 19S16 32 16 43M32 5c0 11-16 12-16 19s16 8 16 19"/>',
+};
+export const FAC_ICONS: Record<string, string> = {
+  speed:'<path d="M5 34a19 19 0 0138 0"/><path d="M24 34l10-13"/><circle cx="24" cy="34" r="2.5"/>',
+  corner:'<path d="M10 42V25a15 15 0 0115-15h13"/><path d="M32 4l6 6-6 6"/>',
+  tyre:'<circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="7"/>',
+  boost:'<path d="M28 3L11 27h12l-4 18 18-25H25z"/>',
+  driver:'<path d="M7 32a17 17 0 0134 0v6H7z"/><path d="M19 26h22"/>',
+  golden:'<path d="M24 5l5.5 11 12 1.8-8.7 8.4 2 12L24 32.6 13.2 38.2l2-12L6.5 17.8l12-1.8z"/>',
+};
