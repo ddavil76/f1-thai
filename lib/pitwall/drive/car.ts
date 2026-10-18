@@ -48,7 +48,12 @@ const REGEN_LIFT = 0.035;
 /** ลมดูดเพิ่มความเร็วสูงสุดได้ · อากาศเสียลดการเกาะถนน */
 const TOW_TOP = 0.035;
 export const DIRTY_GRIP = 0.06;
-export type Perf = { accel: number; grip: number; top: number };
+/**
+ * สมรรถนะรถ: accel/grip/top = ตัวคูณแรงเร่ง/การเกาะถนน/ความเร็วสูงสุด
+ * ส่วนที่เหลือ (ไม่ใส่ = 1) ใช้กับการ์ดอัปเกรดของโหมดกลยุทธ์: brake = แรงเบรก · regen = ชาร์จแบต · cap = ความจุแบต
+ * ot = แรงของ Overtake · tow = แรงลมดูด · otGrip = เกาะถนนเพิ่มตอนใช้ Overtake
+ */
+export type Perf = { accel: number; grip: number; top: number; brake?: number; regen?: number; cap?: number; ot?: number; tow?: number; otGrip?: number };
 
 export type CarState = {
   /** ระยะสะสม (เมตร) — ติดลบช่วงวิ่งเข้าเส้นครั้งแรก */
@@ -101,7 +106,7 @@ export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, ev
   c.lat += Math.sign(want - c.lat) * Math.min(Math.abs(want - c.lat), LANE_RATE * dt);
   const drive = longitudinal(t, c, input, perf, mods);
   // เร็วเกินโค้ง → ไถลออกนอกไลน์และเสียความเร็ว (อากาศเสียจากคันหน้าทำให้เกาะถนนน้อยลง)
-  const limit = laneValue(t, "vlat", c.s, c.lat) * perf.grip * (1 - DIRTY_GRIP * (mods?.dirty ?? 0));
+  const limit = laneValue(t, "vlat", c.s, c.lat) * perf.grip * (c.ot ? (perf.otGrip ?? 1) : 1) * (1 - DIRTY_GRIP * (mods?.dirty ?? 0));
   const over = c.v / limit - 1;
   if (over > SLIDE_AT) {
     const curve = laneValue(t, "curve", c.s, c.lat);
@@ -277,14 +282,16 @@ function longitudinal(t: DriveTrack, c: CarState, input: Input, perf: Perf, mods
   c.sm = !!input.sm && !input.brake && t.smZone[Math.floor((((c.s / DS) % t.n) + t.n) % t.n)] === 1;
   // Overtake: แบตเตอรี่เสริมตอนกดคันเร่ง · ชาร์จคืนตอนเบรก/ปล่อยคันเร่ง
   c.ot = !!input.ot && input.throttle && !input.brake && c.energy > 0;
-  if (c.ot) c.energy = Math.max(0, c.energy - OT_DRAIN * dt);
-  else if (input.brake) c.energy = Math.min(1, c.energy + REGEN_BRAKE * dt);
-  else if (!input.throttle) c.energy = Math.min(1, c.energy + REGEN_LIFT * dt);
+  // ความจุแบตมากขึ้น = ใช้ได้นานขึ้น (แบตยังนับ 0..1)
+  if (c.ot) c.energy = Math.max(0, c.energy - (OT_DRAIN / (perf.cap ?? 1)) * dt);
+  else if (input.brake) c.energy = Math.min(1, c.energy + ((REGEN_BRAKE * (perf.regen ?? 1)) / (perf.cap ?? 1)) * dt);
+  else if (!input.throttle) c.energy = Math.min(1, c.energy + ((REGEN_LIFT * (perf.regen ?? 1)) / (perf.cap ?? 1)) * dt);
   // ความเร็วสูงสุดตามแรงต้าน: ปีกพับ · ลมดูด · แบตเตอรี่เสริม
-  const vtop = (c.sm ? VSM : VMAX) * (1 + TOW_TOP * (mods?.tow ?? 0) + (c.ot ? OT_TOP : 0) + (mods?.boost ?? 0));
+  const otPow = perf.ot ?? 1;
+  const vtop = (c.sm ? VSM : VMAX) * (1 + TOW_TOP * (perf.tow ?? 1) * (mods?.tow ?? 0) + (c.ot ? OT_TOP * otPow : 0) + (mods?.boost ?? 0));
   // ขึ้นเนิน = แรงโน้มถ่วงดึงถอยหลัง · ลงเนิน = ไหลเร็วขึ้น
-  const drive = accelFor(v, vtop) * perf.accel + (c.ot ? OT_ACCEL : 0) + (mods?.boost ?? 0) * 30;
-  const a = -scrub - grass * (3 + 0.1 * v) + (input.brake ? -brakeAt(v) : input.throttle ? drive * (1 - 0.55 * grass) : -(c.sm ? coastSM(v) : coastAt(v))) - G * sample(t, t.grade, c.s);
+  const drive = accelFor(v, vtop) * perf.accel + (c.ot ? OT_ACCEL * otPow : 0) + (mods?.boost ?? 0) * 30;
+  const a = -scrub - grass * (3 + 0.1 * v) + (input.brake ? -brakeAt(v) * (perf.brake ?? 1) : input.throttle ? drive * (1 - 0.55 * grass) : -(c.sm ? coastSM(v) : coastAt(v))) - G * sample(t, t.grade, c.s);
   // ความเร็วสูงสุด: พับปีกกลับ/หมดลมดูดขณะเร็วกว่า → ลดลงเองทีละน้อย (ไม่ชนกำแพงความเร็ว)
   const top = vtop * perf.top;
   const next = v + a * dt;

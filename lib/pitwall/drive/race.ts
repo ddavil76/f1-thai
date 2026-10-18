@@ -62,7 +62,17 @@ const AI_PATIENCE = 1.2;
 export type Difficulty = "easy" | "normal" | "hard";
 
 /** remote = รถของผู้เล่นคนอื่นในห้องออนไลน์ (ตำแหน่งมาจากเครือข่าย ไม่จำลองในเครื่องนี้) */
-export type Entrant = { id: string; name: string; team: string; num: number; colour: string; ink: string; pace: number; skill: number; player?: boolean; remote?: boolean };
+/** hero = รถของเราในโหมดกลยุทธ์: AI ขับ แต่ทีมเราสั่งเข้าพิท (pitWant) / ใช้แบต (RaceInput.ot) และอัปเกรดได้กลางเรซ (setBoost) */
+export type Entrant = { id: string; name: string; team: string; num: number; colour: string; ink: string; pace: number; skill: number; player?: boolean; remote?: boolean; hero?: boolean };
+
+/**
+ * อัปเกรดของรถคันหนึ่ง (การ์ดโหมดกลยุทธ์) — ค่าเริ่มต้น NO_BOOST = ไม่เปลี่ยน
+ * accel/grip/top/brake/regen/cap/ot/tow/otGrip = ตัวคูณสมรรถนะ (ดู Perf) · corner = ความเร็วเข้าโค้งที่นักขับ AI กล้าใช้
+ * wear = ยางสึก · keep = เกาะถนนที่เสียไปตามการสึก (น้อย = ยางเก่ายังเกาะ) · slack = ฝีมือ (ลบ = ขับเร็วขึ้น)
+ * pit = ตัวคูณเวลาจอด · pitMinus = วินาทีที่จอดเร็วขึ้น · defend = ความเร็วเพิ่มเมื่อมีรถจี้ท้าย (ส่วนของความเร็วสูงสุด)
+ */
+export type Boost = { accel: number; grip: number; top: number; brake: number; regen: number; cap: number; ot: number; tow: number; otGrip: number; corner: number; wear: number; keep: number; slack: number; pit: number; pitMinus: number; defend: number };
+export const NO_BOOST: Boost = { accel: 1, grip: 1, top: 1, brake: 1, regen: 1, cap: 1, ot: 1, tow: 1, otGrip: 1, corner: 1, wear: 1, keep: 1, slack: 0, pit: 1, pitMinus: 0, defend: 0 };
 
 export type RaceCar = Entrant & {
   car: CarState;
@@ -117,6 +127,9 @@ export type RaceCar = Entrant & {
   plan: { lap: number; next: Compound } | null;
   /** โดนรถคันหลังใช้แบต OT ตามติด: เสียกำลังอีกกี่วินาที */
   otHit: number;
+  /** อัปเกรด (โหมดกลยุทธ์) · ฝีมือตั้งต้นก่อนอัปเกรด */
+  boost: Boost;
+  slack0: number;
 };
 
 /**
@@ -175,6 +188,8 @@ export type Race = {
   rng: () => number;
   /** พิทเลนของสนามนี้ */
   pitLane: PitLane;
+  /** บังคับเข้าพิทอย่างน้อย 1 ครั้ง */
+  mustPit: boolean;
 };
 
 const SLACK: Record<Difficulty, number> = { easy: 0.045, normal: 0.022, hard: 0.008 };
@@ -193,7 +208,7 @@ function mulberry(seed: number) {
 /**
  * ตั้งกริดสตาร์ท: เรียงตามลำดับ entrants (คันแรก = โพล) สลับเลนซ้าย/ขวา ห่างกันคันละ 8 ม. หลังเส้นสตาร์ท
  */
-export function createRace(track: DriveTrack, entrants: Entrant[], opts: { laps: number; difficulty: Difficulty; seed?: number; startTyre?: Compound }): Race {
+export function createRace(track: DriveTrack, entrants: Entrant[], opts: { laps: number; difficulty: Difficulty; seed?: number; startTyre?: Compound; mustPit?: boolean }): Race {
   const rng = mulberry(opts.seed ?? 7);
   const lane = pitLane(track, TEAMS.length);
   const cars = entrants.map((e, k): RaceCar => {
@@ -201,14 +216,18 @@ export function createRace(track: DriveTrack, entrants: Entrant[], opts: { laps:
     const car = newCar(track, { s: -12 - k * 8, v: 0, lat });
     // ยางออกตัว: ผู้เล่นเลือกเอง · AI ส่วนใหญ่ Medium บางคันเสี่ยง Soft หรือยืด Hard
     const u = rng();
-    const start: Compound = e.player || e.remote ? (opts.startTyre ?? "medium") : u < 0.25 ? "soft" : u < 0.85 ? "medium" : "hard";
+    const start: Compound = e.player || e.remote || e.hero ? (opts.startTyre ?? "medium") : u < 0.25 ? "soft" : u < 0.85 ? "medium" : "hard";
     const team = Math.max(0, TEAMS.findIndex((x) => x.id === e.team));
+    // ฝีมือนักขับ (skill ลบ = เก่ง) + ระดับความยาก + สุ่มเล็กน้อย
+    const slack = e.player ? 0 : Math.max(0, SLACK[opts.difficulty] + e.skill * 0.04 + (rng() - 0.5) * 0.006);
     return {
       ...e,
       car,
       perf: perfOf(e.pace),
       // ฝีมือนักขับ (skill ลบ = เก่ง) + ระดับความยาก + สุ่มเล็กน้อย
-      slack: e.player ? 0 : Math.max(0, SLACK[opts.difficulty] + e.skill * 0.04 + (rng() - 0.5) * 0.006),
+      slack,
+      slack0: slack,
+      boost: NO_BOOST,
       lane: lat,
       penalty: 0,
       finish: null,
@@ -235,12 +254,33 @@ export function createRace(track: DriveTrack, entrants: Entrant[], opts: { laps:
       pit: null,
       pitOff: null,
       box: lane.boxes[team] ?? 0,
-      plan: e.player || e.remote ? null : planStop(start, opts.laps, rng),
+      plan: e.player || e.remote || e.hero || opts.mustPit === false ? null : planStop(start, opts.laps, rng),
       otHit: 0,
     };
   });
-  return { track, laps: opts.laps, cars, t: 0, lights: 4.2 + rng() * 1.2, order: cars.map((_, i) => i), finished: false, rng, pitLane: lane };
+  return { track, laps: opts.laps, cars, t: 0, lights: 4.2 + rng() * 1.2, order: cars.map((_, i) => i), finished: false, rng, pitLane: lane, mustPit: opts.mustPit !== false };
 }
+
+/** ตั้งอัปเกรดของรถคันนี้ (มีผลทันที) */
+export function setBoost(race: Race, id: string, b: Boost) {
+  const rc = race.cars.find((c) => c.id === id);
+  if (!rc) return;
+  rc.boost = b;
+  const p = perfOf(rc.pace);
+  rc.perf = { accel: p.accel * b.accel, grip: p.grip * b.grip, top: p.top * b.top, brake: b.brake, regen: b.regen, cap: b.cap, ot: b.ot, tow: b.tow, otGrip: b.otGrip };
+  rc.slack = Math.max(0, rc.slack0 + b.slack);
+}
+
+/** การเกาะถนนของยางตอนนี้ รวมอัปเกรด keep (ยางเก่าเสียการเกาะน้อยลง) */
+function gripOf(rc: RaceCar) {
+  const g = tyreGrip(rc.tyre);
+  if (rc.boost.keep === 1) return g;
+  const fresh = tyreGrip({ ...rc.tyre, wear: 0 });
+  return fresh - (fresh - g) * rc.boost.keep;
+}
+
+/** ยางที่จะเปลี่ยนถ้าเข้าพิทรอบนี้: ผู้เล่น/รถของเราตามที่สั่ง · AI ตามแผน */
+const pitCall = (race: Race, rc: RaceCar) => (rc.player || rc.hero ? rc.pitWant : aiPitCall(race, rc));
 
 /** AI: แผนเข้าพิทครั้งเดียว — ใช้ยางชุดแรกราว 65–85% ของอายุ (ไม่เกินรอบรองสุดท้าย) แล้วเปลี่ยนเป็นชนิดที่นุ่มสุดที่วิ่งจนจบได้ */
 function planStop(start: Compound, laps: number, rng: () => number) {
@@ -422,7 +462,7 @@ function aiInput(race: Race, i: number, events: RaceEvent[]): Input {
   if (bend > 0.012) rc.defended = false;
   let lane: number;
   if (rc.pass) lane = passLane(race, i, events);
-  else if (aiPitCall(race, rc) && approachingPit(race, c.s)) lane = race.pitLane.side; // จะเข้าพิท: ชิดเลนฝั่งพิท
+  else if (pitCall(race, rc) && approachingPit(race, c.s)) lane = race.pitLane.side; // จะเข้าพิท: ชิดเลนฝั่งพิท
   else if (passedBy(race, rc.id)) lane = c.lat; // โดนแซงอยู่: อยู่ตรงนั้น ไม่ขยับปิดทาง
   else {
     // ออกแซง: ค้างหลังคันหน้ามานานพอ และยังมีทางตรงให้แซงก่อนถึงจุดเบรก
@@ -454,7 +494,7 @@ function aiInput(race: Race, i: number, events: RaceEvent[]): Input {
   // ความเร็วเป้าหมาย: ตามฝีมือ · แซงอยู่บนทางตรง = เหยียบเต็ม (ไม่มีแรงเสริมฟรี ใช้ลมดูด + แบต)
   const scale = 1 - rc.slack - (rc.mistake > 0 ? 0.03 : 0) + merge;
   // ยาง: เกาะน้อยลง (สึก/เย็น/ชนิดแข็ง) = เข้าโค้งช้าลงตาม · Soft ใหม่ = เข้าได้เร็วขึ้น
-  let pedals: Input = rc.pass && brakeAheadAt(t, c.s, c.lat) > 60 ? { throttle: true, brake: false, sm: true } : idealInput(t, c, scale, tyreGrip(rc.tyre));
+  let pedals: Input = rc.pass && brakeAheadAt(t, c.s, c.lat) > 60 ? { throttle: true, brake: false, sm: true } : idealInput(t, c, scale, gripOf(rc) * rc.boost.corner);
   // ตามติดคันหน้าแล้วกำลังไล่ทัน (เช่นคันหน้าเบรกก่อน) → เบรกตาม ไม่ชนท้าย
   // (รวมคันข้าง ๆ ที่ถนนกำลังจะแคบจนต้องต่อแถว: ถอยไปอยู่ข้างหลังแต่เนิ่น ๆ)
   const fb = frontInBand(race, i, Math.max(SQUEEZE_LOOK, c.v * 1.2));
@@ -483,7 +523,7 @@ function aiPitCall(race: Race, rc: RaceCar): Compound | null {
   const left = race.laps - rc.car.lap;
   if (rc.plan && lapNow >= rc.plan.lap && rc.pits === 0) return rc.plan.next;
   if (rc.tyre.wear > 0.88 && left > 0.6) return suggestCompound(left - 1, race.laps);
-  if (rc.pits === 0 && lapNow >= race.laps) return suggestCompound(0, race.laps);
+  if (race.mustPit && rc.pits === 0 && lapNow >= race.laps) return suggestCompound(0, race.laps);
   return null;
 }
 
@@ -601,7 +641,7 @@ function stepPit(race: Race, rc: RaceCar, press: { stop: boolean; go: boolean },
         c.s = p.stopAt;
         p.phase = "stop";
         p.t = 0;
-        p.need = STOP_BASE + stopExtra(p.err) + (race.rng() - 0.5) * 0.2;
+        p.need = Math.max(1.2, (STOP_BASE + stopExtra(p.err) + (race.rng() - 0.5) * 0.2) * rc.boost.pit - rc.boost.pitMinus);
       }
       break;
     }
@@ -714,7 +754,7 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
       }
       if (rc.finish !== null && rc.finish === race.t) {
         // กติกา: ต้องเข้าพิทอย่างน้อย 1 ครั้ง (กำลังอยู่ในพิทตอนข้ามเส้น = นับว่าเข้าแล้ว)
-        if (rc.pits === 0 && !rc.pit) {
+        if (race.mustPit && rc.pits === 0 && !rc.pit) {
           rc.penalty += PIT_MISS_PENALTY;
           events.push({ kind: "pitMiss", id: rc.id, penalty: rc.penalty });
         }
@@ -762,7 +802,11 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
       // ขอเข้าพิทไว้: ช่วงก่อนทางเข้ารถชิดเลนฝั่งพิทเอง
       const lane = rc.pass ? passLane(race, i, events) : rc.pitWant && approachingPit(race, rc.car.s) ? race.pitLane.side : (player.lane ?? 0);
       input = { ...player, lane };
-    } else input = aiInput(race, i, events);
+    } else {
+      input = aiInput(race, i, events);
+      // รถของเรา (โหมดกลยุทธ์): ทีมสั่งใช้แบตเอง (ไม่ส่ง ot = ให้ AI ตัดสินใจ)
+      if (rc.hero && player.ot !== undefined) input = { ...input, ot: player.ot };
+    }
     rc.braking = input.brake;
     // เพิ่งออกจากท้ายคันหน้า: ลมดูดยังพาไปอีกครู่ (ค่อย ๆ หาย)
     if (rc.carry > 0) {
@@ -774,6 +818,8 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
       rc.otHit -= STEP;
       mods = { ...mods, boost: (mods.boost ?? 0) - OT_SLOW };
     }
+    // อัปเกรดป้องกันอันดับ: มีรถจี้ท้ายในระยะ 15 ม. → เร็วขึ้นเล็กน้อย
+    if (rc.boost.defend > 0 && cars.some((o) => o !== rc && !inPit(o) && rc.car.s - o.car.s > 0 && rc.car.s - o.car.s < 15)) mods = { ...mods, boost: (mods.boost ?? 0) + rc.boost.defend };
     const want = input.lane ?? rc.lane;
     // กันชนท้าย: ความเร็วสูงสุดที่ยังค้างระยะ HOLD_GAP วินาทีหลังคันหน้าได้ (คำนวณก่อนขยับ)
     // มองข้างหน้าด้วย: ถนนแคบลงตอนวิ่งเคียงกัน คันหลังค่อย ๆ ถอยไปต่อแถว
@@ -790,7 +836,7 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     const vPre = rc.car.v;
     const sPre = rc.car.s;
     // ยาง: การเกาะถนนตามชนิด/การสึก/ความเย็น
-    const g = tyreGrip(rc.tyre);
+    const g = gripOf(rc);
     const perf = g === 1 ? rc.perf : { ...rc.perf, grip: rc.perf.grip * g };
     if (free) stepFree(t, rc.car, input, perf, stepEv, mods);
     else stepCar(t, rc.car, { ...input, lane: want }, perf, stepEv, mods);
@@ -855,13 +901,13 @@ export function stepRace(race: Race, player: RaceInput, events: RaceEvent[] = []
     if (rc.finish === null && race.lights <= 0) {
       const before = rc.tyre.wear;
       const sl = stepEv.find((e) => e.kind === "slide");
-      wearTyre(rc.tyre, rc.car.s - sPre, wearPerMeter(rc.tyre.c, race.laps, t.length), sl?.kind === "slide" ? sl.amount : 0, STEP);
+      wearTyre(rc.tyre, rc.car.s - sPre, wearPerMeter(rc.tyre.c, race.laps, t.length) * rc.boost.wear, sl?.kind === "slide" ? sl.amount : 0, STEP);
       if (stepEv.some((e) => e.kind === "excursion")) rc.tyre.wear += EXCURSION_WEAR;
       if (before < 0.75 && rc.tyre.wear >= 0.75) events.push({ kind: "tyreLow", id: rc.id });
     }
     lapsDone(rc, i);
     // ขอเข้าพิทไว้ (ผู้เล่น) / ถึงรอบตามแผน (AI) → ผ่านทางเข้าพิทแล้วเลี้ยวเข้า
-    const call = rc.finish !== null ? null : rc.player ? rc.pitWant : aiPitCall(race, rc);
+    const call = rc.finish !== null ? null : pitCall(race, rc);
     if (call && sPre > 0) {
       const entry = nextPitEntry(t, race.pitLane, sPre);
       if (rc.car.s >= entry) enterPit(race, rc, call, events);

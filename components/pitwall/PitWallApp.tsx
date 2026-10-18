@@ -1,20 +1,21 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Gauge, Globe, LogIn, Radio, User } from "lucide-react";
+import { ChevronLeft, ChevronRight, Gauge, Globe, LogIn, Radio, Sparkles, User } from "lucide-react";
 import Live from "@/components/pitwall/Live";
 import DriverMode from "@/components/pitwall/driver/DriverMode";
+import GambitApp from "@/components/pitwall/gambit/GambitApp";
 import { createRoom, onlineReady, useLocalSession, useOnlineSession, type Session } from "@/components/pitwall/session";
 import { Btn, Card, Head } from "@/components/pitwall/ui";
 import { Final, Grid, Lobby, Prep, Results } from "@/components/pitwall/Weekend";
 import { NAMES_NOTE } from "@/lib/pitwall/teams";
 
 /** หน้าในเกม: เลือกโหมด → manager (หัวหน้าทีม) / driver (ขับเอง) → เกม */
-type View = "menu" | "manager" | "driver";
+type View = "menu" | "manager" | "driver" | "gambit";
 type Game = { kind: "solo" } | { kind: "online"; code: string } | null;
 
 const NAME_KEY = "pitwall-name";
-const VIEWS: View[] = ["menu", "manager", "driver"];
+const VIEWS: View[] = ["menu", "manager", "driver", "gambit"];
 
 /** โหมดที่เลือกอยู่ใน URL (?mode=manager|driver) — ปุ่มย้อนกลับของเบราว์เซอร์/มือถือพากลับหน้าเลือกโหมด */
 function viewFromUrl(): View {
@@ -74,6 +75,7 @@ export default function PitWallApp() {
   if (game?.kind === "solo") return <SoloGame name={nick} onExit={() => setGame(null)} />;
   if (game?.kind === "online") return <OnlineGame code={game.code} name={nick} onExit={() => setGame(null)} />;
   if (view === "driver") return <DriverMode name={nick} onExit={() => go("menu")} />;
+  if (view === "gambit") return <GambitApp onExit={() => go("menu")} />;
 
   if (view === "manager")
     return (
@@ -185,6 +187,14 @@ export default function PitWallApp() {
           sub="ขับเองแบบ 3D กดคันเร่ง/เบรกตามเส้นช่วยสามสี"
           points={["Time Trial ทำเวลาต่อรอบ", "แข่งกับ AI · ตามติดแล้วกดแซง", "ยาง · เข้าพิทตามจังหวะ", "แข่งกับเพื่อนออนไลน์ 8 คน"]}
           onClick={() => go("driver")}
+        />
+        <ModeCard
+          kicker="ROGUELITE · GAMBIT"
+          title="กลยุทธ์การ์ด"
+          icon={<Sparkles className="h-6 w-6" aria-hidden />}
+          sub="รถขับเอง — คุณคุมกลยุทธ์ เลือกการ์ดอัปเกรดทุกเลเวลอัประหว่างแข่ง"
+          points={["XP จากระยะทาง · แซง · รอบเร็วสุด", "การ์ด 22 ใบ 6 หมวด · การ์ดทอง · การ์ดเสี่ยง", "สั่งเข้าพิท · เลือกยาง · บูสต์", "คู่แข่ง AI ก็อัปเกรดเหมือนกัน"]}
+          onClick={() => go("gambit")}
         />
       </div>
       <p className="text-center text-[11px] text-white/50">{NAMES_NOTE}</p>

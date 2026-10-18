@@ -93,6 +93,8 @@ export type DriveScene = {
   resize(): void;
   render(): void;
   dispose(): void;
+  /** ส่วนของ three สำหรับใส่เอฟเฟกต์เพิ่มจากภายนอก (โหมดกลยุทธ์) · rig(i) = รถคู่แข่งคันที่ i (โหมดผู้ชม = ทุกคัน) */
+  parts(): { scene: THREE_NS.Scene; camera: THREE_NS.PerspectiveCamera; renderer: THREE_NS.WebGLRenderer; rig(i: number): { root: THREE_NS.Group; body: THREE_NS.Group } | null };
 };
 
 export function createDriveScene(opts: {
@@ -1348,6 +1350,9 @@ export function createDriveScene(opts: {
       showLines();
     },
     resize,
+    parts() {
+      return { scene, camera, renderer, rig: (i: number) => rivals[i]?.rig ?? null };
+    },
     render() {
       renderer.render(scene, camera);
     },
