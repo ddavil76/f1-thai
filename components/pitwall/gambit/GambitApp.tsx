@@ -6,7 +6,7 @@ import { ChevronLeft, Flag, ListOrdered, Pause, Play, RotateCcw, Wrench, Zap } f
 import { Btn, Card, fmtLap, Head, Seg, TyreDot } from "@/components/pitwall/ui";
 import { useDriveTrack } from "@/components/pitwall/driver/driveTrack";
 import type { CameraMode, DriveScene } from "@/components/pitwall/driver/scene";
-import { laneValue } from "@/lib/pitwall/drive/line";
+import { laneValue, sample } from "@/lib/pitwall/drive/line";
 import { lapsLeft } from "@/lib/pitwall/drive/tyres";
 import { hasRealTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import type { Difficulty } from "@/lib/pitwall/drive/race";
@@ -15,6 +15,7 @@ import { callPit, chooseCard, createSession, gapToLeader, heroCar, heroCrew, pos
 import { CIRCUITS, circuitName, TEAMS } from "@/lib/pitwall/teams";
 import { COMPOUNDS, COMPOUND_INFO, type Compound } from "@/lib/pitwall/types";
 import { CARD_ICONS, FAC_ICONS } from "./icons";
+import { createFx } from "./fx";
 
 const SETUP_KEY = "pitwall-gambit-setup";
 
@@ -140,10 +141,10 @@ function GambitRace({ setup, onAgain, onExit }: { setup: Setup; onAgain: () => v
   const [tower, setTower] = useState(false);
   const [ready, setReady] = useState(false);
   const [, setTick] = useState(0);
-  const ctl = useRef({ speed: 1 as number, menu: false });
+  const ctl = useRef({ speed: 1 as number, menu: false, chase: true });
   useEffect(() => {
-    ctl.current = { speed, menu };
-  }, [speed, menu]);
+    ctl.current = { speed, menu, chase: cam === "chase" };
+  }, [speed, menu, cam]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -207,6 +208,12 @@ function GambitRace({ setup, onAgain, onExit }: { setup: Setup; onAgain: () => v
       sceneRef.current = scene;
       scene.setLine(false);
       scene.setCamera("chase");
+      // เอฟเฟกต์การ์ดที่อัปครบ 3 ขั้น (ติดกับรถเรา)
+      const parts = scene.parts();
+      const fx = createFx(THREE, parts.scene, parts.camera, parts.renderer);
+      const rig = parts.rig(session.hero);
+      if (rig) fx.bind(rig.root, rig.body);
+      let maxedBefore = new Set<string>();
       setReady(true);
       const onResize = () => scene.resize();
       window.addEventListener("resize", onResize);
@@ -233,6 +240,28 @@ function GambitRace({ setup, onAgain, onExit }: { setup: Setup; onAgain: () => v
         }));
         const me = states[session.hero];
         scene.update({ s: me.s, lateral: me.lateral, ghost: null, speed: me.speed, accel: 0, dt: simDt > 0 ? dt : 0, rivals: states, focus: session.hero, boost: heroCar(session).car.ot });
+        const hc = heroCar(session);
+        const crew = heroCrew(session);
+        const maxed = new Set(Object.entries(crew.deck.cards).filter(([, lv]) => lv >= TIER_MAX).map(([id]) => id));
+        for (const id of maxed) if (!maxedBefore.has(id)) fx.queueMax(CARD[id].name, FACS[CARD[id].fac].color);
+        maxedBefore = maxed;
+        const near = (lo: number, hi: number) => r.cars.some((o) => o !== hc && o.pitOff === null && o.finish === null && o.car.s - hc.car.s > lo && o.car.s - hc.car.s < hi);
+        const lapAt = ((hc.car.s % track.length) + track.length) % track.length;
+        fx.update(dt, simDt, {
+          maxed,
+          v: hc.car.v,
+          boost: hc.car.ot,
+          energy: hc.car.energy,
+          cf: Math.min(1, Math.abs(sample(track, track.curve, hc.car.s)) * 50),
+          ahead: near(0, 45),
+          behind: near(-16, 0),
+          pit: hc.pitOff !== null,
+          finished: hc.finish !== null,
+          gold: crew.deck.golds.some((g) => g.until > r.t),
+          xp: crew.level * 1000 + crew.xp,
+          sector: Math.floor(lapAt / (track.length / 3)),
+          chase: ctl.current.chase,
+        });
         scene.render();
         if (now - hudAt > 150) {
           hudAt = now;
@@ -241,6 +270,7 @@ function GambitRace({ setup, onAgain, onExit }: { setup: Setup; onAgain: () => v
       };
       raf = requestAnimationFrame(frame);
       cleanup = () => {
+        fx.dispose();
         window.removeEventListener("resize", onResize);
         scene.dispose();
         sceneRef.current = null;
@@ -626,8 +656,8 @@ function CardFace({ h, lv, goldMul, goldDur, idx, onPick }: { h: Hand; lv: numbe
           {h.gold
             ? `อยู่ ${Math.round(goldDur)} วิ · ซ้อนกันได้`
             : h.risky
-              ? `ข้ามไปขั้น 3 ทันที · โอกาสเครื่องรวน ${Math.round(h.risky.chance * 100)}% ภายใน ${h.risky.window} วิ`
-              : `ขั้น ${next}/${TIER_MAX}${next === TIER_MAX ? " · ครบ!" : ""}`}
+              ? `ข้ามไปขั้น 3 ทันที (ได้เอฟเฟกต์${k.fx}) · โอกาสเครื่องรวน ${Math.round(h.risky.chance * 100)}% ภายใน ${h.risky.window} วิ`
+              : `ขั้น ${next}/${TIER_MAX}${next === TIER_MAX ? ` · ปลดล็อกเอฟเฟกต์${k.fx}` : ""}`}
         </em>
       </span>
     </button>
