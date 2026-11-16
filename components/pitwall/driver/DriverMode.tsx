@@ -1328,7 +1328,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         }
         const guide = race?.cars[pi].pit ? undefined : { lat: 0, grip, fadeAt, pit: pitGuide };
         // ตัวรถ/รอยล้อ/ควัน จากฟิสิกส์: แรงเหวี่ยงจริง · ความขรุขระใต้ล้อ · ยางหน้า (ล็อก/หน้าดื้อ) · ยางหลัง (ฟรี/ท้ายปัด)
-        const fx = inPitView ? {} : { latAcc: car.v * car.r, rough: car.rough, skid: { front: Math.max(car.lock, car.slipF), rear: Math.max(car.spin, car.slipR, car.lock * 0.7) }, dirt: car.rough > 0.3 && car.kerb < 1 };
+        const fx = inPitView ? {} : { brake: car.brk, latAcc: car.v * car.r, rough: car.rough, skid: { front: Math.max(car.lock, car.slipF), rear: Math.max(car.spin, car.slipR, car.lock * 0.7) }, dirt: car.rough > 0.3 && car.kerb < 1 };
         scene.update({ s: car.s, lateral, psi: inPitView ? undefined : car.psi, steer: inPitView ? undefined : car.steer, slip: car.slip, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot, tyre: race ? COMPOUND_INFO[race.cars[pi].tyre.c].color : undefined, ...fx });
         scene.render();
 

@@ -94,6 +94,8 @@ export type DriveScene = {
     rough?: number;
     skid?: { front: number; rear: number };
     dirt?: boolean;
+    /** เบรกที่กดจริง 0..1 — จานเบรกร้อนเรืองแสงตอนเบรกหนักที่ความเร็วสูง แล้วค่อย ๆ เย็นลง */
+    brake?: number;
   }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
@@ -964,9 +966,45 @@ export function createDriveScene(opts: {
   }
 
   /* ---------- รถ ---------- */
-  type Rig = { root: THREE_NS.Group; body: THREE_NS.Group; steer: THREE_NS.Group[]; spin: THREE_NS.Group[]; setAero?: (open: number) => void; setTyre: (color: string) => void };
-  const tyreMat = keep(new THREE.MeshStandardMaterial({ color: 0x111113, roughness: 0.85 }));
-  const rimMat = keep(new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.3, metalness: 0.85 }));
+  type Rig = { root: THREE_NS.Group; body: THREE_NS.Group; steer: THREE_NS.Group[]; spin: THREE_NS.Group[]; setAero?: (open: number) => void; setTyre: (color: string) => void; brakes: THREE_NS.MeshStandardMaterial };
+  // ยาง: ลายแก้มยาง (ยี่ห้อสมมติ) + เนื้อยางหยาบ/คราบยางบนหน้ายาง · ล้อแม็กสีเทาเข้มแบบรถสมัยใหม่
+  const tyreTex = canvasTex(1024, 128, (g) => {
+    g.fillStyle = "#151517";
+    g.fillRect(0, 0, 1024, 128);
+    // หน้ายาง (กลางภาพ): เนื้อด้าน มีคราบยางละลายเป็นเส้น ๆ
+    for (let i = 0; i < 2600; i++) {
+      const v = 14 + Math.floor(r() * 22);
+      g.fillStyle = `rgb(${v},${v},${v + 1})`;
+      g.fillRect(r() * 1024, 34 + r() * 60, 2 + r() * 6, 1);
+    }
+    // ตัวหนังสือบนแก้มยางทั้งสองข้าง (วนรอบล้อ 3 ครั้ง)
+    g.fillStyle = "rgba(225,225,228,0.85)";
+    g.font = "bold 15px sans-serif";
+    g.textBaseline = "middle";
+    for (const [y, flip] of [[12, false], [116, true]] as const)
+      for (let k = 0; k < 3; k++) {
+        const x = k * 341 + 60;
+        g.save();
+        g.translate(x, y);
+        if (flip) g.scale(-1, 1);
+        g.fillText("WEEK RACE  ·  SLICK", 0, 0);
+        g.restore();
+      }
+  });
+  const tyreMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, map: tyreTex, roughness: 0.92 }));
+  const rimMat = keep(new THREE.MeshStandardMaterial({ color: 0x2b2d31, roughness: 0.32, metalness: 0.75 }));
+  // เงาแนบพื้นใต้รถ (นุ่ม ๆ) — ทำให้รถดูวางอยู่บนถนนจริง แม้กราฟิกต่ำที่ไม่มีเงา
+  const contactTex = canvasTex(64, 128, (g) => {
+    const grd = g.createRadialGradient(32, 64, 4, 32, 64, 60);
+    grd.addColorStop(0, "rgba(0,0,0,0.85)");
+    grd.addColorStop(0.55, "rgba(0,0,0,0.45)");
+    grd.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 128);
+  }, false);
+  const contactGeo = keep(new THREE.PlaneGeometry(2.6, 5.8));
+  contactGeo.rotateX(-Math.PI / 2);
+  const contactMat = keep(new THREE.MeshBasicMaterial({ map: contactTex, transparent: true, depthWrite: false, opacity: high ? 0.55 : 0.75, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   const stripeMat = keep(new THREE.MeshStandardMaterial({ color: 0xe10600, roughness: 0.6 }));
   const darkMat = keep(new THREE.MeshStandardMaterial({ color: 0x0d0e10, roughness: 0.5, side: THREE.DoubleSide }));
   /** ล้อ 18 นิ้ว (รัศมีขอบล้อ ≈ 0.23 ม.) ยางแก้มเตี้ยขอบมน · ล้อแม็ก 10 ก้านด้านนอก · ดรัมเบรกด้านใน (แกนล้อ = แกน x) */
@@ -1059,7 +1097,14 @@ export function createDriveScene(opts: {
     const rm = ghostMat(rimMat);
     // แถบแก้มยางของรถแต่ละคันแยกวัสดุ (เปลี่ยนสีตามยางที่ใส่)
     const st = isGhost ? ghostMat(stripeMat) : keep(stripeMat.clone());
-    const dm = ghostMat(darkMat);
+    // จานเบรกแยกวัสดุต่อคัน (รถเราเรืองแสงตอนเบรกหนัก)
+    const dm = isGhost ? ghostMat(darkMat) : keep(darkMat.clone());
+    if (!isGhost) {
+      const shadow = new THREE.Mesh(contactGeo, contactMat);
+      shadow.position.y = 0.02;
+      shadow.renderOrder = 1;
+      root.add(shadow);
+    }
     for (const [x, z, w, front] of WHEELS) {
       const holder = new THREE.Group();
       holder.position.set(x, WHEEL_R, z);
@@ -1101,7 +1146,7 @@ export function createDriveScene(opts: {
       tyreHex = color;
       st.color.set(color);
     };
-    return { root, body: bodyGroup, steer, spin, setAero, setTyre };
+    return { root, body: bodyGroup, steer, spin, setAero, setTyre, brakes: dm };
   };
 
   const car = makeRig(livery, false);
@@ -1360,7 +1405,7 @@ export function createDriveScene(opts: {
   const chaseDir = new THREE.Vector3();
   const heliWant = new THREE.Vector3();
   // การเคลื่อนไหวของตัวรถ (เกลี่ยให้นุ่ม)
-  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0, boost: 0 };
+  const motion = { roll: 0, pitch: 0, steer: 0, yaw: 0, spin: 0, lastLat: 0, aero: 0, boost: 0, heat: 0 };
   let baseFov = 66;
 
   /** วางรถ: หันหัวตามทิศของ racing line (ไม่ใช่เส้นกลางถนน) — ระยะเยื้องจากไลน์ (ไถล) คงที่ตลอดช่วงที่ดูทิศ */
@@ -1424,7 +1469,7 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus, psi, steer, latAcc, rough, skid, dirt = false }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus, psi, steer, latAcc, rough, skid, dirt = false, brake = 0 }) {
       clock += dt;
       if (tyre) car.setTyre(tyre);
       drawGuide(s, speed, accel, dt, guide);
@@ -1462,6 +1507,10 @@ export function createDriveScene(opts: {
       // ขอบทาง/หญ้า/กรวด: ตัวรถสั่นขึ้นลง
       car.body.position.y = rough ? (Math.random() - 0.5) * 0.025 * rough * Math.min(1, speed / 30) : 0;
       wheelRig.rotation.z = motion.steer * 3.2;
+      // จานเบรกร้อน: ขึ้นตามแรงเบรก × ความเร็ว · เย็นลงช้า ๆ
+      motion.heat = Math.max(0, Math.min(1, motion.heat + (brake * (speed / 60) * 1.4 - motion.heat * 0.35) * dt));
+      car.brakes.emissive.setRGB(1, 0.28, 0.05);
+      car.brakes.emissiveIntensity = motion.heat * motion.heat * 3;
       // รอยล้อ + ควัน: หน้า = ล้อล็อก/หน้าดื้อ · หลัง = ล้อฟรี/ท้ายปัด · นอกถนน = ฝุ่น (ไม่มีรอยยาง)
       if (skid && !opts.spectator) {
         WHEELS.forEach(([, , , front], k) => {
