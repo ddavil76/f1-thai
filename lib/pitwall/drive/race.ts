@@ -15,7 +15,7 @@
  *  ขอเข้าพิท → ถึงทางเข้ารถวิ่งเองด้วยความเร็วพิทเลน → กด "จอด" ให้ตรงกรอบอู่ทีม → เปลี่ยนยาง → ไฟเขียวกด "ไป"
  *  รถในพิทเลนไม่ชน/ไม่บัง/ไม่ให้ลมดูดกับรถบนสนาม
  */
-import { advanceCar, idealInput, newCar, perfOf, STEP, stepCar, stepFree, syncLat, type CarState, type Input, type Mods, type Perf, type StepEvent } from "./car";
+import { advanceCar, idealInput, newCar, perfOf, settleCar, STEP, stepCar, stepFree, syncLat, type CarState, type Input, type Mods, type Perf, type StepEvent } from "./car";
 import { accelFor, DS, laneValue, laneZone, sample, VMAX, type DriveTrack } from "./line";
 import { AUTO_GO, BOX_SHIFT, EARLY_GO, nextPitEntry, PIT_MISS_PENALTY, PIT_QUEUE, PIT_V, pitLane, pitLateral, STOP_BASE, STOP_DECEL, STOP_MISS, STOP_WINDOW, stopExtra, stopGrade, wallFrom, wallTo, type PitLane, type StopGrade } from "./pit";
 import { COMPOUNDS, EXCURSION_WEAR, newTyre, suggestCompound, TYRE_LIFE, tyreGrip, wearPerMeter, wearTyre, type Compound, type Tyre } from "./tyres";
@@ -516,8 +516,7 @@ function enterPit(race: Race, rc: RaceCar, c: Compound, events: RaceEvent[]) {
   rc.car.sm = false;
   rc.car.ot = false;
   rc.car.slide = 0;
-  rc.car.psi = 0;
-  rc.car.steer = 0;
+  settleCar(rc.car);
   rc.pitOff = rc.pit.from;
   events.push({ kind: "pitIn", id: rc.id });
 }
@@ -650,7 +649,7 @@ function stepPit(race: Race, rc: RaceCar, press: { stop: boolean; go: boolean },
     rc.lane = c.lat;
     c.slide = 0;
     c.d = laneValue(t, "offset", c.s, c.lat);
-    c.psi = 0;
+    settleCar(c);
     events.push({ kind: "pitOut", id: rc.id });
     return;
   }

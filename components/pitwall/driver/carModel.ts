@@ -628,8 +628,8 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
     return t;
   };
   /** สีกึ่งด้าน + เคลือบใส (ลิเวอรีสมัยใหม่) */
-  const paintMat = (map: THREE_NS.Texture | null, colour = 0xffffff, side: THREE_NS.Side = THREE.FrontSide, coat = 0.7) =>
-    fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : colour, map: ghost ? null : map, roughness: 0.42, metalness: 0.1, clearcoat: coat, clearcoatRoughness: 0.2, side }));
+  const paintMat = (map: THREE_NS.Texture | null, colour = 0xffffff, side: THREE_NS.Side = THREE.FrontSide, coat = 0.9) =>
+    fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : colour, map: ghost ? null : map, roughness: 0.36, metalness: 0.12, clearcoat: coat, clearcoatRoughness: 0.08, side }));
   const lazy = <T,>(f: () => T) => {
     let v: T | undefined;
     return () => (v ??= f());
@@ -644,7 +644,8 @@ export function buildCar(THREE: Three, merge: (g: Geo[]) => Geo | null, l: Liver
     fw: lazy(() => paintMat(ghost ? null : tex(wingTexture(d, d.sponsors[2], "pair", q)), 0xffffff, THREE.DoubleSide, 0.2)),
     accent: lazy(() => paintMat(null, ghost ? 0xffffff : new THREE.Color(d.base).getHex(), THREE.DoubleSide)),
     second: lazy(() => paintMat(null, ghost ? 0xffffff : new THREE.Color(d.second).getHex(), THREE.DoubleSide)),
-    carbon: lazy(() => fade(new THREE.MeshStandardMaterial({ color: ghost ? 0xdddddd : 0x6a6a6a, map: ghost ? null : tex(carbonTexture(), true), roughness: 0.38, metalness: 0.25, side: THREE.DoubleSide }))),
+    // คาร์บอนเคลือบแล็กเกอร์ใส (เห็นลายสานใต้ชั้นเงา)
+    carbon: lazy(() => fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xdddddd : 0x6a6a6a, map: ghost ? null : tex(carbonTexture(), true), roughness: 0.42, metalness: 0.2, clearcoat: 0.6, clearcoatRoughness: 0.12, side: THREE.DoubleSide }))),
     black: lazy(() => fade(new THREE.MeshStandardMaterial({ color: 0x060607, roughness: 0.7, side: THREE.DoubleSide }))),
     metal: lazy(() => fade(new THREE.MeshStandardMaterial({ color: 0x9da3ab, roughness: 0.25, metalness: 0.9 }))),
     helmet: lazy(() => fade(new THREE.MeshPhysicalMaterial({ color: ghost ? 0xffffff : new THREE.Color(d.accent).getHex(), roughness: 0.2, clearcoat: 1 }))),

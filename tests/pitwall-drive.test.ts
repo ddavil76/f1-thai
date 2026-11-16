@@ -97,8 +97,8 @@ describe("โหมดนักขับ: สนาม", () => {
       // ชิดขอบทั้งสองฝั่ง (เข้าจากด้านนอก แตะ apex ด้านใน)
       expect(nearR).toBeLessThan(2);
       expect(nearL).toBeLessThan(2);
-      // เดิมเส้นเยื้องข้าง ~1.5–2 ม. ต่อ 1 ม. ที่วิ่ง (เลี้ยวหักเกือบ 60°) — ตอนนี้มากสุดคือข้ามถนนในชิเคน (~30°)
-      expect(slope).toBeLessThan(0.6);
+      // เดิมเส้นเยื้องข้าง ~1.5–2 ม. ต่อ 1 ม. ที่วิ่ง (เลี้ยวหักเกือบ 60°) — ตอนนี้มากสุดคือข้ามถนนในชิเคน (~35° บนถนนที่ขยายกว้าง)
+      expect(slope).toBeLessThan(0.72);
       // ความโค้งเปลี่ยนต่อเนื่อง ไม่กระโดด
       expect(jump).toBeLessThan(0.02);
     }
@@ -179,7 +179,8 @@ describe("โหมดนักขับ: ขับอิสระ", () => {
       expect(out, id).toBe(0);
       expect(results[1].valid, id).toBe(true);
       expect(Math.abs(results[1].time - t.refLap) / t.refLap, id).toBeLessThan(0.04);
-      expect(far, id).toBeLessThan(4.5);
+      // ถนนขยายกว้าง (line.ts → widen) เส้นเหวี่ยงกว้างขึ้นตาม
+      expect(far, id).toBeLessThan(5.5);
     }
   }, 60_000);
 
@@ -206,6 +207,45 @@ describe("โหมดนักขับ: ขับอิสระ", () => {
     // lat/slide ชี้ตำแหน่งจริง (ระบบแข่งอ่านค่าจากตรงนี้)
     expect(c.lat).toBeGreaterThanOrEqual(-1);
     expect(c.lat).toBeLessThanOrEqual(1);
+  });
+
+  it("ฟิสิกส์ยาง: เร่งเต็มขณะเลี้ยวช้า ๆ ไม่มีตัวช่วย = ท้ายปัด · ตัวช่วยทรงตัวเต็ม = รถนิ่ง", () => {
+    const t = TRACKS.monza;
+    const run = (stab: number) => {
+      const c = newCar(t, { s: 200, v: 22, lat: 0 });
+      let beta = 0;
+      for (let i = 0; i < 90; i++) {
+        stepFree(t, c, { throttle: true, brake: false, steer: 1, assist: 0, stab }, perfOf(0));
+        beta = Math.max(beta, Math.abs(c.beta));
+      }
+      return { beta, spin: c.spin };
+    };
+    const raw = run(0);
+    const aided = run(1);
+    expect(raw.beta).toBeGreaterThan(aided.beta * 1.5);
+    expect(aided.beta).toBeLessThan(0.15);
+  });
+
+  it("ฟิสิกส์ยาง: เบรกหนักขณะเลี้ยว = แรงเลี้ยวเหลือน้อยลง (ยางมีแรงรวมจำกัด)", () => {
+    const t = TRACKS.monza;
+    const turn = (brake: boolean) => {
+      const c = newCar(t, { s: 200, v: 60, lat: 0 });
+      const s0 = c.s;
+      for (let i = 0; i < 48; i++) stepFree(t, c, { throttle: false, brake, steer: 0.8, assist: 0, stab: 0 }, perfOf(0));
+      // ทิศที่รถวิ่งเปลี่ยนไปเท่าไรต่อระยะทาง (ความโค้งของเส้นทาง)
+      return Math.abs(c.psi + c.beta) / (c.s - s0);
+    };
+    expect(turn(true)).toBeLessThan(turn(false) * 0.85);
+  });
+
+  it("คันเร่ง/เบรกจากคีย์บอร์ดค่อย ๆ ขึ้น ไม่กระชาก", () => {
+    const t = TRACKS.monza;
+    const c = newCar(t, { s: 200, v: 40, lat: 0 });
+    stepFree(t, c, { throttle: true, brake: false }, perfOf(0));
+    expect(c.thr).toBeGreaterThan(0);
+    expect(c.thr).toBeLessThan(0.1);
+    for (let i = 0; i < 30; i++) stepFree(t, c, { throttle: true, brake: false }, perfOf(0));
+    expect(c.thr).toBe(1);
   });
 
   it("เร็วขึ้นเลี้ยวได้วงกว้างขึ้น (แรงเกาะจำกัด) — เข้าโค้งเร็วเกิน = ออกกว้าง", () => {
