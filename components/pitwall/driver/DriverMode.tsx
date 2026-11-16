@@ -9,7 +9,7 @@ import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
 import { ASSIST_STAB, ASSIST_TUNE, steerAxis, type Assist } from "@/lib/pitwall/drive/steer";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepFree, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
-import { DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
+import { DS, laneValue, poseAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, OT_HIT_GAP, OT_SLOW, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
 import { nextPitEntry, PIT_MISS_PENALTY, STOP_MISS, STOP_WINDOW } from "@/lib/pitwall/drive/pit";
 import { COMPOUND_INFO, COMPOUNDS, suggestCompound, tyreGrip, type Compound } from "@/lib/pitwall/drive/tyres";
@@ -18,7 +18,10 @@ import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide"
 import { hasRealTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { useDriveTrack } from "./driveTrack";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
-import type { BodyModel, CameraMode, DriveScene, Gfx, GuideMode } from "./scene";
+import { DRIVE_CAMS, nextCam, type BodyModel, type CameraMode, type DriveScene, type Gfx, type GuideMode } from "./scene";
+
+/** ชื่อกล้องที่ผู้เล่นเลือกได้ */
+const CAM_LABEL: Partial<Record<CameraMode, string>> = { tv: "TV Pod", cockpit: "ห้องนักขับ", chase: "ตามหลัง" };
 import { buzz, createSfx } from "./sfx";
 import { firstPad, rumble } from "./gamepad";
 import { BTN, justPressed, PAD_HELP, readPad } from "@/lib/pitwall/drive/pad";
@@ -475,7 +478,7 @@ function Setup({
           </label>
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">กล้อง</span>
-            <Seg<CameraMode> value={settings.camera} onChange={(v) => set({ camera: v })} options={[{ v: "tv", label: "TV Pod" }, { v: "chase", label: "ตามหลัง" }]} />
+            <Seg<CameraMode> value={settings.camera} onChange={(v) => set({ camera: v })} options={DRIVE_CAMS.map((v) => ({ v, label: CAM_LABEL[v] ?? v }))} />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">กราฟิก</span>
@@ -871,7 +874,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
         // ในพิท: Space = จอด / ไป (รถวิ่งเอง ไม่ต้องเบรก)
         if (k === " " && down && !e.repeat) input.current.pitAct = true;
       }
-      else if (down && (k === "c" || k === "C")) setCamera((m) => (m === "tv" ? "chase" : "tv"));
+      else if (down && (k === "c" || k === "C")) setCamera(nextCam);
       else if (k === "e" || k === "E" || k === "Shift") {
         // กดหนึ่งครั้ง = เตรียมเปิด/ปิด Straight Mode (โหมดกดเอง)
         if (down && !e.repeat) input.current.smArm = !input.current.smArm;
@@ -928,7 +931,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       Object.assign(i, { padSteer: r.steer, padT: r.thr, padB: r.brk, padOt: r.ot });
       if (hit(BTN.A)) i.pitAct = true;
       if (hit(BTN.LB)) i.smArm = !i.smArm;
-      if (hit(BTN.Y)) setCamera((m) => (m === "tv" ? "chase" : "tv"));
+      if (hit(BTN.Y)) setCamera(nextCam);
       if (hit(BTN.B)) requestPit(!pitRef.current.on);
       const tyre = hit(BTN.LEFT) ? 0 : hit(BTN.UP) ? 1 : hit(BTN.RIGHT) ? 2 : -1;
       if (tyre >= 0) requestPit(pitRef.current.on, COMPOUNDS[tyre]);
@@ -1320,7 +1323,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           if (entry - car.s <= 700) pitGuide = { base: entry - race.pitLane.entry, from: laneValue(track, "offset", entry, race.pitLane.side) };
         }
         const guide = race?.cars[pi].pit ? undefined : { lat: 0, grip, fadeAt, pit: pitGuide };
-        scene.update({ s: car.s, lateral, psi: inPitView ? undefined : car.psi, steer: inPitView ? undefined : car.steer, slip: car.slip, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot, tyre: race ? COMPOUND_INFO[race.cars[pi].tyre.c].color : undefined });
+        // ตัวรถ/รอยล้อ/ควัน จากฟิสิกส์: แรงเหวี่ยงจริง · ความขรุขระใต้ล้อ · ยางหน้า (ล็อก/หน้าดื้อ) · ยางหลัง (ฟรี/ท้ายปัด)
+        const fx = inPitView ? {} : { latAcc: car.v * car.r, rough: car.rough, skid: { front: Math.max(car.lock, car.slipF), rear: Math.max(car.spin, car.slipR, car.lock * 0.7) }, dirt: car.rough > 0.3 && car.kerb < 1 };
+        scene.update({ s: car.s, lateral, psi: inPitView ? undefined : car.psi, steer: inPitView ? undefined : car.steer, slip: car.slip, ghost: race ? null : ghost, speed: car.v, accel, dt, aero: car.sm ? 1 : 0, rivals: rivalStates, guide, boost: car.ot, tyre: race ? COMPOUND_INFO[race.cars[pi].tyre.c].color : undefined, ...fx });
         scene.render();
 
         const kmh = car.v * 3.6;
@@ -1335,7 +1340,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             lastGear = gear;
           }
           // ยางเอี๊ยด: ยางเกินมุมลื่นที่เกาะสุด · ล้อฟรี/ล็อก · ล้อลงหญ้า · เสียงเครื่องตามคันเร่งที่กดจริง
-          sfx.frame({ rpm, gear, on, squeal: car.offT > 0 ? 0 : car.slip, grass: car.offT > 0, boost: car.ot, load: car.thr, spin: car.spin, lock: car.lock });
+          sfx.frame({ rpm, gear, on, squeal: car.offT > 0 ? 0 : car.slip, grass: car.offT > 0, boost: car.ot, load: car.thr, spin: car.spin, lock: car.lock, kerb: car.kerb, speed: car.v });
           // จอยสั่นเบา ๆ ตามยาง: ลื่น/ล้อฟรี/ล้อล็อก/ล้อลงหญ้า
           const feel = Math.max(car.slip * 0.5, car.spin, car.lock, car.offT > 0 ? 0.6 : 0);
           if (settings.haptics && on && feel > 0.05 && now - rumbleAt > 100) {
@@ -1356,9 +1361,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             }
           }
         }
-        // ขึ้น kerb: สั่นเบา ๆ
-        const edgeR = laneValue(track, "offset", car.s, car.lat) + car.slide;
-        const onKerb = car.v > 15 && (edgeR > sampleAt(track, track.wr, car.s) - 0.6 || edgeR < 0.6 - sampleAt(track, track.wl, car.s));
+        // ขึ้น kerb: สั่นเบา ๆ (จากผิวใต้ล้อในฟิสิกส์)
+        const onKerb = car.v > 15 && car.kerb > 0;
         if (onKerb && now - kerbAt > 250) {
           kerbAt = now;
           shake(12);
@@ -1543,7 +1547,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             <button type="button" onClick={() => setLine((v) => !v)} aria-pressed={line} aria-label="แสดงเส้นช่วย" className={`rounded-full p-2.5 backdrop-blur ${line ? "bg-white text-[#08080A]" : "bg-black/55"}`}>
               <Route className="h-5 w-5" />
             </button>
-            <button type="button" onClick={() => setCamera((m) => (m === "tv" ? "chase" : "tv"))} aria-label={`กล้อง ${camera === "tv" ? "TV Pod" : "ตามหลัง"} แตะเพื่อสลับ`} className="rounded-full bg-black/55 p-2.5 backdrop-blur">
+            <button type="button" onClick={() => setCamera(nextCam)} aria-label={`กล้อง ${CAM_LABEL[camera] ?? "TV Pod"} แตะเพื่อสลับ`} className="rounded-full bg-black/55 p-2.5 backdrop-blur">
               <Camera className="h-5 w-5" />
             </button>
             <button

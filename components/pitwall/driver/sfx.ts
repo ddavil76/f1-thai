@@ -1,14 +1,14 @@
 /**
  * เสียงของโหมดนักขับ (Web Audio ล้วน ไม่ใช้ไฟล์เสียง — สังเคราะห์เองทั้งหมด)
  * — เครื่องยนต์: เสียงจุดระเบิดหลักกับฮาร์มอนิก + เสียงทุ้ม ผ่านตัวแต่งเสียงแตก · กดคันเร่ง = ดังและแหลมขึ้น · ยกคันเร่งที่รอบสูง = เสียงป๊อก
- * — ยาง: เอี๊ยดตามมุมลื่นจริง · ล้อฟรี (เสียงต่ำ) · ล้อล็อก (เสียงแหลม) · ล้อลงหญ้า (noise ทุ้ม)
+ * — ยาง: เอี๊ยดตามมุมลื่นจริง · ล้อฟรี (เสียงต่ำ) · ล้อล็อก (เสียงแหลม) · ล้อลงหญ้า (noise ทุ้ม) · ขอบทาง (ครืดตามความเร็ว)
  * — เปลี่ยนเกียร์ (เครื่องสะดุด + คลิก) · รถคันอื่นวิ่งผ่านใกล้ ๆ (ฟิ้ว ซ้าย/ขวา) · ชนท้าย/หลุดโค้ง (ตุบ)
  * สร้างหลังผู้เล่นกดเริ่ม (เบราว์เซอร์จึงยอมให้เล่นเสียง)
  */
 export type Sfx = {
   /** เรียกทุกเฟรม: rpm 0..1 · เกียร์ · on = เปิดเสียง (ปิดเสียง/หยุด/ไฟยังไม่ดับ = เงียบ)
-   *  load = คันเร่งที่กดจริง 0..1 · spin = ล้อหลังฟรี 0..1 · lock = ล้อล็อก 0..1 */
-  frame(p: { rpm: number; gear: number; on: boolean; squeal: number; grass: boolean; boost?: boolean; load?: number; spin?: number; lock?: number }): void;
+   *  load = คันเร่งที่กดจริง 0..1 · spin = ล้อหลังฟรี 0..1 · lock = ล้อล็อก 0..1 · kerb = ล้อบนขอบทาง 0..1 · speed = ม./วิ */
+  frame(p: { rpm: number; gear: number; on: boolean; squeal: number; grass: boolean; boost?: boolean; load?: number; spin?: number; lock?: number; kerb?: number; speed?: number }): void;
   shift(): void;
   /** รถคันอื่นวิ่งผ่าน · pan −1 ซ้าย … 1 ขวา · แรง 0..1 */
   whoosh(pan: number, strength: number): void;
@@ -91,6 +91,17 @@ export function createSfx(): Sfx | null {
   const spinNoise = loop("bandpass", 1300, 5);
   const lockNoise = loop("bandpass", 3400, 12);
   const grass = loop("lowpass", 260, 0.7);
+  // ขอบทาง: คลื่นสี่เหลี่ยมความถี่ต่ำ (ยิ่งเร็วยิ่งถี่) ผ่าน low-pass = เสียงครืด ๆ
+  const rumbleOsc = ctx.createOscillator();
+  rumbleOsc.type = "square";
+  rumbleOsc.frequency.value = 40;
+  const rumbleLp = ctx.createBiquadFilter();
+  rumbleLp.type = "lowpass";
+  rumbleLp.frequency.value = 320;
+  const rumble = ctx.createGain();
+  rumble.gain.value = 0;
+  rumbleOsc.connect(rumbleLp).connect(rumble).connect(out);
+  rumbleOsc.start();
 
   /** เสียงป๊อกตอนยกคันเร่งที่รอบสูง */
   const pop = (strength: number) => {
@@ -111,7 +122,7 @@ export function createSfx(): Sfx | null {
   let popAt = 0;
 
   return {
-    frame({ rpm, gear, on, squeal: sq, grass: onGrass, boost = false, load = 1, spin = 0, lock = 0 }) {
+    frame({ rpm, gear, on, squeal: sq, grass: onGrass, boost = false, load = 1, spin = 0, lock = 0, kerb = 0, speed = 0 }) {
       enabled = on;
       const f0 = 95 + rpm * 330 + gear * 4;
       for (const p of parts) p.o.frequency.setTargetAtTime(f0 * p.mul, now(), 0.03);
@@ -122,6 +133,8 @@ export function createSfx(): Sfx | null {
       spinNoise.gain.setTargetAtTime(on ? Math.min(0.06, spin * 0.07) : 0, now(), 0.05);
       lockNoise.gain.setTargetAtTime(on ? Math.min(0.05, lock * 0.06) : 0, now(), 0.04);
       grass.gain.setTargetAtTime(on && onGrass ? 0.12 : 0, now(), 0.08);
+      rumbleOsc.frequency.setTargetAtTime(Math.max(22, Math.min(110, speed * 1.3)), now(), 0.05);
+      rumble.gain.setTargetAtTime(on ? kerb * 0.07 * Math.min(1, speed / 20) : 0, now(), 0.03);
       // ยกคันเร่งเร็ว ๆ ที่รอบสูง → ป๊อก 2–4 ครั้ง
       if (on && prevLoad > 0.6 && load < 0.2 && rpm > 0.45) pops = 2 + Math.floor(Math.random() * 3);
       prevLoad = load;

@@ -4,6 +4,7 @@
  * จำลองแบบขั้นเวลาคงที่ (ผลเหมือนเดิมทุกเครื่อง ไม่ขึ้นกับเฟรมเรต)
  */
 import { assistSteer, newSteerMem, STEER_TUNE, type SteerMem, type SteerTune } from "./steerAssist";
+import { SURFACES, surfaceOf } from "./surface";
 import { accelFor, ALAT, brakeAt, coastAt, coastSM, DOWNFORCE, DS, G, LANE_GAP, laneValue, laneZone, sample, SM_BLEED, VMAX, VSM, type DriveTrack } from "./line";
 
 export const STEP = 1 / 120;
@@ -101,6 +102,11 @@ export type CarState = {
   /** มุมล้อหน้าจริง (เรเดียน) · หน่วยความจำตัวช่วยพวงมาลัย (sa.cmd = คำสั่งพวงมาลัยของผู้เล่นหลังเกลี่ย −1..1) */
   delta: number;
   sa: SteerMem;
+  /** ล้ออยู่บนขอบทางกี่ส่วน (0 · 0.5 · 1) · ความขรุขระใต้ล้อ 0..1 (สั่น/เสียง) · ยางหน้า/หลังเลยจุดเกาะ 0..1 (ควัน/รอยล้อ) */
+  kerb: number;
+  rough: number;
+  slipF: number;
+  slipR: number;
 };
 
 export type LapResult = { lap: number; time: number; valid: boolean; trace: number[] };
@@ -109,7 +115,7 @@ export type StepEvent = { kind: "slide"; amount: number } | { kind: "off" } | { 
 
 export function newCar(t: DriveTrack, at?: { s: number; v: number; lat: number }): CarState {
   const s = at?.s ?? -RUN_UP;
-  const c: CarState = { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false, offT: 0, d: 0, psi: 0, steer: 0, slip: 0, out: false, vy: 0, r: 0, thr: 0, brk: 0, spin: 0, lock: 0, beta: 0, delta: 0, sa: newSteerMem(0.35) };
+  const c: CarState = { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false, offT: 0, d: 0, psi: 0, steer: 0, slip: 0, out: false, vy: 0, r: 0, thr: 0, brk: 0, spin: 0, lock: 0, beta: 0, delta: 0, sa: newSteerMem(0.35), kerb: 0, rough: 0, slipF: 0, slipR: 0 };
   c.d = laneValue(t, "offset", s, c.lat);
   return c;
 }
@@ -164,11 +170,10 @@ const MAX_LOCK = 0.35;
 export const WHEELBASE = 3.4;
 /** แร็กพวงมาลัยหมุนล้อได้เร็วสุด (เรเดียน/วิ) */
 const RACK_RATE = 3;
-/** หญ้า: เริ่มเมื่อกึ่งกลางรถเลยขอบถนนเท่านี้ (ล้อข้างหนึ่งออก) · ล้อทั้งสี่ออก = รอบไม่นับ/หลุดโค้ง */
-const GRASS_AT = 0.3;
+/** ครึ่งระยะล้อซ้าย-ขวา (ม.) · ล้อทั้งสี่ออกนอกถนน (กึ่งกลางรถเลยขอบเท่านี้) = รอบไม่นับ/หลุดโค้ง */
+const TRACK_HALF = 0.8;
 const OUT_AT = 1.0;
-/** บนหญ้าเกาะได้กี่ส่วน · ชนกำแพงเหลือความเร็วกี่ส่วน */
-const GRASS_GRIP = 0.5;
+/** ชนกำแพงเหลือความเร็วกี่ส่วน */
 const WALL_KEEP = 0.5;
 /** หันออกจากทิศถนนได้มากสุด (กันรถหมุนกลับหลัง) */
 const PSI_MAX = 1.2;
@@ -263,8 +268,15 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
   const wl = sample(t, t.wl, c.s);
   const wr = sample(t, t.wr, c.s);
   const beyond = Math.max(-wl - c.d, c.d - wr);
-  const grass = clamp((beyond - GRASS_AT) / 0.6, 0, 1);
-  const grip = perf.grip * (1 - DIRTY_GRIP * (mods?.dirty ?? 0)) * (1 - (1 - GRASS_GRIP) * grass);
+  // ผิวใต้ล้อซ้าย/ขวา: ถนน · ขอบทาง · หญ้า · กรวด (เฉลี่ยสองฝั่ง)
+  const sl = SURFACES[surfaceOf(t, c.s, c.d - TRACK_HALF)];
+  const sr = SURFACES[surfaceOf(t, c.s, c.d + TRACK_HALF)];
+  const off = ((sl.drag > 0.5 ? 0.5 : 0) + (sr.drag > 0.5 ? 0.5 : 0));
+  c.kerb = (sl.rough === 1 ? 0.5 : 0) + (sr.rough === 1 ? 0.5 : 0);
+  c.rough = (sl.rough + sr.rough) / 2;
+  const grass = off;
+  const grip = perf.grip * (1 - DIRTY_GRIP * (mods?.dirty ?? 0)) * ((sl.grip + sr.grip) / 2);
+  const surfDrag = (sl.drag + sr.drag) / 2;
   const bank = sample(t, t.bank, c.s);
 
   // พวงมาลัย: ปุ่ม/สติ๊กผ่านตัวช่วยพวงมาลัย (steerAssist.ts) → มุมล้อ · assist = ผู้ช่วยขับตามเส้น (ยิ่งผู้เล่นหมุนเยอะ ยิ่งปล่อย) · aim = รถเลี้ยวเองทั้งหมด
@@ -287,7 +299,7 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
   c.thr = clamp(c.thr + clamp((input.thrA ?? (input.throttle ? 1 : 0)) - c.thr, -THR_DOWN * quick * dt, THR_UP * quick * dt), 0, 1);
   c.brk = clamp(c.brk + clamp((input.brkA ?? (input.brake ? 1 : 0)) - c.brk, -BRK_DOWN * quick * dt, BRK_UP * quick * dt), 0, 1);
   const stab = input.aim !== undefined ? 1 : clamp(input.stab ?? input.assist ?? 0, 0, 1);
-  const plan = longPlan(t, c, input, perf, mods, grass);
+  const plan = longPlan(t, c, input, perf, mods, grass, surfDrag);
   const vBefore = c.v;
 
   const kc = sample(t, centreKappa(t), c.s);
@@ -296,7 +308,8 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
   const cosD = Math.cos(delta);
   const sinD = Math.sin(delta);
   let ds = 0;
-  let maxA = 0;
+  let maxF = 0;
+  let maxR = 0;
   let spin = 0;
   let lock = 0;
   for (let k = 0; k < SUB; k++) {
@@ -325,7 +338,8 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
     const R = axle(fxr0, fyr0, Dr);
     if (ax > 0) spin = Math.max(spin, Math.min(1, R.over));
     else if (ax < 0) lock = Math.max(lock, Math.min(1, Math.max(F.over, R.over)));
-    maxA = Math.max(maxA, Math.abs(af), Math.abs(ar));
+    maxF = Math.max(maxF, Math.abs(af));
+    maxR = Math.max(maxR, Math.abs(ar));
 
     const fyB = F.fy * cosD + F.fx * sinD;
     let vxDot = R.fx + F.fx * cosD - F.fy * sinD + c.r * c.vy - plan.drag - (1 - c.thr) * (1 - c.brk) * plan.coast;
@@ -369,7 +383,10 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
   if (c.v > plan.top) c.v = Math.max(plan.top, Math.min(c.v, vBefore - SM_BLEED * dt));
   c.spin = spin;
   c.lock = lock;
-  c.slip = Math.max(clamp((maxA / ALPHA_PEAK - 0.85) / 0.4, 0, 1), spin, lock) * Math.min(1, c.v / 25);
+  const over = (a: number) => clamp((a / ALPHA_PEAK - 0.85) / 0.4, 0, 1) * Math.min(1, c.v / 25);
+  c.slipF = over(maxF);
+  c.slipR = over(maxR);
+  c.slip = Math.max(c.slipF, c.slipR, spin * Math.min(1, c.v / 25), lock * Math.min(1, c.v / 25));
   if (c.slip > 0) events.push({ kind: "slide", amount: c.slip * 0.1 });
 
   // กำแพง: หยุดที่ขอบ runoff · ความเร็วหาย · หัวรถดีดกลับเข้าหาถนน
@@ -424,7 +441,7 @@ export function syncLat(t: DriveTrack, c: CarState) {
 
 /** แผนแรงตามยาวหนึ่งขั้น: Straight Mode · แบตเตอรี่ · ความเร็วสูงสุด → แรงเครื่อง/เบรก/ประคอง/ต้าน (ม./วิ²)
  *  grass = ส่วนของรถที่อยู่บนหญ้า (0..1: เร่งได้น้อย ฝืดมาก) */
-function longPlan(t: DriveTrack, c: CarState, input: Input, perf: Perf, mods?: Mods, grass = 0) {
+function longPlan(t: DriveTrack, c: CarState, input: Input, perf: Perf, mods?: Mods, grass = 0, drag = grass) {
   const dt = STEP;
   const v = c.v;
   // Straight Mode: เปิดได้เฉพาะในโซน ปิดเองเมื่อเบรกหรือพ้นโซน
@@ -443,7 +460,7 @@ function longPlan(t: DriveTrack, c: CarState, input: Input, perf: Perf, mods?: M
     brake: brakeAt(v),
     coast: c.sm ? coastSM(v) : coastAt(v),
     // หญ้าฝืด · ขึ้นเนิน = แรงโน้มถ่วงดึงถอยหลัง · ลงเนิน = ไหลเร็วขึ้น
-    drag: grass * (3 + 0.1 * v) + G * sample(t, t.grade, c.s),
+    drag: drag * (3 + 0.1 * v) + G * sample(t, t.grade, c.s),
     top: vtop * perf.top,
   };
 }

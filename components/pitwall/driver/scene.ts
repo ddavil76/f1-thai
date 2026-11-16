@@ -7,6 +7,7 @@
  * ผู้เรียกโหลด three และ addon แบบ dynamic แล้วส่งเข้ามา (ไม่ให้ three เข้า bundle หลักของหน้า)
  */
 import type * as THREE_NS from "three";
+import { isCorner, KERB_H, kerbWidth } from "@/lib/pitwall/drive/surface";
 import { DS, VMAX, VSM, heightAt, laneValue, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
 import { guideColor, guideFade, guideNeeded, guideRisk, projectedSpeed } from "@/lib/pitwall/drive/guide";
 import { buildCar, type Livery } from "./carModel";
@@ -20,7 +21,10 @@ type Obj = THREE_NS.Object3D;
  * orbit = กล้องรีเพลย์ วนรอบรถช้า ๆ
  * broadcast = กล้องถ่ายทอดสดข้างสนาม (ตั้งอยู่กับที่ หมุน/ซูมตามรถ ตัดภาพไปกล้องถัดไปเมื่อรถพ้นระยะ) · heli = เฮลิคอปเตอร์ตามหลังสูง ๆ
  */
-export type CameraMode = "tv" | "chase" | "orbit" | "broadcast" | "heli";
+export type CameraMode = "tv" | "cockpit" | "chase" | "orbit" | "broadcast" | "heli";
+/** กล้องที่ผู้เล่นสลับได้ระหว่างขับ (ปุ่ม C) */
+export const DRIVE_CAMS: CameraMode[] = ["tv", "cockpit", "chase"];
+export const nextCam = (m: CameraMode) => DRIVE_CAMS[(DRIVE_CAMS.indexOf(m) + 1) % DRIVE_CAMS.length];
 export type Gfx = "high" | "low";
 
 const ZONE_COLOR: Record<Zone, number> = { throttle: 0x22c55e, lift: 0xfacc15, brake: 0xef4444 };
@@ -83,6 +87,12 @@ export type DriveScene = {
     psi?: number;
     steer?: number;
     slip?: number;
+    /** ขับอิสระ: แรงเหวี่ยงข้างจริง (ม./วิ², บวก = เลี้ยวขวา) — ตัวรถเอียงตามนี้ · ความขรุขระใต้ล้อ 0..1 (ขอบทาง/หญ้า/กรวด: รถสั่น)
+     *  · ยางหน้า/หลังลื่นเกิน 0..1 (รอยล้อ + ควันยาง) · ล้ออยู่นอกถนน (ฝุ่นดิน/กรวด) */
+    latAcc?: number;
+    rough?: number;
+    skid?: { front: number; rear: number };
+    dirt?: boolean;
   }): void;
   setCamera(m: CameraMode): void;
   setLine(on: boolean): void;
@@ -234,7 +244,9 @@ export function createDriveScene(opts: {
     const p = opts.pit.lane;
     return (rel >= p.entry - 8 && rel <= wallFrom(p)) || (rel >= wallTo(p) && rel <= p.exit + 8);
   };
-  const strip = (a: (i: number) => number, b: (i: number) => number, y: number, colorOf: (i: number) => number | null, vScale = 8) => {
+  /** แถบตามสนามจากเยื้อง a ถึง b · y = ยกจากพื้น (หรือ [ขอบ a, ขอบ b] = เอียง) */
+  const strip = (a: (i: number) => number, b: (i: number) => number, y: number | [number, number], colorOf: (i: number) => number | null, vScale = 8) => {
+    const [ya, yb] = typeof y === "number" ? [y, y] : y;
     const pos: number[] = [];
     const col: number[] = [];
     const uv: number[] = [];
@@ -248,10 +260,10 @@ export function createDriveScene(opts: {
       const p1a = poseAt(t, j * DS, a(j % t.n));
       const p1b = poseAt(t, j * DS, b(j % t.n));
       const jj = j % t.n;
-      const y0a = y + groundY(i, a(i));
-      const y0b = y + groundY(i, b(i));
-      const y1a = y + groundY(jj, a(jj));
-      const y1b = y + groundY(jj, b(jj));
+      const y0a = ya + groundY(i, a(i));
+      const y0b = yb + groundY(i, b(i));
+      const y1a = ya + groundY(jj, a(jj));
+      const y1b = yb + groundY(jj, b(jj));
       pos.push(p0a.x, y0a, p0a.z, p1a.x, y1a, p1a.z, p0b.x, y0b, p0b.z, p0b.x, y0b, p0b.z, p1a.x, y1a, p1a.z, p1b.x, y1b, p1b.z);
       const v0 = (i * DS) / vScale;
       const v1 = (j * DS) / vScale;
@@ -316,17 +328,29 @@ export function createDriveScene(opts: {
   };
 
   /* ---------- ถนนและขอบ (ความกว้างจริงต่อจุด) ---------- */
-  const corner = (i: number) => Math.abs(t.curve[i]) > 0.006;
+  const corner = (i: number) => isCorner(t, i);
   addFlat(new THREE.Mesh(strip((i) => -L(i), R, 0, () => 0xffffff, 6), lit(asphalt)));
   // เส้นยางดำตามไลน์ที่รถวิ่ง
   addFlat(new THREE.Mesh(strip((i) => t.lineOffset[i] - 1.0, (i) => t.lineOffset[i] + 1.0, 0.004, () => 0x1c1c20), flat(-1, 0.18)));
   scene.add(new THREE.Mesh(strip((i) => R(i) - 0.45, (i) => R(i) - 0.2, 0.006, () => 0xf2f2f2), flat(-1)));
   scene.add(new THREE.Mesh(strip((i) => -L(i) + 0.2, (i) => -L(i) + 0.45, 0.006, () => 0xf2f2f2), flat(-1)));
-  // kerb แดง/ขาวในโค้ง ทั้งสองฝั่ง · ทางวิ่งนอกถนน (runoff) สีทราย/หญ้าเทียม — สนามกำแพงชิด (โมนาโก) มีแค่ kerb แคบ ๆ
-  const KW = Math.min(1.4, RUN - 0.1);
-  const kerb = (side: number) => (i: number) => (corner(i) && !pitGap(i, side) ? (i % 2 ? 0xd71920 : 0xf4f4f4) : null);
-  addFlat(new THREE.Mesh(strip(R, (i) => R(i) + KW, 0.03, kerb(1)), lit()));
-  addFlat(new THREE.Mesh(strip((i) => -L(i) - KW, (i) => -L(i), 0.03, kerb(-1)), lit()));
+  // kerb แดง/ขาวในโค้ง ทั้งสองฝั่ง: นูนขึ้นจากถนน (ลาดขึ้น · สันบน · ลาดลง) · ทางวิ่งนอกถนน (runoff) สีทราย/หญ้าเทียม — สนามกำแพงชิด (โมนาโก) มีแค่ kerb แคบ ๆ
+  // ความกว้าง/ช่วงโค้งเดียวกับฟิสิกส์ (surface.ts) — เห็นขอบทางตรงไหน รถก็สะเทือนตรงนั้น
+  const KW = kerbWidth(t);
+  const kerb = (side: number, shade = 1) => (i: number) => (corner(i) && !pitGap(i, side) ? (i % 2 ? (shade < 1 ? 0xa8131a : 0xd71920) : shade < 1 ? 0xc9c9c9 : 0xf4f4f4) : null);
+  const RAMP = Math.min(0.3, KW * 0.25);
+  for (const side of [1, -1]) {
+    // เยื้องจากขอบถนนออกไป (ฝั่งขวา = บวก · ซ้าย = ลบ)
+    const at = (off: number) => (side > 0 ? (i: number) => R(i) + off : (i: number) => -L(i) - off);
+    const band = (from: number, to: number, y: [number, number], shade = 1) => {
+      const a = side > 0 ? at(from) : at(to);
+      const b = side > 0 ? at(to) : at(from);
+      addFlat(new THREE.Mesh(strip(a, b, side > 0 ? y : [y[1], y[0]], kerb(side, shade)), lit()));
+    };
+    band(0, RAMP, [0.008, KERB_H], 0.85);
+    band(RAMP, KW - RAMP, [KERB_H, KERB_H]);
+    band(KW - RAMP, KW, [KERB_H, 0.008], 0.85);
+  }
   if (RUN > 2) {
     const VG = Math.min(9, RUN - 1);
     const SD = Math.min(12, RUN);
@@ -996,6 +1020,140 @@ export function createDriveScene(opts: {
 
   const car = makeRig(livery, false);
   if (!opts.spectator) scene.add(car.root);
+
+  /* ---------- พวงมาลัยในห้องนักขับ (เห็นในกล้องห้องนักขับ) ---------- */
+  const wheelRig = new THREE.Group();
+  {
+    const carbon = keep(new THREE.MeshStandardMaterial({ color: 0x18191c, roughness: 0.45, metalness: 0.3 }));
+    const grip = keep(new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.9 }));
+    const screen = keep(new THREE.MeshBasicMaterial({ color: 0x0f2a1a }));
+    const led = keep(new THREE.MeshBasicMaterial({ color: 0xe10600 }));
+    const plate = new THREE.Mesh(keep(new THREE.BoxGeometry(0.2, 0.11, 0.025)), carbon);
+    wheelRig.add(plate);
+    for (const side of [-1, 1]) {
+      const g = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.022, 0.024, 0.13, 10)), grip);
+      g.position.set(side * 0.125, -0.005, 0);
+      g.rotation.z = side * 0.12;
+      wheelRig.add(g);
+    }
+    const sc = new THREE.Mesh(keep(new THREE.PlaneGeometry(0.075, 0.042)), screen);
+    sc.position.set(0, 0.012, -0.0135);
+    sc.rotation.y = Math.PI;
+    wheelRig.add(sc);
+    for (let k = -3; k <= 3; k++) {
+      const l = new THREE.Mesh(keep(new THREE.PlaneGeometry(0.012, 0.008)), led);
+      l.position.set(k * 0.016, 0.045, -0.0135);
+      l.rotation.y = Math.PI;
+      wheelRig.add(l);
+    }
+    // ด้านหน้าห้องนักขับ ระดับอก เอียงเข้าหานักขับ
+    wheelRig.position.set(0, 0.66, 0.7);
+    wheelRig.scale.setScalar(0.85);
+    wheelRig.rotation.x = -0.35;
+    car.body.add(wheelRig);
+  }
+
+  /* ---------- รอยล้อ + ควันยาง/ฝุ่น ---------- */
+  const SKID_N = high ? 1200 : 500;
+  const skidGeo = keep(new THREE.PlaneGeometry(1, 1));
+  skidGeo.rotateX(-Math.PI / 2);
+  const skidMat = keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  const skids = new THREE.InstancedMesh(skidGeo, skidMat, SKID_N);
+  skids.frustumCulled = false;
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  const skidCol = new THREE.Color();
+  for (let k = 0; k < SKID_N; k++) {
+    skids.setMatrixAt(k, zero);
+    skids.setColorAt(k, skidCol.setRGB(0.1, 0.1, 0.1));
+  }
+  scene.add(skids);
+  let skidAt = 0;
+  const skidM = new THREE.Matrix4();
+  const skidQ = new THREE.Quaternion();
+  const skidS = new THREE.Vector3();
+  const skidP = new THREE.Vector3();
+  const upY = new THREE.Vector3(0, 1, 0);
+  const wheelLocal = WHEELS.map(([x, z, w]) => ({ p: new THREE.Vector3(x, 0.02, z), w }));
+  const lastMark: (THREE_NS.Vector3 | null)[] = WHEELS.map(() => null);
+  const wheelW = new THREE.Vector3();
+  /** วางรอยล้อของล้อ k ต่อจากรอยเดิม (ความเข้ม 0..1) */
+  const layMark = (k: number, amount: number) => {
+    const at = car.root.localToWorld(wheelW.copy(wheelLocal[k].p));
+    const last = lastMark[k];
+    if (amount < 0.3) {
+      lastMark[k] = null;
+      return;
+    }
+    if (!last) {
+      lastMark[k] = at.clone();
+      return;
+    }
+    const dist = last.distanceTo(at);
+    if (dist < 0.5) return;
+    if (dist > 8) {
+      last.copy(at);
+      return;
+    }
+    skidP.copy(last).add(at).multiplyScalar(0.5);
+    skidQ.setFromAxisAngle(upY, Math.atan2(at.x - last.x, at.z - last.z));
+    skidS.set(wheelLocal[k].w * 0.9, 1, dist + 0.05);
+    skids.setMatrixAt(skidAt, skidM.compose(skidP, skidQ, skidS));
+    const shade = 0.22 - 0.16 * Math.min(1, amount);
+    skids.setColorAt(skidAt, skidCol.setRGB(shade, shade, shade));
+    skidAt = (skidAt + 1) % SKID_N;
+    skids.instanceMatrix.needsUpdate = true;
+    if (skids.instanceColor) skids.instanceColor.needsUpdate = true;
+    last.copy(at);
+  };
+  // ควัน: ลูกกลม ๆ นุ่ม ๆ ขยายและจางหาย (สระเดียวใช้วนซ้ำ)
+  const puffTex = (() => {
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 64;
+    const g = cv.getContext("2d")!;
+    const grd = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+    grd.addColorStop(0, "rgba(255,255,255,0.9)");
+    grd.addColorStop(0.5, "rgba(255,255,255,0.45)");
+    grd.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    return keep(new THREE.CanvasTexture(cv));
+  })();
+  const PUFF_N = high ? 90 : 40;
+  const puffs = Array.from({ length: PUFF_N }, () => {
+    const mat = keep(new THREE.SpriteMaterial({ map: puffTex, color: 0xdddddd, transparent: true, depthWrite: false, opacity: 0 }));
+    const sp = new THREE.Sprite(mat);
+    sp.visible = false;
+    scene.add(sp);
+    return { sp, mat, age: 0, life: 1, peak: 0, vel: new THREE.Vector3() };
+  });
+  let puffAt = 0;
+  const emit = (k: number, amount: number, dirt: boolean) => {
+    const pf = puffs[puffAt];
+    puffAt = (puffAt + 1) % PUFF_N;
+    car.root.localToWorld(pf.sp.position.copy(wheelLocal[k].p));
+    pf.sp.position.y += 0.25;
+    pf.age = 0;
+    pf.life = 0.9 + Math.random() * 0.8;
+    pf.peak = (dirt ? 0.55 : 0.4) * Math.min(1, amount);
+    pf.mat.color.setHex(dirt ? 0xa8875a : 0xdedede);
+    pf.vel.set((Math.random() - 0.5) * 0.8, 0.5 + Math.random() * 0.6, (Math.random() - 0.5) * 0.8);
+    pf.sp.visible = true;
+  };
+  const stepPuffs = (dt: number) => {
+    for (const pf of puffs) {
+      if (!pf.sp.visible) continue;
+      pf.age += dt;
+      if (pf.age >= pf.life) {
+        pf.sp.visible = false;
+        continue;
+      }
+      pf.sp.position.addScaledVector(pf.vel, dt);
+      const s = 0.7 + pf.age * 2.6;
+      pf.sp.scale.set(s, s, 1);
+      const f = pf.age / pf.life;
+      pf.mat.opacity = pf.peak * Math.min(1, f * 6) * (1 - f);
+    }
+  };
   const ghost = makeRig({ team: "", colour: "#ffffff", ink: "#ffffff", num: 0 }, true);
   ghost.root.visible = false;
   scene.add(ghost.root);
@@ -1169,7 +1327,7 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus, psi, steer }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus, psi, steer, latAcc, rough, skid, dirt = false }) {
       clock += dt;
       if (tyre) car.setTyre(tyre);
       drawGuide(s, speed, accel, dt, guide);
@@ -1190,7 +1348,7 @@ export function createDriveScene(opts: {
       const slideYaw = psi !== undefined ? 0 : speed > 3 ? -Math.atan2(latRate, speed) * 1.4 : 0;
       motion.yaw += (Math.max(-0.22, Math.min(0.22, slideYaw)) - motion.yaw) * k;
       // เอียงออกนอกโค้ง (แรงเหวี่ยง) · หัวทิ่มเมื่อเบรก ท้ายย่อเมื่อเร่ง
-      const lat = speed * speed * curve;
+      const lat = latAcc ?? speed * speed * curve;
       // แกน z ของรถ = หน้ารถ: หมุนบวก = ฝั่งซ้ายยกขึ้น → เลี้ยวขวา (lat > 0) ต้องหมุนลบให้ฝั่งซ้าย (ด้านนอก) ยุบลง
       motion.roll += (Math.max(-0.055, Math.min(0.055, -lat * 0.0016)) - motion.roll) * k;
       // แกน x: หมุนบวก = หัวทิ่ม → เบรก (accel < 0) หัวทิ่ม
@@ -1204,6 +1362,19 @@ export function createDriveScene(opts: {
       // ถนนเอียง (bank > 0 = ฝั่งขวาสูง) → ตัวรถเอียงตาม (หมุน z บวก = ฝั่งซ้ายยก)
       const bankRoll = -sample(t, t.bank, s);
       car.body.rotation.set(motion.pitch, 0, motion.roll + bankRoll);
+      // ขอบทาง/หญ้า/กรวด: ตัวรถสั่นขึ้นลง
+      car.body.position.y = rough ? (Math.random() - 0.5) * 0.025 * rough * Math.min(1, speed / 30) : 0;
+      wheelRig.rotation.z = motion.steer * 3.2;
+      // รอยล้อ + ควัน: หน้า = ล้อล็อก/หน้าดื้อ · หลัง = ล้อฟรี/ท้ายปัด · นอกถนน = ฝุ่น (ไม่มีรอยยาง)
+      if (skid && !opts.spectator) {
+        WHEELS.forEach(([, , , front], k) => {
+          const a = front ? skid.front : skid.rear;
+          layMark(k, dirt ? 0 : a);
+          const rate = dirt ? Math.min(1, speed / 25) * 0.9 : a > 0.4 ? a : 0;
+          if (speed > 4 && rate > 0 && Math.random() < rate * dt * (dirt ? 18 : 30)) emit(k, dirt ? 1 : a, dirt);
+        });
+      }
+      stepPuffs(dt);
       for (const st of car.steer) st.rotation.y = motion.steer;
       for (const sp of car.spin) sp.rotation.x = motion.spin;
 
@@ -1242,7 +1413,7 @@ export function createDriveScene(opts: {
         camera.fov += (fov - camera.fov) * Math.min(1, dt * 3);
         camera.updateProjectionMatrix();
       }
-      const onKerb = lateral > sample(t, t.wr, s) - 0.6 || lateral < 0.6 - sample(t, t.wl, s) ? 1 : 0;
+      const onKerb = rough ?? (lateral > sample(t, t.wr, s) - 0.6 || lateral < 0.6 - sample(t, t.wl, s) ? 1 : 0);
       const amp = sp01 * sp01 * 0.012 + onKerb * sp01 * 0.03;
       const sx = (Math.random() - 0.5) * amp;
       const sy = (Math.random() - 0.5) * amp;
@@ -1297,6 +1468,15 @@ export function createDriveScene(opts: {
         camera.position.copy(camPos);
         camLook.copy(tg.position).setY(tg.position.y + 0.6);
         camera.lookAt(camLook);
+      } else if (mode === "cockpit" && tg === car.root) {
+        // ในห้องนักขับ: ตาอยู่ในหมวก มองตามหัวรถ เอียง/ก้มตามตัวรถ เห็นจมูกรถ halo และพวงมาลัย
+        car.body.updateWorldMatrix(true, false);
+        camPos.set(sx * 0.4, 0.85 + sy * 0.4, 0.44);
+        car.body.localToWorld(camPos);
+        camera.position.copy(camPos);
+        car.body.getWorldQuaternion(camera.quaternion);
+        camera.rotateY(Math.PI);
+        camera.rotateX(-0.07);
       } else if (mode === "tv") {
         // เหนือหัวนักขับ เห็นหมวก จมูกรถ และล้อหน้าด้านล่างจอ · เอียงตามตัวรถนิดหน่อย
         camPos.copy(tg.position).addScaledVector(fwd, 0.15).setY(tg.position.y + 1.32 + sy);
@@ -1327,6 +1507,8 @@ export function createDriveScene(opts: {
     },
     setCamera(m) {
       mode = m;
+      // ห้องนักขับ: เห็นพวงมาลัยใกล้ ๆ ได้
+      camera.near = m === "cockpit" ? 0.05 : 0.25;
       chaseDir.set(0, 0, 0);
       camPos.set(0, 0, 0);
       station = null;
