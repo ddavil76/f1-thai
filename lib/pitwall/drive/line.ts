@@ -30,6 +30,22 @@ const MAX_GRADE = 0.18;
 export const HALF_WIDTH = 6;
 /** สนามที่ไม่มีข้อมูลความกว้างจริง: ครึ่งความกว้าง + ระยะถึงกำแพง (โมนาโกแคบ กำแพงชิดขอบ) */
 const FALLBACK: Record<string, { half: number; runoff: number }> = { monaco: { half: 4.3, runoff: 0.8 } };
+/**
+ * ถนนในเกมกว้างกว่าค่าวัดจริง: เห็นจากกล้อง/คีย์บอร์ดแล้วแคบเกิน เลี้ยวหลบ/แซงยาก
+ * ขยายทุกสนามที่มีข้อมูลจริง WIDEN เท่า (อย่างน้อย MIN_WIDTH ม. · ไม่เกิน MAX_WIDTH ม.) แบ่งซ้าย/ขวาตามสัดส่วนเดิม
+ */
+const WIDEN = 1.25;
+const MIN_WIDTH = 12;
+const MAX_WIDTH = 26;
+function widen(wl: Float64Array, wr: Float64Array) {
+  for (let i = 0; i < wl.length; i++) {
+    const w = wl[i] + wr[i];
+    const k = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w * WIDEN)) / Math.max(1, w);
+    wl[i] *= k;
+    wr[i] *= k;
+  }
+}
+
 /** ระยะจากขอบถนนถึงกำแพง (เมตร) */
 const RUNOFF = 11;
 
@@ -256,6 +272,8 @@ export function buildDriveTrack(circuitId: string, raw?: RawTrack | null): Drive
   }
   const wl = raw ? smoothLoop(base.wl, 6) : base.wl;
   const wr = raw ? smoothLoop(base.wr, 6) : base.wr;
+  // สนามถนนเมือง (ไม่มีข้อมูลจริง เช่นโมนาโก) คงแคบตามจริง — กำแพงชิดคือเสน่ห์ของสนาม
+  if (raw) widen(wl, wr);
   const runoff = FALLBACK[circuitId]?.runoff ?? RUNOFF;
 
   const heading = new Float64Array(n);

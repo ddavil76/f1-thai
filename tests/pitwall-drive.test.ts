@@ -97,8 +97,8 @@ describe("โหมดนักขับ: สนาม", () => {
       // ชิดขอบทั้งสองฝั่ง (เข้าจากด้านนอก แตะ apex ด้านใน)
       expect(nearR).toBeLessThan(2);
       expect(nearL).toBeLessThan(2);
-      // เดิมเส้นเยื้องข้าง ~1.5–2 ม. ต่อ 1 ม. ที่วิ่ง (เลี้ยวหักเกือบ 60°) — ตอนนี้มากสุดคือข้ามถนนในชิเคน (~30°)
-      expect(slope).toBeLessThan(0.6);
+      // เดิมเส้นเยื้องข้าง ~1.5–2 ม. ต่อ 1 ม. ที่วิ่ง (เลี้ยวหักเกือบ 60°) — ตอนนี้มากสุดคือข้ามถนนในชิเคน (~35° บนถนนที่ขยายกว้าง)
+      expect(slope).toBeLessThan(0.72);
       // ความโค้งเปลี่ยนต่อเนื่อง ไม่กระโดด
       expect(jump).toBeLessThan(0.02);
     }
@@ -179,7 +179,8 @@ describe("โหมดนักขับ: ขับอิสระ", () => {
       expect(out, id).toBe(0);
       expect(results[1].valid, id).toBe(true);
       expect(Math.abs(results[1].time - t.refLap) / t.refLap, id).toBeLessThan(0.04);
-      expect(far, id).toBeLessThan(4.5);
+      // ถนนขยายกว้าง (line.ts → widen) เส้นเหวี่ยงกว้างขึ้นตาม
+      expect(far, id).toBeLessThan(5.5);
     }
   }, 60_000);
 
