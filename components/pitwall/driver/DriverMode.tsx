@@ -20,6 +20,8 @@ import { useDriveTrack } from "./driveTrack";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
 import type { BodyModel, CameraMode, DriveScene, Gfx, GuideMode } from "./scene";
 import { buzz, createSfx } from "./sfx";
+import { firstPad, rumble } from "./gamepad";
+import { BTN, justPressed, PAD_HELP, readPad } from "@/lib/pitwall/drive/pad";
 import { frameAt, Recorder, type RFrame } from "./replay";
 
 type Settings = {
@@ -60,7 +62,7 @@ const ASSIST_DESC: Record<Assist, string> = {
 };
 
 /** ปล่อยปุ่มทั้งหมด (หยุดชั่วคราว / สลับแอป) กันรถเร่งหรือเลี้ยวค้าง */
-const RELEASE = { throttle: false, brake: false, ot: false, left: false, right: false };
+const RELEASE = { throttle: false, brake: false, ot: false, left: false, right: false, padSteer: null, padT: 0, padB: 0, padOt: false };
 
 /** รถในสนามแข่ง: ผู้เล่น + นักขับคนอื่นจากทุกทีม (เรียงตามกริด) */
 function buildField(settings: Settings): Entrant[] {
@@ -176,7 +178,7 @@ export default function DriverMode({ name, onExit }: { name: string; onExit: () 
           <ChevronLeft className="inline h-4 w-4" /> เลือกโหมด
         </Btn>
         <Card>
-          <Head kicker="โหมดนักขับ · DRIVER" title="เล่นบนคอมพิวเตอร์เท่านั้น" sub="โหมดนี้จำลองฟิสิกส์รถเต็มรูปแบบ ต้องใช้คีย์บอร์ดบังคับ เปิดหน้านี้บนคอมพิวเตอร์แล้วเล่นได้เลย" />
+          <Head kicker="โหมดนักขับ · DRIVER" title="เล่นบนคอมพิวเตอร์เท่านั้น" sub="โหมดนี้จำลองฟิสิกส์รถเต็มรูปแบบ ต้องใช้คีย์บอร์ดหรือจอยเกมบังคับ เปิดหน้านี้บนคอมพิวเตอร์แล้วเล่นได้เลย" />
           <p className="text-xs text-white/70">
             คันเร่ง <b>↑</b>/<b>W</b> · เบรก <b>↓</b>/<b>S</b> · เลี้ยว <b>←</b> <b>→</b>/<b>A</b> <b>D</b>
           </p>
@@ -299,6 +301,7 @@ function Setup({
             </>
           )}
         </p>
+        <p className="text-xs text-white/60">{PAD_HELP} — เสียบจอยแล้วกดปุ่มใดก็ได้หนึ่งครั้งให้เบราว์เซอร์รู้จัก</p>
             {settings.mode !== "tt" && (
               <ul className="list-disc space-y-1 pl-4 text-[11px] text-white/65">
             <li>
@@ -461,6 +464,10 @@ function Setup({
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">โหมดฝึก (เส้นจางเมื่อจำโค้งได้)</span>
             <Seg value={settings.train ? 1 : 0} onChange={(v) => set({ train: v === 1 })} options={[{ v: 0, label: "ปิด" }, { v: 1, label: "เปิด" }]} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold text-white/70">จอยสั่น (ยางลื่น · หลุดโค้ง · ชน)</span>
+            <Seg value={settings.haptics ? 1 : 0} onChange={(v) => set({ haptics: v === 1 })} options={[{ v: 1, label: "เปิด" }, { v: 0, label: "ปิด" }]} />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-bold text-white/70">Straight Mode (พับปีกบนทางตรง)</span>
@@ -764,6 +771,8 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
     throttle: false, brake: false, smArm: false, ot: false, pitReq: undefined as Compound | null | undefined, pitAct: false,
     // เลี้ยว: คีย์ซ้าย/ขวา
     left: false, right: false,
+    // จอย: เสียบอยู่ไหม · สติ๊กเลี้ยว (null = ไม่มีจอย) · แรงกดไกคันเร่ง/เบรก · OT
+    pad: false, padSteer: null as number | null, padT: 0, padB: 0, padOt: false,
   });
   const isRace = settings.mode === "race";
   // พิท: ยางที่เลือกจะเปลี่ยน · ขอเข้าพิทอยู่ไหม (ฝั่งจอ — ค่าจริงอยู่ใน race)
@@ -892,6 +901,42 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
     };
   }, [onExit]);
 
+  // จอย: อ่านทุกเฟรม (แม้หยุดชั่วคราว — กด Start เล่นต่อได้) · ปุ่มเหตุการณ์นับเฉพาะตอนเพิ่งกด
+  useEffect(() => {
+    let raf = 0;
+    let before: boolean[] = [];
+    let had = false;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const gp = firstPad();
+      const i = input.current;
+      if (!!gp !== had) {
+        had = !!gp;
+        setMsg({ id: Date.now(), text: gp ? "เชื่อมต่อจอยแล้ว" : "จอยหลุด", tone: "info" });
+      }
+      i.pad = !!gp;
+      if (!gp) {
+        Object.assign(i, { padSteer: null, padT: 0, padB: 0, padOt: false });
+        before = [];
+        return;
+      }
+      const r = readPad(gp);
+      const hit = (k: number) => justPressed(r.pressed, before, k);
+      before = r.pressed;
+      if (hit(BTN.START)) setPaused((p) => !p);
+      if (pausedRef.current) return;
+      Object.assign(i, { padSteer: r.steer, padT: r.thr, padB: r.brk, padOt: r.ot });
+      if (hit(BTN.A)) i.pitAct = true;
+      if (hit(BTN.LB)) i.smArm = !i.smArm;
+      if (hit(BTN.Y)) setCamera((m) => (m === "tv" ? "chase" : "tv"));
+      if (hit(BTN.B)) requestPit(!pitRef.current.on);
+      const tyre = hit(BTN.LEFT) ? 0 : hit(BTN.UP) ? 1 : hit(BTN.RIGHT) ? 2 : -1;
+      if (tyre >= 0) requestPit(pitRef.current.on, COMPOUNDS[tyre]);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   // ฉาก 3D + ลูปจำลอง
   useEffect(() => {
     const el = host.current;
@@ -953,8 +998,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       // เสียง (สร้างหลังผู้เล่นกดเริ่มขับแล้ว เบราว์เซอร์จึงยอมให้เล่น) · สั่นบนมือถือ
       const sfx = createSfx();
       const shake = (ms: number | number[]) => {
-        if (settings.haptics) buzz(ms);
+        if (!settings.haptics) return;
+        buzz(ms);
+        // จอย: ยิ่งนานยิ่งแรง (ชน/หลุดโค้ง = แรง · ขอบทาง = เบา)
+        const total = Array.isArray(ms) ? ms.reduce((a, b) => a + b, 0) : ms;
+        rumble(Math.min(1, total / 150), 0.6, Math.max(60, total));
       };
+      let rumbleAt = 0;
       let lastGear = 0;
       let kerbAt = 0;
       /** ระยะ (ตามสนาม) ของรถคันอื่นเทียบกับเรา เฟรมก่อน — ไว้จับจังหวะวิ่งผ่านกันแล้วเล่นเสียงฟิ้ว */
@@ -1005,9 +1055,13 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       /** ปุ่มของผู้เล่นหนึ่งขั้นเวลา: คันเร่ง/เบรก · Straight Mode · พวงมาลัย + ผู้ช่วยเลี้ยวตามระดับ · ระดับง่าย = เร่งให้ */
       const easy = settings.assist === 2;
       const pedals = (i: typeof input.current) => {
-        const brake = i.brake;
-        const steer = steerAxis(i.left, i.right, null);
-        return { throttle: easy ? !brake : i.throttle, brake, sm: settings.sm === "auto" || easy || i.smArm, steer, assist: ASSIST_STEER[settings.assist], stab: ASSIST_STAB[settings.assist] };
+        // คีย์บอร์ด = เต็ม/ปล่อย · จอย = ตามแรงกดไก (ใช้ค่าที่มากกว่า) · กดปุ่มเลี้ยวอยู่ = ใช้ปุ่มก่อนสติ๊ก
+        const brkA = Math.max(i.brake ? 1 : 0, i.padB);
+        const brake = brkA > 0.05;
+        const thrA = easy ? (brake ? 0 : 1) : Math.max(i.throttle ? 1 : 0, i.padT);
+        const keySteer = i.left || i.right;
+        const steer = steerAxis(i.left, i.right, keySteer ? null : i.padSteer);
+        return { throttle: thrA > 0.05, brake, thrA, brkA, analog: i.pad && !keySteer, sm: settings.sm === "auto" || easy || i.smArm, steer, assist: ASSIST_STEER[settings.assist], stab: ASSIST_STAB[settings.assist] };
       };
       let hudAt = 0;
       let wasInvalid = false;
@@ -1073,13 +1127,17 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           while (acc >= RACE_STEP) {
             acc -= RACE_STEP;
             const inPitNow = race.cars[pi].pit !== null;
-            const want = { ...pedals(i), free: true, ot: i.ot, pitReq: i.pitReq, pitStop: inPitNow && i.pitAct, pitGo: inPitNow && i.pitAct };
+            const want = { ...pedals(i), free: true, ot: i.ot || i.padOt, pitReq: i.pitReq, pitStop: inPitNow && i.pitAct, pitGo: inPitNow && i.pitAct };
             i.pitReq = undefined;
             i.pitAct = false;
             if (settings.autoBrake) {
               const ideal = idealInput(track, car, 1, tyreGrip(race.cars[pi].tyre));
               want.brake = want.brake || ideal.brake;
-              if (ideal.brake) want.throttle = false;
+              if (ideal.brake) {
+                want.throttle = false;
+                want.thrA = 0;
+                want.brkA = 1;
+              }
             }
             revents.length = 0;
             const smWas = car.sm;
@@ -1179,7 +1237,11 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             if (settings.autoBrake) {
               const ideal = idealInput(track, car);
               want.brake = want.brake || ideal.brake;
-              if (ideal.brake) want.throttle = false;
+              if (ideal.brake) {
+                want.throttle = false;
+                want.thrA = 0;
+                want.brkA = 1;
+              }
             }
             events.length = 0;
             const smWas = car.sm;
@@ -1274,6 +1336,12 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
           }
           // ยางเอี๊ยด: ยางเกินมุมลื่นที่เกาะสุด · ล้อฟรี/ล็อก · ล้อลงหญ้า · เสียงเครื่องตามคันเร่งที่กดจริง
           sfx.frame({ rpm, gear, on, squeal: car.offT > 0 ? 0 : car.slip, grass: car.offT > 0, boost: car.ot, load: car.thr, spin: car.spin, lock: car.lock });
+          // จอยสั่นเบา ๆ ตามยาง: ลื่น/ล้อฟรี/ล้อล็อก/ล้อลงหญ้า
+          const feel = Math.max(car.slip * 0.5, car.spin, car.lock, car.offT > 0 ? 0.6 : 0);
+          if (settings.haptics && on && feel > 0.05 && now - rumbleAt > 100) {
+            rumbleAt = now;
+            rumble(car.offT > 0 ? 0.35 : 0, feel * 0.7, 130);
+          }
           // รถคันอื่นวิ่งผ่านใกล้ ๆ (แซงเราหรือเราแซง): ฟิ้วจากฝั่งที่รถอยู่
           if (race) {
             for (const k of rivalIdx) {
@@ -1407,9 +1475,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
               h.delta.style.color = delta === null ? "" : delta <= 0 ? "#4ade80" : "#ff3b2f";
             }
           }
-          if (h.thr) h.thr.style.opacity = i.throttle || (settings.assist === 2 && !i.brake) ? "1" : "0.18";
+          if (h.thr) h.thr.style.opacity = (0.18 + 0.82 * car.thr).toFixed(2);
           if (h.steer) h.steer.style.transform = `translateX(${(car.steer * 56).toFixed(1)}px)`;
-          if (h.brk) h.brk.style.opacity = i.brake ? "1" : "0.18";
+          if (h.brk) h.brk.style.opacity = (0.18 + 0.82 * car.brk).toFixed(2);
           // สถานะ Straight Mode
           if (h.sm) {
             const inZone = track.smZone[Math.floor((((car.s / DS) % track.n) + track.n) % track.n)] === 1;

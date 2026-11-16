@@ -34,6 +34,10 @@ export type Input = {
   aim?: number;
   /** ตัวช่วยการทรงตัว 0..1 (กันล้อฟรี/ล็อก · กันท้ายปัด) — ไม่ใส่ = เท่ากับ assist */
   stab?: number;
+  /** จอย/พวงมาลัยแบบอนาล็อก: แรงกดคันเร่ง/เบรก 0..1 (ใส่แล้วใช้แทน throttle/brake ในฟิสิกส์) · พวงมาลัยตามมือทันที ไม่ต้องค่อย ๆ หมุนแบบปุ่ม */
+  thrA?: number;
+  brkA?: number;
+  analog?: boolean;
 };
 /** ผลจากรถคันอื่น: tow = ลมดูดจากคันหน้า (0..1) · dirty = อากาศเสียในโค้ง (0..1) · boost = แรงเสริมตอนแซง (ส่วนของความเร็วสูงสุด) */
 export type Mods = { tow: number; dirty: number; boost?: number };
@@ -155,6 +159,8 @@ export const WHEELBASE = 3.4;
 /** พวงมาลัยหมุนเร็วสุดกี่หน่วยต่อวินาที (ไปทางที่กด · คืนกลาง) — กดปุ่มแล้วล้อค่อย ๆ หัน ไม่กระตุก */
 const STEER_IN = 3.2;
 const STEER_OUT = 6;
+/** แกนอนาล็อก: พวงมาลัยตามมือเร็วแค่ไหน (หน่วยต่อวินาที — กันกระตุกจากสติ๊กนิดเดียว) */
+const STEER_ANALOG = 12;
 /** หญ้า: เริ่มเมื่อกึ่งกลางรถเลยขอบถนนเท่านี้ (ล้อข้างหนึ่งออก) · ล้อทั้งสี่ออก = รอบไม่นับ/หลุดโค้ง */
 const GRASS_AT = 0.3;
 const OUT_AT = 1.0;
@@ -269,13 +275,15 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
   let want = own;
   if (input.aim !== undefined) want = pursuitSteer(t, c, grip, input.aim);
   else if (input.assist) want = clamp(own + input.assist * (1 - Math.abs(own)) * pursuitSteer(t, c, grip), -1, 1);
-  const rate = Math.abs(want) > Math.abs(c.steer) && Math.sign(want) === Math.sign(c.steer || want) ? STEER_IN : STEER_OUT;
+  const rate = input.analog ? STEER_ANALOG : Math.abs(want) > Math.abs(c.steer) && Math.sign(want) === Math.sign(c.steer || want) ? STEER_IN : STEER_OUT;
   c.steer += Math.sign(want - c.steer) * Math.min(Math.abs(want - c.steer), rate * dt);
   const delta = c.steer * steerLock(c.v, grip, bank);
 
   // คันเร่ง/เบรก: ปุ่มกด → แรงค่อย ๆ ขึ้นลง
-  c.thr = clamp(c.thr + clamp((input.throttle ? 1 : 0) - c.thr, -THR_DOWN * dt, THR_UP * dt), 0, 1);
-  c.brk = clamp(c.brk + clamp((input.brake ? 1 : 0) - c.brk, -BRK_DOWN * dt, BRK_UP * dt), 0, 1);
+  // แกนอนาล็อก (ไกจอย/แป้นเหยียบ) = แรงตามที่กดจริง ขึ้นลงเร็วกว่าปุ่มมาก
+  const quick = input.analog ? 3 : 1;
+  c.thr = clamp(c.thr + clamp((input.thrA ?? (input.throttle ? 1 : 0)) - c.thr, -THR_DOWN * quick * dt, THR_UP * quick * dt), 0, 1);
+  c.brk = clamp(c.brk + clamp((input.brkA ?? (input.brake ? 1 : 0)) - c.brk, -BRK_DOWN * quick * dt, BRK_UP * quick * dt), 0, 1);
   const stab = input.aim !== undefined ? 1 : clamp(input.stab ?? input.assist ?? 0, 0, 1);
   const plan = longPlan(t, c, input, perf, mods, grass);
   const vBefore = c.v;
