@@ -11,6 +11,7 @@ import { isCorner, KERB_H, kerbWidth } from "@/lib/pitwall/drive/surface";
 import { DS, VMAX, VSM, heightAt, laneValue, poseAt, sample, surfaceAt, type DriveTrack, type Zone } from "@/lib/pitwall/drive/line";
 import { guideColor, guideFade, guideNeeded, guideRisk, projectedSpeed } from "@/lib/pitwall/drive/guide";
 import { buildCar, type Livery } from "./carModel";
+import { asphaltSet, cloudTexture, grassSet, gravelSet, type SurfaceSet } from "./look";
 import { buildTerrain, inStand, sightHits, STAND_DEPTH, STAND_RISE, STAND_ROOF, STAND_TIERS } from "./terrain";
 import { BOX_SHIFT, GARAGE_D, PIT_W, pitLateral, wallFrom, wallTo, type PitLane } from "@/lib/pitwall/drive/pit";
 
@@ -105,9 +106,17 @@ export type DriveScene = {
   dispose(): void;
 };
 
+/** ขั้นแต่งภาพ (กราฟิกสูง): โหลดจาก three/addons ตอนเริ่มขับ */
+export type PostAddons = {
+  EffectComposer: new (r: THREE_NS.WebGLRenderer) => { addPass(p: unknown): void; render(): void; setSize(w: number, h: number): void; setPixelRatio(r: number): void; dispose(): void };
+  RenderPass: new (s: THREE_NS.Scene, c: THREE_NS.Camera) => unknown;
+  SMAAPass: new (w?: number, h?: number) => unknown;
+  OutputPass: new () => unknown;
+};
+
 export function createDriveScene(opts: {
   THREE: Three;
-  addons: { Sky: new () => THREE_NS.Mesh; RoomEnvironment: new () => THREE_NS.Scene };
+  addons: { Sky: new () => THREE_NS.Mesh; RoomEnvironment?: new () => THREE_NS.Scene; post?: PostAddons };
   merge: (g: THREE_NS.BufferGeometry[]) => THREE_NS.BufferGeometry | null;
   body: BodyModel | null;
   el: HTMLElement;
@@ -139,8 +148,9 @@ export function createDriveScene(opts: {
   };
 
   const scene = new THREE.Scene();
-  const HAZE = 0xcfe0ee;
-  scene.fog = new THREE.Fog(HAZE, 220, high ? 1400 : 700);
+  // หมอกบาง ๆ สีฟ้าอมเทาตามขอบฟ้า: ของไกลจางลงแบบอากาศจริง (ยิ่งไกลยิ่งจางเร็วขึ้น)
+  const HAZE = 0xc4d6e6;
+  scene.fog = new THREE.FogExp2(HAZE, high ? 0.0011 : 0.0019);
   const camera = new THREE.PerspectiveCamera(66, 1, 0.25, 4000);
 
   // ท้องฟ้าแบบมีดวงอาทิตย์ + แสงสะท้อนรอบตัว (ให้ตัวรถเงาวาว)
@@ -154,23 +164,50 @@ export function createDriveScene(opts: {
   su.mieDirectionalG.value = 0.8;
   su.sunPosition.value.copy(sunDir);
   scene.add(sky);
+  // แสงสะท้อนรอบตัวจากท้องฟ้าจริง (ตัวรถสะท้อนฟ้า/ดวงอาทิตย์ · ด้านล่างได้แสงพื้นอมเขียว)
   const pmrem = keep(new THREE.PMREMGenerator(renderer));
-  const env = keep(pmrem.fromScene(new addons.RoomEnvironment(), 0.04).texture);
+  const envScene = new THREE.Scene();
+  const envSky = new addons.Sky();
+  envSky.scale.setScalar(1000);
+  const eu = (envSky.material as THREE_NS.ShaderMaterial).uniforms;
+  for (const k of ["turbidity", "rayleigh", "mieCoefficient", "mieDirectionalG"]) eu[k].value = su[k].value;
+  eu.sunPosition.value.copy(sunDir);
+  envScene.add(envSky);
+  const groundDisk = new THREE.Mesh(new THREE.CircleGeometry(900, 24), new THREE.MeshBasicMaterial({ color: 0x3f5232 }));
+  groundDisk.rotation.x = -Math.PI / 2;
+  groundDisk.position.y = -2;
+  envScene.add(groundDisk);
+  const env = keep(pmrem.fromScene(envScene, 0.02).texture);
+  (envSky.material as THREE_NS.Material).dispose();
+  envSky.geometry.dispose();
+  groundDisk.geometry.dispose();
+  (groundDisk.material as THREE_NS.Material).dispose();
   scene.environment = env;
-  // แสงสะท้อนรอบตัวไว้ให้ตัวรถเงา ไม่ให้พื้น/ฉากสว่างจ้า
-  scene.environmentIntensity = 0.35;
+  scene.environmentIntensity = 0.5;
+
+  // เมฆ: แผ่นฟ้าสูง ๆ ตามกล้องไป ลอยเลื่อนช้า ๆ
+  const clouds = new THREE.Mesh(
+    keep(new THREE.PlaneGeometry(9000, 9000)),
+    keep(new THREE.MeshBasicMaterial({ map: keep(cloudTexture(THREE, high ? 512 : 256, hash(t.circuitId) + 17)), transparent: true, depthWrite: false, fog: false })),
+  );
+  clouds.rotation.x = Math.PI / 2;
+  const cloudMap = (clouds.material as THREE_NS.MeshBasicMaterial).map!;
+  cloudMap.repeat.set(3, 3);
+  clouds.renderOrder = -1;
+  scene.add(clouds);
 
   scene.add(new THREE.HemisphereLight(0xdfefff, 0x55703f, 0.65));
   const sun = new THREE.DirectionalLight(0xfff3e0, 2.6);
   sun.position.copy(sunDir).multiplyScalar(200);
   sun.castShadow = high;
   if (high) {
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.radius = 3;
     const sc = sun.shadow.camera;
-    sc.left = -14;
-    sc.right = 14;
-    sc.top = 14;
-    sc.bottom = -14;
+    sc.left = -24;
+    sc.right = 24;
+    sc.top = 24;
+    sc.bottom = -24;
     sc.near = 50;
     sc.far = 400;
     sun.shadow.bias = -0.0004;
@@ -191,26 +228,42 @@ export function createDriveScene(opts: {
     return tex;
   };
   const r = rng(hash(t.circuitId));
-  const asphalt = canvasTex(256, 256, (g) => {
-    g.fillStyle = "#3d3e43";
-    g.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 9000; i++) {
-      const v = 40 + Math.floor(r() * 50);
-      g.fillStyle = `rgb(${v},${v},${v + 3})`;
-      g.fillRect(r() * 256, r() * 256, 1 + r() * 1.5, 1 + r() * 1.5);
-    }
-  });
-  const grassTex = canvasTex(256, 256, (g) => {
-    // ลายตัดหญ้าเป็นแถบ
-    for (let y = 0; y < 256; y += 64) {
-      g.fillStyle = y % 128 ? "#4f8a3a" : "#5a9842";
-      g.fillRect(0, y, 256, 64);
-    }
-    for (let i = 0; i < 7000; i++) {
-      g.fillStyle = r() < 0.5 ? "rgba(30,60,20,0.35)" : "rgba(140,190,90,0.25)";
-      g.fillRect(r() * 256, r() * 256, 1, 2);
-    }
-  });
+  // พื้นผิวสมจริง (look.ts): สี + ความนูน + ความด้าน — กราฟิกสูงใช้ภาพละเอียดกว่า
+  const TEX = high ? 512 : 256;
+  const aniso = high ? 8 : 2;
+  const road = asphaltSet(THREE, TEX, aniso, hash(t.circuitId));
+  const grass = grassSet(THREE, TEX, aniso, hash(t.circuitId) + 3);
+  const gravel = gravelSet(THREE, TEX, aniso, hash(t.circuitId) + 5);
+  for (const set of [road, grass, gravel]) for (const tx of Object.values(set)) keep(tx);
+  const grassTex = grass.map;
+  /** ชุดพื้นผิวพร้อมการปูซ้ำของแถบนั้น (ใช้ภาพเดิม ไม่อัปโหลดซ้ำ) */
+  const tiled = (set: SurfaceSet, u: number, v: number) => {
+    const c = (tx: THREE_NS.Texture) => {
+      const k = keep(tx.clone());
+      k.repeat.set(u, v);
+      return k;
+    };
+    return { map: c(set.map), normal: c(set.normal), rough: c(set.rough) };
+  };
+  /** วัสดุผิวสมจริง (สีตามจุดคูณกับภาพ) */
+  const surfaceMat = (set: { map: THREE_NS.Texture; normal: THREE_NS.Texture; rough: THREE_NS.Texture }, bump = 1) =>
+    keep(
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        map: set.map,
+        normalMap: high ? set.normal : null,
+        normalScale: new THREE.Vector2(bump, bump),
+        roughnessMap: set.rough,
+        roughness: 1,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      }),
+    );
+  // ถนน: ยาว 6 ม.ต่อหน่วย v · ข้ามถนนสองแผ่น (~6 ม.)
+  const roadMat = surfaceMat(tiled(road, 4, 2), 0.35);
+  const gravelMat = surfaceMat(tiled(gravel, 4, 3), 1.2);
+  // หญ้าข้างทาง: ลายเดียวกับพื้น (แถบกว้าง ~9 ม. · ยาว 8 ม.ต่อหน่วย v)
+  const vergeMat = surfaceMat(tiled(grass, 1.3, 1.2), 0.8);
 
   /* ---------- ขอบเขตสนาม ---------- */
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -329,7 +382,7 @@ export function createDriveScene(opts: {
 
   /* ---------- ถนนและขอบ (ความกว้างจริงต่อจุด) ---------- */
   const corner = (i: number) => isCorner(t, i);
-  addFlat(new THREE.Mesh(strip((i) => -L(i), R, 0, () => 0xffffff, 6), lit(asphalt)));
+  addFlat(new THREE.Mesh(strip((i) => -L(i), R, 0, () => 0xffffff, 6), roadMat));
   // เส้นยางดำตามไลน์ที่รถวิ่ง
   addFlat(new THREE.Mesh(strip((i) => t.lineOffset[i] - 1.0, (i) => t.lineOffset[i] + 1.0, 0.004, () => 0x1c1c20), flat(-1, 0.18)));
   scene.add(new THREE.Mesh(strip((i) => R(i) - 0.45, (i) => R(i) - 0.2, 0.006, () => 0xf2f2f2), flat(-1)));
@@ -354,12 +407,12 @@ export function createDriveScene(opts: {
   if (RUN > 2) {
     const VG = Math.min(9, RUN - 1);
     const SD = Math.min(12, RUN);
-    const verge = (side: number) => (i: number) => (corner(i) || pitGap(i, side) ? null : 0x5f6d59);
+    const verge = (side: number) => (i: number) => (corner(i) || pitGap(i, side) ? null : 0xc2d4b6);
     const sand = (side: number) => (i: number) => (corner(i) && !pitGap(i, side) ? 0xcdb68d : null);
-    addFlat(new THREE.Mesh(strip(R, (i) => R(i) + VG, 0.002, verge(1)), lit()));
-    addFlat(new THREE.Mesh(strip((i) => -L(i) - VG, (i) => -L(i), 0.002, verge(-1)), lit()));
-    addFlat(new THREE.Mesh(strip((i) => R(i) + KW, (i) => R(i) + SD, 0.002, sand(1)), lit()));
-    addFlat(new THREE.Mesh(strip((i) => -L(i) - SD, (i) => -L(i) - KW, 0.002, sand(-1)), lit()));
+    addFlat(new THREE.Mesh(strip(R, (i) => R(i) + VG, 0.002, verge(1)), vergeMat));
+    addFlat(new THREE.Mesh(strip((i) => -L(i) - VG, (i) => -L(i), 0.002, verge(-1)), vergeMat));
+    addFlat(new THREE.Mesh(strip((i) => R(i) + KW, (i) => R(i) + SD, 0.002, sand(1)), gravelMat));
+    addFlat(new THREE.Mesh(strip((i) => -L(i) - SD, (i) => -L(i) - KW, 0.002, sand(-1)), gravelMat));
   }
 
   // เส้นช่วยสามสีของแต่ละเลน (แสดงเฉพาะเลนที่รถอยู่) — เลนกลาง = racing line
@@ -573,7 +626,7 @@ export function createDriveScene(opts: {
     };
     const solid = (color: number, offset = -1) => keep(new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: offset, polygonOffsetUnits: offset }));
     // ถนนพิทเลน (เลี้ยวเข้า → ขนานทางตรง → เลี้ยวออก)
-    const road = new THREE.Mesh(pitStrip(lane.entry, lane.exit, (r) => center(r) - PIT_W / 2, (r) => center(r) + PIT_W / 2, 0.01), lit(asphalt));
+    const road = new THREE.Mesh(pitStrip(lane.entry, lane.exit, (r) => center(r) - PIT_W / 2, (r) => center(r) + PIT_W / 2, 0.01), roadMat);
     (road.material as THREE_NS.MeshStandardMaterial).vertexColors = false;
     addFlat(road);
     // ขอบถนนพิทยื่นลงใต้ดิน (ช่วงเลี้ยวเข้า/ออก พื้นข้าง ๆ ต่ำกว่าถนน — ไม่เห็นถนนลอย)
@@ -773,20 +826,43 @@ export function createDriveScene(opts: {
     const p = geo.attributes.position;
     for (let k = 0; k < p.count; k++) p.setY(k, terra.heightAt(p.getX(k), p.getZ(k)));
     geo.computeVertexNormals();
-    grassTex.repeat.set(gw / 24, gh / 24);
-    const ground = new THREE.Mesh(geo, keep(new THREE.MeshLambertMaterial({ map: grassTex })));
+    grassTex.repeat.set(gw / 14, gh / 14);
+    grass.normal.repeat.copy(grassTex.repeat);
+    grass.rough.repeat.copy(grassTex.repeat);
+    const ground = new THREE.Mesh(geo, keep(new THREE.MeshStandardMaterial({ map: grassTex, normalMap: high ? grass.normal : null, roughnessMap: grass.rough, roughness: 1, metalness: 0 })));
     ground.receiveShadow = high;
     scene.add(ground);
   }
 
   {
-    const count = high ? 900 : 300;
-    const trunkGeo = keep(new THREE.CylinderGeometry(0.25, 0.35, 3, 6));
-    trunkGeo.translate(0, 1.5, 0);
-    const leafGeo = keep(new THREE.ConeGeometry(2.6, 7, 7));
-    leafGeo.translate(0, 6, 0);
-    const trunks = new THREE.InstancedMesh(trunkGeo, keep(new THREE.MeshLambertMaterial({ color: 0x5b4330 })), count);
-    const leaves = new THREE.InstancedMesh(leafGeo, keep(new THREE.MeshLambertMaterial({ color: 0xffffff })), count);
+    // ต้นไม้สองแบบ: ไม้ใบกว้าง (พุ่มก้อนกลมหลายก้อน) · สน (กรวยซ้อนสามชั้น) — สีใบต่างกันทีละต้น
+    const count = high ? 1100 : 350;
+    const trunkGeo = keep(new THREE.CylinderGeometry(0.22, 0.38, 3.4, 7));
+    trunkGeo.translate(0, 1.7, 0);
+    const blob = (x: number, y: number, z: number, rad: number) => {
+      const g = new THREE.IcosahedronGeometry(rad, 1);
+      // ผิวพุ่มไม่เรียบ: ขยับจุดยอดเข้าออกนิดหน่อย
+      const p = g.attributes.position;
+      for (let k = 0; k < p.count; k++) {
+        const f = 0.85 + ((Math.sin(p.getX(k) * 3.1 + p.getY(k) * 2.3 + p.getZ(k) * 4.7) + 1) / 2) * 0.3;
+        p.setXYZ(k, p.getX(k) * f, p.getY(k) * f, p.getZ(k) * f);
+      }
+      g.translate(x, y, z);
+      return g;
+    };
+    const broadGeo = keep(merge([blob(0, 5.2, 0, 2.4), blob(1.3, 4.4, 0.6, 1.8), blob(-1.2, 4.6, -0.5, 1.9), blob(0.2, 6.6, -0.3, 1.6)].map((g) => g.toNonIndexed()))!);
+    broadGeo.computeVertexNormals();
+    const cone = (rad: number, h: number, y: number) => {
+      const g = new THREE.ConeGeometry(rad, h, 9);
+      g.translate(0, y, 0);
+      return g.toNonIndexed();
+    };
+    const pineGeo = keep(merge([cone(2.6, 4.2, 4.2), cone(2.0, 3.6, 6.2), cone(1.3, 3, 8.1)])!);
+    pineGeo.computeVertexNormals();
+    const leafMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 }));
+    const trunks = new THREE.InstancedMesh(trunkGeo, keep(new THREE.MeshStandardMaterial({ color: 0x5b4330, roughness: 1 })), count);
+    const broad = new THREE.InstancedMesh(broadGeo, leafMat, count);
+    const pines = new THREE.InstancedMesh(pineGeo, leafMat, count);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
@@ -794,6 +870,8 @@ export function createDriveScene(opts: {
     const pos = new THREE.Vector3();
     const tint = new THREE.Color();
     let placed = 0;
+    let nb = 0;
+    let np = 0;
     for (let tries = 0; tries < count * 6 && placed < count; tries++) {
       const i = Math.floor(r() * t.n);
       const side = r() < 0.5 ? -1 : 1;
@@ -809,14 +887,22 @@ export function createDriveScene(opts: {
       sc.set(s, s * (0.8 + r() * 0.5), s);
       m.compose(pos, q, sc);
       trunks.setMatrixAt(placed, m);
-      leaves.setMatrixAt(placed, m);
-      leaves.setColorAt(placed, tint.setHSL(0.27 + r() * 0.08, 0.45, 0.2 + r() * 0.1));
+      // ต้นไม้ขึ้นเป็นกลุ่ม: ฝั่ง/ช่วงเดียวกันมักเป็นพันธุ์เดียวกัน
+      const pine = Math.sin(i * 0.013 + side * 1.7) > 0.25;
+      if (pine) {
+        pines.setMatrixAt(np, m);
+        pines.setColorAt(np++, tint.setHSL(0.3 + r() * 0.05, 0.4, 0.14 + r() * 0.06));
+      } else {
+        broad.setMatrixAt(nb, m);
+        broad.setColorAt(nb++, tint.setHSL(0.22 + r() * 0.08, 0.42 + r() * 0.15, 0.2 + r() * 0.1));
+      }
       placed++;
     }
     trunks.count = placed;
-    leaves.count = placed;
-    leaves.castShadow = high;
-    scene.add(trunks, leaves);
+    broad.count = nb;
+    pines.count = np;
+    broad.castShadow = pines.castShadow = high;
+    scene.add(trunks, broad, pines);
   }
 
   {
@@ -1314,10 +1400,21 @@ export function createDriveScene(opts: {
     obj.lookAt(tmp);
   };
 
+  // ขั้นแต่งภาพ (กราฟิกสูง): ลบขอบหยัก (SMAA) · ปรับโทนสีเป็นขั้นสุดท้าย (ไม่ใส่แสงฟุ้ง — ท้องฟ้าสว่างจัดจะฟุ้งทั้งจอ)
+  const post = high ? addons.post : undefined;
+  const composer = post ? new post.EffectComposer(renderer) : null;
+  if (post && composer) {
+    composer.addPass(new post.RenderPass(scene, camera));
+    composer.addPass(new post.SMAAPass());
+    composer.addPass(new post.OutputPass());
+  }
+
   const resize = () => {
     const w = el.clientWidth || 1;
     const h = el.clientHeight || 1;
     renderer.setSize(w, h, false);
+    composer?.setPixelRatio(renderer.getPixelRatio());
+    composer?.setSize(w, h);
     camera.aspect = w / h;
     // จอแนวตั้ง (มือถือ) กว้างมุมขึ้น จะได้เห็นโค้งข้างหน้า
     baseFov = w < h ? 82 : 66;
@@ -1504,6 +1601,8 @@ export function createDriveScene(opts: {
         sun.position.copy(tg.position).addScaledVector(sunDir, 200);
       }
       sky.position.copy(camera.position);
+      clouds.position.set(camera.position.x, camera.position.y + 650, camera.position.z);
+      cloudMap.offset.set((camera.position.x / 9000) * 3 + clock * 0.0015, (-camera.position.z / 9000) * 3);
     },
     setCamera(m) {
       mode = m;
@@ -1531,9 +1630,11 @@ export function createDriveScene(opts: {
     },
     resize,
     render() {
-      renderer.render(scene, camera);
+      if (composer) composer.render();
+      else renderer.render(scene, camera);
     },
     dispose() {
+      composer?.dispose();
       disposables.forEach((d) => d.dispose());
       (sky.material as THREE_NS.Material).dispose();
       sky.geometry.dispose();

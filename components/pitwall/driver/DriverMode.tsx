@@ -18,6 +18,7 @@ import { cornerMap, learnCorner, type Mastery } from "@/lib/pitwall/drive/guide"
 import { hasRealTrack, TRACK_DATA_CREDIT } from "@/lib/pitwall/drive/tracks";
 import { useDriveTrack } from "./driveTrack";
 import { CIRCUITS, TEAMS, circuitName } from "@/lib/pitwall/teams";
+import { loadPost } from "./post";
 import { DRIVE_CAMS, nextCam, type BodyModel, type CameraMode, type DriveScene, type Gfx, type GuideMode } from "./scene";
 
 /** ชื่อกล้องที่ผู้เล่นเลือกได้ */
@@ -976,6 +977,9 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       if (disposed) return;
       const auto = matchMedia("(pointer: coarse)").matches || el.clientWidth < 700 || (navigator.hardwareConcurrency ?? 8) <= 4;
       const gfx: Gfx = settings.gfx === "auto" ? (auto ? "low" : "high") : settings.gfx;
+      // ขั้นแต่งภาพ (กราฟิกสูงเท่านั้น — เครื่องอ่อนไม่ต้องโหลด)
+      const post = gfx === "high" ? await loadPost() : undefined;
+      if (disposed) return;
       const livery = { team: team.id, colour: team.color, ink: team.ink, num: driver.num };
       // โหมดแข่ง: สร้างการแข่ง (ผู้เล่นอยู่ในกริด) · รถคันอื่น = คู่แข่ง
       const n0 = netRef.current;
@@ -988,7 +992,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       const rivals = race ? rivalIdx.map((k) => ({ team: race.cars[k].team, colour: race.cars[k].colour, ink: race.cars[k].ink, num: race.cars[k].num })) : undefined;
       const lightsTotal = n0 ? NET_LIGHTS : (race?.lights ?? 0);
       const pit = race ? { lane: race.pitLane, teams: TEAMS.map((x) => ({ color: x.color, name: x.name })), mine: settings.team } : undefined;
-      const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment }, merge: mergeGeometries, body, el, track, livery, gfx, rivals, pit });
+      const scene = createDriveScene({ THREE, addons: { Sky, RoomEnvironment, post }, merge: mergeGeometries, body, el, track, livery, gfx, rivals, pit });
       // เริ่มใหม่: ยังไม่ได้ขอเข้าพิท · ยางแนะนำ = ชนิดที่วิ่งได้ครึ่งหลังของการแข่ง
       if (race) requestPit(false, suggestCompound(race.laps / 2, race.laps));
       sceneRef.current = scene;
