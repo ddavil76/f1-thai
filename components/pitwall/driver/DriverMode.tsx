@@ -7,7 +7,7 @@ import { Btn, Card, Head, Seg } from "@/components/pitwall/ui";
 import { setSoundOn, soundOn } from "@/components/pitwall/sound";
 import { createRoom, onlineReady } from "@/components/pitwall/session";
 import { useDriveLink, type DriveLink } from "./driveSession";
-import { ASSIST_STAB, ASSIST_STEER, steerAxis, type Assist } from "@/lib/pitwall/drive/steer";
+import { ASSIST_STAB, ASSIST_TUNE, steerAxis, type Assist } from "@/lib/pitwall/drive/steer";
 import { deltaTo, DIRTY_GRIP, ghostDistance, idealInput, lapDistance, newCar, perfOf, STEP, stepFree, type LapResult, type StepEvent } from "@/lib/pitwall/drive/car";
 import { DS, laneValue, poseAt, sample as sampleAt, type DriveTrack } from "@/lib/pitwall/drive/line";
 import { advanceRemote, createRace, gapAhead, OFF_PENALTY, OT_HIT_GAP, OT_SLOW, packState, setRemote, sideBySide, STEP as RACE_STEP, stepRace, stopError, TRACK_LIMITS, type Difficulty, type Entrant, type Race, type RaceCar, type RaceEvent } from "@/lib/pitwall/drive/race";
@@ -36,7 +36,7 @@ type Settings = {
   /** สั่นมือถือตอนขึ้น kerb / หลุดโค้ง / ชนท้าย */
   haptics: boolean;
   autoBrake: boolean;
-  /** ระดับช่วยขับ: 2 ง่าย (เร่งให้ · Straight Mode ให้ · พวงมาลัยตาม racing line เอง) · 1 ปกติ (ช่วยประคองพวงมาลัย) · 0 โปร */
+  /** ระดับช่วยขับ: 2 ง่าย (ตัวช่วยพวงมาลัยแบบนิ่ง · ทรงตัวเต็ม · Straight Mode ให้) · 1 ปกติ (สมดุล) · 0 โปร (หลวม · ทรงตัวน้อย) */
   assist: Assist;
   camera: CameraMode;
   gfx: "auto" | Gfx;
@@ -56,9 +56,9 @@ type Settings = {
 
 /** คำอธิบายระดับช่วยขับ */
 const ASSIST_DESC: Record<Assist, string> = {
-  2: "ง่าย: รถเร่งให้ตลอด คุณกดเบรกก่อนเข้าโค้ง · เปิด Straight Mode ให้เอง · ปล่อยพวงมาลัยแล้วรถเลี้ยวตาม racing line เอง (เลี้ยวหลบได้ทุกเมื่อ) · ตัวช่วยทรงตัวเต็ม (กันล้อฟรี/ล้อล็อก/ท้ายปัด)",
-  1: "ปกติ: เร่ง เบรก และ Straight Mode ตามที่ตั้งไว้ · ผู้ช่วยดึงพวงมาลัยเข้าหา racing line ครึ่งหนึ่ง คุณต้องเลี้ยวเองด้วย · ตัวช่วยทรงตัวบางส่วน",
-  0: "โปร: ไม่มีตัวช่วยพวงมาลัย ตัวช่วยทรงตัวเหลือน้อย — กดคันเร่งเต็มตอนออกโค้งช้า ท้ายปัดหมุนได้ · เบรกหนักขณะเลี้ยว = หน้าดื้อ",
+  2: "ง่าย: คุณเร่ง เบรก เลี้ยวเองทั้งหมด · ตัวช่วยพวงมาลัยแบบนิ่ง (คืนตัวแรง แก้ท้ายปัดให้มาก เผื่อหน้าดื้อไว้) · กันล้อฟรี/ล้อล็อกเต็ม · เปิด Straight Mode ให้เอง",
+  1: "ปกติ: ตัวช่วยพวงมาลัยแบบสมดุล — หมุนสุด = ยางหน้าเกาะสุดพอดี ปล่อยแล้วคืนตัวและช่วยแก้ท้ายปัด · กันล้อฟรี/ล้อล็อกบางส่วน",
+  0: "โปร: ตัวช่วยพวงมาลัยแบบหลวม (ท้ายปัดง่าย ต้องแก้เอง) · กันล้อฟรี/ล้อล็อกเหลือน้อย — กดคันเร่งเต็มตอนออกโค้งช้า ท้ายหมุนได้",
 };
 
 /** ปล่อยปุ่มทั้งหมด (หยุดชั่วคราว / สลับแอป) กันรถเร่งหรือเลี้ยวค้าง */
@@ -1052,16 +1052,16 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
       const events: StepEvent[] = [];
       let last = performance.now();
       let acc = 0;
-      /** ปุ่มของผู้เล่นหนึ่งขั้นเวลา: คันเร่ง/เบรก · Straight Mode · พวงมาลัย + ผู้ช่วยเลี้ยวตามระดับ · ระดับง่าย = เร่งให้ */
+      /** ปุ่มของผู้เล่นหนึ่งขั้นเวลา: คันเร่ง/เบรก · Straight Mode · พวงมาลัย (ผ่านตัวช่วยพวงมาลัยตามระดับ) — ผู้เล่นขับเองทั้งหมด */
       const easy = settings.assist === 2;
       const pedals = (i: typeof input.current) => {
         // คีย์บอร์ด = เต็ม/ปล่อย · จอย = ตามแรงกดไก (ใช้ค่าที่มากกว่า) · กดปุ่มเลี้ยวอยู่ = ใช้ปุ่มก่อนสติ๊ก
         const brkA = Math.max(i.brake ? 1 : 0, i.padB);
         const brake = brkA > 0.05;
-        const thrA = easy ? (brake ? 0 : 1) : Math.max(i.throttle ? 1 : 0, i.padT);
+        const thrA = Math.max(i.throttle ? 1 : 0, i.padT);
         const keySteer = i.left || i.right;
         const steer = steerAxis(i.left, i.right, keySteer ? null : i.padSteer);
-        return { throttle: thrA > 0.05, brake, thrA, brkA, analog: i.pad && !keySteer, sm: settings.sm === "auto" || easy || i.smArm, steer, assist: ASSIST_STEER[settings.assist], stab: ASSIST_STAB[settings.assist] };
+        return { throttle: thrA > 0.05, brake, thrA, brkA, analog: i.pad && !keySteer, sm: settings.sm === "auto" || easy || i.smArm, steer, tune: ASSIST_TUNE[settings.assist], stab: ASSIST_STAB[settings.assist] };
       };
       let hudAt = 0;
       let wasInvalid = false;
@@ -1476,7 +1476,7 @@ function DriveSession({ settings, track, onExit, net }: { settings: Settings; tr
             }
           }
           if (h.thr) h.thr.style.opacity = (0.18 + 0.82 * car.thr).toFixed(2);
-          if (h.steer) h.steer.style.transform = `translateX(${(car.steer * 56).toFixed(1)}px)`;
+          if (h.steer) h.steer.style.transform = `translateX(${(car.sa.cmd * 56).toFixed(1)}px)`;
           if (h.brk) h.brk.style.opacity = (0.18 + 0.82 * car.brk).toFixed(2);
           // สถานะ Straight Mode
           if (h.sm) {

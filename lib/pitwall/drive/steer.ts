@@ -1,11 +1,12 @@
 /**
  * พวงมาลัยของโหมดนักขับ (ขับอิสระ): คีย์ซ้ายขวา (หรือแกนอนาล็อก) → ค่าพวงมาลัย −1..1
- * รถหมุนพวงมาลัยตามทีละน้อยและผู้ช่วยดึงเข้าหา racing line ตามระดับ (car.ts → stepFree)
+ * ตัวช่วยพวงมาลัย (steerAssist.ts) แปลงเป็นมุมล้อตามระดับช่วยขับ (car.ts → stepFree)
  */
+import { STEER_TUNE, type SteerTune } from "./steerAssist";
 export type Assist = 0 | 1 | 2;
 
-/** ระดับช่วยขับ → น้ำหนักผู้ช่วยเลี้ยว: ง่าย = เลี้ยวตาม racing line เองเมื่อปล่อยมือ · ปกติ = ช่วยครึ่งหนึ่ง · โปร = ไม่ช่วย */
-export const ASSIST_STEER: Record<Assist, number> = { 0: 0, 1: 0.5, 2: 1 };
+/** ระดับช่วยขับ → ค่าปรับตัวช่วยพวงมาลัย (steerAssist.ts): ง่าย = นิ่ง · ปกติ = สมดุล · โปร = หลวม */
+export const ASSIST_TUNE: Record<Assist, SteerTune> = { 0: STEER_TUNE.loose, 1: STEER_TUNE.balanced, 2: STEER_TUNE.stable };
 /** ระดับช่วยขับ → ตัวช่วยทรงตัว (กันล้อฟรี/ล็อก · กันท้ายปัด) — โปรเหลือนิดหน่อย เพราะคีย์บอร์ดกดได้แค่เต็ม/ปล่อย */
 export const ASSIST_STAB: Record<Assist, number> = { 0: 0.3, 1: 0.65, 2: 1 };
 

@@ -1169,7 +1169,7 @@ export function createDriveScene(opts: {
   resize();
 
   return {
-    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus, psi, steer, slip = 0 }) {
+    update({ s, lateral, ghost: g, speed, accel, dt, aero = 0, rivals: rivalStates, guide, boost = false, tyre, focus, psi, steer }) {
       clock += dt;
       if (tyre) car.setTyre(tyre);
       drawGuide(s, speed, accel, dt, guide);
@@ -1186,8 +1186,8 @@ export function createDriveScene(opts: {
       const rel = lateral - sample(t, t.lineOffset, s);
       const latRate = dt > 0 ? (rel - motion.lastLat) / dt : 0;
       motion.lastLat = rel;
-      // ขับอิสระ: ทิศรถมาจาก psi แล้ว — ท้ายปัดเล็กน้อยเข้าด้านในเมื่อยางใกล้หลุดเกาะ
-      const slideYaw = psi !== undefined ? (steer ?? 0) * slip * 0.08 : speed > 3 ? -Math.atan2(latRate, speed) * 1.4 : 0;
+      // ขับอิสระ: ทิศรถมาจากฟิสิกส์แล้ว (psi รวมการท้ายปัดจริง) ไม่ต้องหมุนเพิ่ม
+      const slideYaw = psi !== undefined ? 0 : speed > 3 ? -Math.atan2(latRate, speed) * 1.4 : 0;
       motion.yaw += (Math.max(-0.22, Math.min(0.22, slideYaw)) - motion.yaw) * k;
       // เอียงออกนอกโค้ง (แรงเหวี่ยง) · หัวทิ่มเมื่อเบรก ท้ายย่อเมื่อเร่ง
       const lat = speed * speed * curve;

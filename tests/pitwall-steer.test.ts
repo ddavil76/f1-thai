@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASSIST_STAB, ASSIST_STEER, steerAxis } from "@/lib/pitwall/drive/steer";
+import { ASSIST_STAB, ASSIST_TUNE, steerAxis } from "@/lib/pitwall/drive/steer";
 
 describe("การเลี้ยว", () => {
   it("แกนเลี้ยวจากปุ่ม/แกนอนาล็อก", () => {
@@ -10,11 +10,10 @@ describe("การเลี้ยว", () => {
     expect(steerAxis(false, false, 3)).toBe(1);
   });
 
-  it("ระดับช่วยขับ: ง่ายช่วยเลี้ยวเต็มที่ · ปกติครึ่งหนึ่ง · โปรไม่ช่วย", () => {
-    expect(ASSIST_STEER[2]).toBe(1);
-    expect(ASSIST_STEER[1]).toBeGreaterThan(0);
-    expect(ASSIST_STEER[1]).toBeLessThan(1);
-    expect(ASSIST_STEER[0]).toBe(0);
+  it("ระดับช่วยขับ: ง่าย = ตัวช่วยพวงมาลัยนิ่งสุด · โปร = หลวมสุด", () => {
+    expect(ASSIST_TUNE[2].selfSteer).toBeGreaterThan(ASSIST_TUNE[1].selfSteer);
+    expect(ASSIST_TUNE[1].selfSteer).toBeGreaterThan(ASSIST_TUNE[0].selfSteer);
+    expect(ASSIST_TUNE[2].margin).toBeLessThan(ASSIST_TUNE[0].margin);
   });
 
   it("ตัวช่วยทรงตัว: ง่ายเต็ม · ปกติบางส่วน · โปรเหลือน้อย", () => {

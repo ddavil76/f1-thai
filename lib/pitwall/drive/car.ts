@@ -3,6 +3,7 @@
  * — เร็วเกินที่โค้งรับไหว = ไถลออกนอกไลน์ เสียความเร็ว และถ้าเกินมากรอบนั้นไม่นับ
  * จำลองแบบขั้นเวลาคงที่ (ผลเหมือนเดิมทุกเครื่อง ไม่ขึ้นกับเฟรมเรต)
  */
+import { assistSteer, newSteerMem, STEER_TUNE, type SteerMem, type SteerTune } from "./steerAssist";
 import { accelFor, ALAT, brakeAt, coastAt, coastSM, DOWNFORCE, DS, G, LANE_GAP, laneValue, laneZone, sample, SM_BLEED, VMAX, VSM, type DriveTrack } from "./line";
 
 export const STEP = 1 / 120;
@@ -34,6 +35,8 @@ export type Input = {
   aim?: number;
   /** ตัวช่วยการทรงตัว 0..1 (กันล้อฟรี/ล็อก · กันท้ายปัด) — ไม่ใส่ = เท่ากับ assist */
   stab?: number;
+  /** ค่าปรับตัวช่วยพวงมาลัย (ไม่ใส่ = สมดุล) */
+  tune?: SteerTune;
   /** จอย/พวงมาลัยแบบอนาล็อก: แรงกดคันเร่ง/เบรก 0..1 (ใส่แล้วใช้แทน throttle/brake ในฟิสิกส์) · พวงมาลัยตามมือทันที ไม่ต้องค่อย ๆ หมุนแบบปุ่ม */
   thrA?: number;
   brkA?: number;
@@ -95,6 +98,9 @@ export type CarState = {
   spin: number;
   lock: number;
   beta: number;
+  /** มุมล้อหน้าจริง (เรเดียน) · หน่วยความจำตัวช่วยพวงมาลัย (sa.cmd = คำสั่งพวงมาลัยของผู้เล่นหลังเกลี่ย −1..1) */
+  delta: number;
+  sa: SteerMem;
 };
 
 export type LapResult = { lap: number; time: number; valid: boolean; trace: number[] };
@@ -103,7 +109,7 @@ export type StepEvent = { kind: "slide"; amount: number } | { kind: "off" } | { 
 
 export function newCar(t: DriveTrack, at?: { s: number; v: number; lat: number }): CarState {
   const s = at?.s ?? -RUN_UP;
-  const c: CarState = { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false, offT: 0, d: 0, psi: 0, steer: 0, slip: 0, out: false, vy: 0, r: 0, thr: 0, brk: 0, spin: 0, lock: 0, beta: 0 };
+  const c: CarState = { s, v: at?.v ?? sample(t, t.vref, s) * 0.9, slide: 0, t: 0, lapStart: null, invalid: false, trace: [], lap: 0, sm: false, lat: at?.lat ?? 0, energy: 0.6, ot: false, offT: 0, d: 0, psi: 0, steer: 0, slip: 0, out: false, vy: 0, r: 0, thr: 0, brk: 0, spin: 0, lock: 0, beta: 0, delta: 0, sa: newSteerMem(0.35) };
   c.d = laneValue(t, "offset", s, c.lat);
   return c;
 }
@@ -156,11 +162,8 @@ export function stepCar(t: DriveTrack, c: CarState, input: Input, perf: Perf, ev
 /** มุมเลี้ยวล้อหน้าสูงสุด (เรเดียน) · ฐานล้อ (ม.) — ความเร็วต่ำเลี้ยววงแคบสุดได้เท่านี้ */
 const MAX_LOCK = 0.35;
 export const WHEELBASE = 3.4;
-/** พวงมาลัยหมุนเร็วสุดกี่หน่วยต่อวินาที (ไปทางที่กด · คืนกลาง) — กดปุ่มแล้วล้อค่อย ๆ หัน ไม่กระตุก */
-const STEER_IN = 3.2;
-const STEER_OUT = 6;
-/** แกนอนาล็อก: พวงมาลัยตามมือเร็วแค่ไหน (หน่วยต่อวินาที — กันกระตุกจากสติ๊กนิดเดียว) */
-const STEER_ANALOG = 12;
+/** แร็กพวงมาลัยหมุนล้อได้เร็วสุด (เรเดียน/วิ) */
+const RACK_RATE = 3;
 /** หญ้า: เริ่มเมื่อกึ่งกลางรถเลยขอบถนนเท่านี้ (ล้อข้างหนึ่งออก) · ล้อทั้งสี่ออก = รอบไม่นับ/หลุดโค้ง */
 const GRASS_AT = 0.3;
 const OUT_AT = 1.0;
@@ -195,9 +198,9 @@ const AXLE_R = 1.13;
 /** ล้อฟรี/ล็อก: แรงข้างเหลือกี่ส่วน */
 const SLIDE_KEEP = 0.35;
 /** คันเร่ง/เบรกจากปุ่ม: ขึ้น/ลงเร็วแค่ไหน (ต่อวินาที) — คีย์บอร์ดกดแล้วแรงค่อย ๆ มา ไม่กระชาก */
-const THR_UP = 5;
+const THR_UP = 4;
 const THR_DOWN = 10;
-const BRK_UP = 10;
+const BRK_UP = 6;
 const BRK_DOWN = 12;
 /** มุมไถลของตัวรถที่นับว่า "หมุน" (เรเดียน) — เกินนี้รถเสียความเร็วและค่อย ๆ หยุดหมุน */
 const BETA_SPIN = 0.5;
@@ -235,23 +238,17 @@ export function maxCurvature(v: number, grip: number, bank = 0) {
   return Math.min(geo, gripAccel(v, grip, bank) / Math.max(1, v * v));
 }
 
-/** มุมล้อหน้าเมื่อหมุนพวงมาลัยสุด (เรเดียน) — ยิ่งเร็วยิ่งน้อย (พวงมาลัยไวตามความเร็ว) ให้สุดพวงมาลัยพอดีขีดยางหน้า */
-export function steerLock(v: number, grip: number, bank = 0) {
-  return Math.min(MAX_LOCK, Math.atan(WHEELBASE * maxCurvature(v, grip, bank)) * 1.1 + ALPHA_PEAK * 0.8);
-}
-
-/** พวงมาลัยที่ผู้ช่วยอยากหมุน: เล็งจุดบนเส้นเป้าหมายข้างหน้า (pure pursuit) · aim = ระยะเยื้องเป้าหมาย (ไม่ใส่ = racing line) */
-export function pursuitSteer(t: DriveTrack, c: CarState, grip: number, aim?: number) {
+/** มุมล้อที่ผู้ช่วยขับตามเส้นอยากหมุน (เรเดียน): เล็งจุดบนเส้นเป้าหมายข้างหน้า (pure pursuit) · aim = ระยะเยื้องเป้าหมาย (ไม่ใส่ = racing line) */
+export function pursuitDelta(t: DriveTrack, c: CarState, aim?: number) {
   const look = 5 + c.v * 0.2;
   const target = aim ?? sample(t, t.lineOffset, c.s + look);
   const kc = sample(t, centreKappa(t), c.s);
   const want = Math.atan2(target - c.d, look);
   // ทิศที่รถวิ่งจริง = ทิศหัวรถ + มุมไถล
   const kappa = kc / Math.max(0.3, 1 - kc * c.d) + (2 * Math.sin(want - c.psi - c.beta)) / look;
-  const bank = sample(t, t.bank, c.s);
   // มุมล้อที่ต้องใช้ = มุมเรขาคณิต + ชดเชยอัตราหันที่ยังไม่ทัน (หน่วงการแกว่ง)
   const yawErr = c.v > 5 ? (kappa * c.v - c.r) * 0.06 : 0;
-  return clamp((Math.atan(WHEELBASE * kappa) + yawErr) / steerLock(c.v, grip, bank), -1, 1);
+  return clamp(Math.atan(WHEELBASE * kappa) + yawErr, -MAX_LOCK, MAX_LOCK);
 }
 
 /**
@@ -270,14 +267,19 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
   const grip = perf.grip * (1 - DIRTY_GRIP * (mods?.dirty ?? 0)) * (1 - (1 - GRASS_GRIP) * grass);
   const bank = sample(t, t.bank, c.s);
 
-  // พวงมาลัย: ผู้เล่น + ผู้ช่วย (ยิ่งผู้เล่นหมุนเยอะ ผู้ช่วยยิ่งปล่อย) · aim = รถเลี้ยวเองทั้งหมด
+  // พวงมาลัย: ปุ่ม/สติ๊กผ่านตัวช่วยพวงมาลัย (steerAssist.ts) → มุมล้อ · assist = ผู้ช่วยขับตามเส้น (ยิ่งผู้เล่นหมุนเยอะ ยิ่งปล่อย) · aim = รถเลี้ยวเองทั้งหมด
   const own = clamp(input.steer ?? 0, -1, 1);
-  let want = own;
-  if (input.aim !== undefined) want = pursuitSteer(t, c, grip, input.aim);
-  else if (input.assist) want = clamp(own + input.assist * (1 - Math.abs(own)) * pursuitSteer(t, c, grip), -1, 1);
-  const rate = input.analog ? STEER_ANALOG : Math.abs(want) > Math.abs(c.steer) && Math.sign(want) === Math.sign(c.steer || want) ? STEER_IN : STEER_OUT;
-  c.steer += Math.sign(want - c.steer) * Math.min(Math.abs(want - c.steer), rate * dt);
-  const delta = c.steer * steerLock(c.v, grip, bank);
+  const A = gripAccel(c.v, grip, bank);
+  let target: number;
+  if (input.aim !== undefined) target = pursuitDelta(t, c, input.aim);
+  else {
+    const car = { v: c.v, vy: c.vy, r: c.r, a: CG_F, b: CG_R, L: WHEELBASE, lock: MAX_LOCK, peak: ALPHA_PEAK, aMax: A };
+    target = assistSteer(c.sa, own, input.analog ? "pad" : "key", car, input.tune ?? STEER_TUNE.balanced, dt);
+    if (input.assist) target += (pursuitDelta(t, c) - target) * input.assist * (1 - Math.abs(c.sa.cmd));
+  }
+  c.delta += clamp(target - c.delta, -RACK_RATE * dt, RACK_RATE * dt);
+  const delta = c.delta;
+  c.steer = delta / MAX_LOCK;
 
   // คันเร่ง/เบรก: ปุ่มกด → แรงค่อย ๆ ขึ้นลง
   // แกนอนาล็อก (ไกจอย/แป้นเหยียบ) = แรงตามที่กดจริง ขึ้นลงเร็วกว่าปุ่มมาก
@@ -289,8 +291,7 @@ export function stepFree(t: DriveTrack, c: CarState, input: Input, perf: Perf, e
   const vBefore = c.v;
 
   const kc = sample(t, centreKappa(t), c.s);
-  // แรงเกาะรวม (ต่อมวล) และแรงที่กดลงพื้นจริง (ไว้คิดการถ่ายน้ำหนัก)
-  const A = gripAccel(c.v, grip, bank);
+  // แรงที่กดลงพื้นจริง (ไว้คิดการถ่ายน้ำหนัก)
   const zEff = G * (1 + (DOWNFORCE / ALAT) * (c.v / VMAX) ** 2);
   const cosD = Math.cos(delta);
   const sinD = Math.sin(delta);
@@ -411,6 +412,8 @@ export function settleCar(c: CarState) {
   c.vy = 0;
   c.r = 0;
   c.beta = 0;
+  c.delta = 0;
+  c.sa = newSteerMem(MAX_LOCK);
 }
 
 /** ตำแหน่งในหน่วยเลน (ไว้ให้ระบบแข่ง: ลมดูด การบัง กันชนท้าย) + ส่วนที่เหลือเป็น slide → lat/slide ชี้ตำแหน่งจริง (d) เป๊ะ */
